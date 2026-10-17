@@ -4,7 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p out
-cp wordmark.png out/
+python3 make_logo.py >/dev/null   # full logo cut out along its oval
+cp logo-oval.png out/
 python3 gen.py out
 python3 -m http.server 8766 -d out >/dev/null 2>&1 &
 SERVER=$!
@@ -20,7 +21,7 @@ for f in out/*.html; do
 import sys
 from PIL import Image
 jars = ("rob-anar", "moraba-havij")  # glass jars sit lower, so crop them differently
-box = (85, 145, 715, 775) if sys.argv[3] in jars else (100, 115, 700, 715)
+box = (85, 145, 715, 775) if sys.argv[3] in jars else (90, 110, 710, 730)
 Image.open(sys.argv[1]).convert("RGB").crop(box).resize((800, 800), Image.LANCZOS) \
     .save(sys.argv[2], quality=88, optimize=True)
 PY
