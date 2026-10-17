@@ -31,14 +31,16 @@ function contactLinks(subject) {
   return links.map((l, i) => i ? l.replace('class="btn"', 'class="btn btn-ghost"') : l).join("");
 }
 
-function renderShell() {
+// showContact: false on product pages that already have the order box
+function renderShell(showContact = true) {
   const year = new Date().getFullYear().toLocaleString("fa-IR", { useGrouping: false });
+  const links = showContact ? contactLinks(SHOP.name) : "";
   document.getElementById("footer").innerHTML =
     `<div class="ornament"></div>` +
     `<p class="footer-tagline">${esc(SHOP.tagline)}</p>` +
-    (contactLinks(SHOP.name)
+    (links
       ? `<p class="footer-cta">برای اطلاعات بیشتر و ثبت سفارش:</p>` +
-        `<div class="contact">${contactLinks(SHOP.name)}</div>`
+        `<div class="contact">${links}</div>`
       : "") +
     `<p>&copy; ${year} ${esc(SHOP.name)}</p>`;
 }
@@ -104,9 +106,10 @@ function renderHome() {
 }
 
 function renderProduct() {
-  renderShell();
   const id = new URLSearchParams(location.search).get("id");
   const p = PRODUCTS.find((x) => x.id === id);
+  const hasBuyBox = Boolean(p && !p.soldOut && contactLinks(p.name));
+  renderShell(!hasBuyBox);
   const box = document.getElementById("product-detail");
 
   if (!p) {
