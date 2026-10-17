@@ -9,16 +9,16 @@ function price(p) {
 }
 
 function contactLinks(subject) {
-  const msg = encodeURIComponent(`سلام، درباره «${subject}» سؤال داشتم.`);
+  const msg = encodeURIComponent(`سلام، می‌خواهم «${subject}» را سفارش بدهم.`);
   const links = [];
   if (SHOP.whatsapp) {
-    links.push(`<a class="btn" href="https://wa.me/${esc(SHOP.whatsapp)}?text=${msg}" target="_blank" rel="noopener">واتساپ</a>`);
+    links.push(`<a class="btn" href="https://wa.me/${esc(SHOP.whatsapp)}?text=${msg}" target="_blank" rel="noopener">سفارش در واتساپ</a>`);
   }
   if (SHOP.telegram) {
     links.push(`<a class="btn" href="https://t.me/${esc(SHOP.telegram)}" target="_blank" rel="noopener">تلگرام</a>`);
   }
   if (SHOP.phone) {
-    links.push(`<a class="btn" href="tel:${esc(SHOP.phone)}">تماس</a>`);
+    links.push(`<a class="btn" href="tel:${esc(SHOP.phone)}">تماس: <span dir="ltr">${esc(SHOP.phone)}</span></a>`);
   }
   if (SHOP.instagram) {
     links.push(`<a class="btn" href="https://instagram.com/${esc(SHOP.instagram)}" target="_blank" rel="noopener">اینستاگرام</a>`);
@@ -92,7 +92,7 @@ function renderProduct() {
         <p class="details">${esc(p.details || p.short || "")}</p>
         ${specs.length ? `<table class="specs">${specs.map(([k, v]) =>
           `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
-        ${p.soldOut ? "" : `<div class="buy"><p>برای سفارش با ما در تماس باشید:</p><div class="contact">${contactLinks(p.name)}</div></div>`}
+        ${p.soldOut ? "" : `<div class="buy"><p>برای ثبت سفارش با ما در تماس باشید:</p><div class="contact">${contactLinks(p.name)}</div></div>`}
       </div>
     </div>`;
 

@@ -29,17 +29,6 @@ img { display: block; max-width: 100%; }
 
 .container { max-width: 1100px; margin: 0 auto; padding: 0 16px 56px; }
 
-/* Header */
-.site-header {
-  position: sticky; top: 0; z-index: 10;
-  display: flex; justify-content: center;
-  padding: 8px 16px;
-  background: color-mix(in srgb, var(--bg) 90%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 2px solid var(--brown);
-}
-.brand img { height: 46px; width: auto; }
-
 /* Hero */
 .hero { display: flex; justify-content: center; padding: 28px 16px 8px; }
 .hero-logo {
@@ -58,12 +47,14 @@ img { display: block; max-width: 100%; }
   content: ""; flex: 1; height: 2px; background: var(--brown); opacity: .7;
 }
 
-/* Grid */
+/* Grid: cards always centered, whatever the number of products */
 .grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 22px;
 }
+.grid > .card { width: 260px; }
 .card {
   display: flex; flex-direction: column;
   background: var(--surface);
@@ -81,11 +72,11 @@ img { display: block; max-width: 100%; }
 }
 .card-img { position: relative; aspect-ratio: 1; background: var(--bg-deep); }
 .card-img img { width: 100%; height: 100%; object-fit: cover; }
-.card-body { padding: 14px 16px 16px; display: flex; flex-direction: column; flex: 1; }
+.card-body { padding: 14px 16px 16px; display: flex; flex-direction: column; flex: 1; text-align: center; }
 .card-body h3 { margin: 0; font-size: 1.1rem; color: var(--green-dark); }
 .short { margin: 4px 0 12px; color: var(--muted); font-size: .92rem; flex: 1; }
 .card-foot {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding-top: 10px; border-top: 1px dashed var(--line);
 }
 .price { font-weight: 800; color: var(--brown); white-space: nowrap; }
@@ -100,7 +91,7 @@ img { display: block; max-width: 100%; }
 .badge.inline { position: static; vertical-align: middle; margin-right: 8px; }
 
 /* Detail page */
-.back { display: inline-block; margin: 24px 0; color: var(--green); font-weight: 600; text-decoration: none; }
+.back { display: table; margin: 24px auto; color: var(--green); font-weight: 600; text-decoration: none; }
 .back:hover { color: var(--green-dark); }
 .detail { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
 .main-img {
@@ -118,12 +109,13 @@ img { display: block; max-width: 100%; }
 .thumb.active { border-color: var(--green); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 
+.info { text-align: center; }
 .info h1 { margin: 0 0 6px; font-size: clamp(1.6rem, 4vw, 2.2rem); color: var(--green-dark); }
 .price.big { font-size: 1.5rem; margin: 0 0 18px; }
 .details { white-space: pre-line; margin: 0 0 20px; }
-.specs { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-.specs th, .specs td { text-align: right; padding: 9px 0; border-bottom: 1px solid var(--line); }
-.specs th { color: var(--muted); font-weight: 500; width: 40%; }
+.specs { width: 100%; max-width: 420px; margin-inline: auto; border-collapse: collapse; margin-bottom: 24px; }
+.specs th, .specs td { text-align: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.specs th { color: var(--muted); font-weight: 500; width: 50%; }
 .buy {
   padding: 16px; border-radius: var(--radius);
   background: var(--surface); border: 1px solid var(--line);
@@ -131,7 +123,7 @@ img { display: block; max-width: 100%; }
 .buy p { margin: 0 0 10px; color: var(--muted); }
 
 /* Buttons */
-.contact { display: flex; gap: 10px; flex-wrap: wrap; justify-content: inherit; }
+.contact { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .btn {
   display: inline-block; padding: 8px 20px;
   background: var(--green); color: #fff;
@@ -165,9 +157,8 @@ img { display: block; max-width: 100%; }
 
 @media (max-width: 720px) {
   .detail { grid-template-columns: 1fr; gap: 24px; }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
-  .brand img { height: 38px; }
+  .grid { gap: 14px; }
+  .grid > .card { width: calc(50% - 7px); }
   .card-body { padding: 12px; }
   .more { display: none; }
-  .card-foot { justify-content: flex-start; }
 }

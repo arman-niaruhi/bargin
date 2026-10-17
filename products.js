@@ -6,11 +6,11 @@ const SHOP = {
   tagline: "از طبیعت تا خانه شما",
   currency: "تومان",      // shown after the price
   // How people contact you to buy (leave "" to hide)
-  email: "arman.niaruhi@gmail.com",
-  phone: "",            // e.g. "+989121234567"
-  whatsapp: "",         // number with country code, digits only, e.g. "989121234567"
+  email: "",           // not used
+  phone: "",            // شماره تماس، e.g. "09121234567"
+  whatsapp: "",         // شماره واتساپ با کد کشور، فقط عدد، e.g. "989121234567"
   telegram: "",         // username without @
-  instagram: "",        // username without @
+  instagram: "",        // آیدی اینستاگرام بدون @، e.g. "bargin.shop"
 };
 
 // ============================================================
