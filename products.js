@@ -14,9 +14,20 @@ const SHOP = {
 };
 
 // ============================================================
+//  دسته‌بندی‌ها — CATEGORIES (buttons on the main page, in this order)
+//  id:   short English name, no spaces (used in the link, e.g. index.html?cat=sabzi)
+//  name: what customers see
+// ============================================================
+const CATEGORIES = [
+  { id: "sabzi", name: "سبزی‌ها" },
+  { id: "rob",   name: "رب‌ها" },
+];
+
+// ============================================================
 //  محصولات — PRODUCTS (copy one { ... } block to add a new product)
 //
 //  id:      unique short English name, no spaces (used in the link)
+//  category: the id of one of the CATEGORIES above, e.g. "sabzi"
 //  price:   plain number, e.g. 250000
 //  unit:    what the price is for, e.g. "کیلو" (leave "" for none)
 //  images:  put your photos in the "images" folder and list them here.
@@ -27,6 +38,7 @@ const PRODUCTS = [
   {
     id: "sabzi-ghormeh",
     name: "سبزی قورمه",
+    category: "sabzi",
     price: 900000,
     unit: "کیلو",
     short: "سبزی قورمه شمالی، آماده برای قورمه‌سبزی.",
@@ -40,6 +52,7 @@ const PRODUCTS = [
   {
     id: "sabzi-morgh-torsh",
     name: "سبزی مرغ ترش",
+    category: "sabzi",
     price: 1000000,
     unit: "کیلو",
     short: "سبزی معطر شمالی، آماده برای مرغ ترش.",
@@ -53,6 +66,7 @@ const PRODUCTS = [
   {
     id: "rob-anar",
     name: "رب انار شمالی",
+    category: "rob",
     price: 1300000,
     unit: "کیلو",
     short: "رب انار شمالی، برای خورش، سالاد و غذاهای شمالی.",
