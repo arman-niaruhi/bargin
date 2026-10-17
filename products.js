@@ -34,11 +34,7 @@ const PRODUCTS = [
       "سبزی قورمه شمالی، تمیز و آماده برای پخت قورمه‌سبزی.\n" +
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
-    images: ["images/sabzi-ghormeh.jpg", "images/ghormeh-sabzi-dish.jpg"],
-    credits: [
-      { by: "Nikowsk", license: "CC BY-SA 4.0", url: "https://commons.wikimedia.org/wiki/File:Fresh_green_chopped_herbs_on_wooden_board.jpg" },
-      { by: "Amin Majidi", license: "CC0", url: "https://commons.wikimedia.org/wiki/File:Ghormeh_Sabzi.JPG" },
-    ],
+    images: ["images/sabzi-ghormeh.jpg"],
     soldOut: false,
   },
   {
@@ -52,9 +48,6 @@ const PRODUCTS = [
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
     images: ["images/sabzi-morgh-torsh.jpg"],
-    credits: [
-      { by: "Thomas Rehehäuser", license: "CC0", url: "https://commons.wikimedia.org/wiki/File:Fresh_Herbs_(Unsplash).jpg" },
-    ],
     soldOut: false,
   },
   {
@@ -68,9 +61,6 @@ const PRODUCTS = [
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
     images: ["images/rob-anar.jpg"],
-    credits: [
-      { by: "El Mono Español", license: "CC BY-SA 4.0", url: "https://commons.wikimedia.org/wiki/File:Pomegranate_molasses_in_a_chinese_spoon.jpg" },
-    ],
     soldOut: false,
   },
 ];
