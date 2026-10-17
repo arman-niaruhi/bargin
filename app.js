@@ -5,7 +5,8 @@ function esc(s) {
 }
 
 function price(p) {
-  return `${Number(p.price).toLocaleString("fa-IR")} ${esc(SHOP.currency)}`;
+  const unit = p.unit ? ` / ${esc(p.unit)}` : "";
+  return `${Number(p.price).toLocaleString("fa-IR")} ${esc(SHOP.currency)}${unit}`;
 }
 
 function contactLinks(subject) {
@@ -92,7 +93,7 @@ function renderProduct() {
         <p class="details">${esc(p.details || p.short || "")}</p>
         ${specs.length ? `<table class="specs">${specs.map(([k, v]) =>
           `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
-        ${p.soldOut ? "" : `<div class="buy"><p>برای ثبت سفارش با ما در تماس باشید:</p><div class="contact">${contactLinks(p.name)}</div></div>`}
+        ${p.soldOut || !contactLinks(p.name) ? "" : `<div class="buy"><p>برای ثبت سفارش با ما در تماس باشید:</p><div class="contact">${contactLinks(p.name)}</div></div>`}
       </div>
     </div>`;
 

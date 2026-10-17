@@ -18,40 +18,48 @@ const SHOP = {
 //
 //  id:      unique short English name, no spaces (used in the link)
 //  price:   plain number, e.g. 250000
+//  unit:    what the price is for, e.g. "کیلو" (leave "" for none)
 //  images:  put your photos in the "images" folder and list them here.
 //           The first image is shown on the main page.
 // ============================================================
 const PRODUCTS = [
   {
-    id: "product-1",
-    name: "محصول اول",
-    price: 250000,
-    short: "توضیح کوتاه یک‌خطی درباره این محصول.",
+    id: "sabzi-ghormeh",
+    name: "سبزی قورمه",
+    price: 900000,
+    unit: "کیلو",
+    short: "سبزی قورمه شمالی، آماده برای قورمه‌سبزی.",
     details:
-      "توضیحات کامل محصول را اینجا بنویسید: جنس، اندازه، " +
-      "شرایط نگهداری و هر چیزی که خریدار باید بداند.",
-    specs: { "وزن": "۵۰۰ گرم", "جنس": "طبیعی" },
+      "سبزی قورمه شمالی، تمیز و آماده برای پخت قورمه‌سبزی.\n" +
+      "فروش به صورت کیلویی.",
+    specs: { "واحد فروش": "کیلو" },
     images: ["images/placeholder.svg"],
     soldOut: false,
   },
   {
-    id: "product-2",
-    name: "محصول دوم",
-    price: 480000,
-    short: "توضیح کوتاه یک‌خطی درباره این محصول.",
-    details: "توضیحات کامل محصول دوم.",
-    specs: { "اندازه": "متوسط" },
+    id: "sabzi-morgh-torsh",
+    name: "سبزی مرغ ترش",
+    price: 1000000,
+    unit: "کیلو",
+    short: "سبزی معطر شمالی، آماده برای مرغ ترش.",
+    details:
+      "سبزی مرغ ترش شمالی، تمیز و آماده برای پخت مرغ ترش.\n" +
+      "فروش به صورت کیلویی.",
+    specs: { "واحد فروش": "کیلو" },
     images: ["images/placeholder.svg"],
     soldOut: false,
   },
   {
-    id: "product-3",
-    name: "محصول سوم",
-    price: 120000,
-    short: "توضیح کوتاه یک‌خطی درباره این محصول.",
-    details: "توضیحات کامل محصول سوم.",
-    specs: {},
+    id: "rob-anar",
+    name: "رب انار شمالی",
+    price: 1300000,
+    unit: "کیلو",
+    short: "رب انار شمالی، برای خورش، سالاد و غذاهای شمالی.",
+    details:
+      "رب انار شمالی، مناسب برای فسنجان، زیتون پرورده، سالاد و غذاهای شمالی.\n" +
+      "فروش به صورت کیلویی.",
+    specs: { "واحد فروش": "کیلو" },
     images: ["images/placeholder.svg"],
-    soldOut: true,
+    soldOut: false,
   },
 ];
