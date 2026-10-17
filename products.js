@@ -21,6 +21,7 @@ const SHOP = {
 const CATEGORIES = [
   { id: "sabzi", name: "سبزی‌ها" },
   { id: "rob",   name: "رب‌ها" },
+  { id: "moraba", name: "مرباها" },
 ];
 
 // ============================================================
@@ -75,6 +76,20 @@ const PRODUCTS = [
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
     images: ["images/rob-anar.jpg"],
+    soldOut: false,
+  },
+  {
+    id: "moraba-havij",
+    name: "مربای هویج",
+    category: "moraba",
+    price: 500000,
+    unit: "نیم کیلو",
+    short: "مربای هویج، در بسته‌بندی نیم کیلویی.",
+    details:
+      "مربای هویج.\n" +
+      "فروش در بسته‌بندی نیم کیلویی.",
+    specs: { "واحد فروش": "نیم کیلو" },
+    images: ["images/moraba-havij.jpg"],
     soldOut: false,
   },
 ];
