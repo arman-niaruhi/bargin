@@ -1,12 +1,12 @@
 /* Colors taken from the Bargin logo: parchment, leaf green, walnut brown, geranium red */
 :root {
   color-scheme: light;
-  --bg: #f3e9d8;
-  --bg-deep: #ebdfc8;
-  --surface: #fbf6ec;
+  --bg: #ecd1a3;
+  --bg-deep: #e2c28d;
+  --surface: #f8ecd5;
   --text: #3b2a1e;
   --muted: #7a6450;
-  --line: #dccdb2;
+  --line: #d9bd8c;
   --green: #2f7a1f;
   --green-dark: #1f5714;
   --brown: #4a2c1a;
@@ -20,10 +20,6 @@ body {
   margin: 0;
   color: var(--text);
   background-color: var(--bg);
-  background-image:
-    radial-gradient(ellipse at top, rgba(255,255,255,.55), transparent 60%),
-    radial-gradient(ellipse at bottom, var(--bg-deep), transparent 70%);
-  background-attachment: fixed;
   font-family: "Vazirmatn", Tahoma, system-ui, sans-serif;
   line-height: 1.8;
 }
@@ -42,15 +38,14 @@ img { display: block; max-width: 100%; }
   backdrop-filter: blur(8px);
   border-bottom: 2px solid var(--brown);
 }
-.brand img { height: 46px; width: auto; mix-blend-mode: multiply; }
+.brand img { height: 46px; width: auto; }
 
 /* Hero */
 .hero { display: flex; justify-content: center; padding: 28px 16px 8px; }
 .hero-logo {
   width: min(360px, 80vw);
-  mix-blend-mode: multiply;
-  -webkit-mask-image: radial-gradient(ellipse 70% 75% at center, #000 70%, transparent 100%);
-          mask-image: radial-gradient(ellipse 70% 75% at center, #000 70%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 52% 52% at center, #000 88%, transparent 100%);
+          mask-image: radial-gradient(ellipse 52% 52% at center, #000 88%, transparent 100%);
 }
 
 /* Section title with brown rules on both sides */
@@ -93,7 +88,7 @@ img { display: block; max-width: 100%; }
   display: flex; justify-content: space-between; align-items: center;
   padding-top: 10px; border-top: 1px dashed var(--line);
 }
-.price { font-weight: 800; color: var(--brown); }
+.price { font-weight: 800; color: var(--brown); white-space: nowrap; }
 .more { font-size: .88rem; color: var(--green); font-weight: 600; }
 
 .badge {
@@ -172,4 +167,7 @@ img { display: block; max-width: 100%; }
   .detail { grid-template-columns: 1fr; gap: 24px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
   .brand img { height: 38px; }
+  .card-body { padding: 12px; }
+  .more { display: none; }
+  .card-foot { justify-content: flex-start; }
 }

@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
-  <rect width="600" height="600" fill="#ebdfc8"/>
-  <g fill="none" stroke="#b8a585" stroke-width="12" stroke-linejoin="round">
+  <rect width="600" height="600" fill="#e2c28d"/>
+  <g fill="none" stroke="#b8935a" stroke-width="12" stroke-linejoin="round">
     <rect x="190" y="210" width="220" height="180" rx="16"/>
     <circle cx="255" cy="270" r="22"/>
     <path d="M200 375 L285 300 L340 350 L370 325 L405 360"/>
   </g>
-  <text x="300" y="450" text-anchor="middle" font-family="sans-serif" font-size="26" fill="#8f7a5e">تصویر محصول</text>
+  <text x="300" y="450" text-anchor="middle" font-family="sans-serif" font-size="26" fill="#8a6a40">تصویر محصول</text>
 </svg>
