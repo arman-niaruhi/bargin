@@ -109,6 +109,8 @@ img { display: block; max-width: 100%; }
 .thumb.active { border-color: var(--green); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 
+.credits { margin: 8px 0 0; font-size: .75rem; color: var(--muted); text-align: center; }
+.credits a { color: inherit; }
 .info { text-align: center; }
 .info h1 { margin: 0 0 6px; font-size: clamp(1.6rem, 4vw, 2.2rem); color: var(--green-dark); }
 .price.big { font-size: 1.5rem; margin: 0 0 18px; }

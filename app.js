@@ -86,6 +86,8 @@ function renderProduct() {
       <div class="gallery">
         <div class="main-img"><img id="main-img" src="${esc(p.images[0])}" alt="${esc(p.name)}"></div>
         ${thumbs}
+        ${(p.credits || []).length ? `<p class="credits">عکس: ${p.credits.map((c) =>
+          `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.by)}</a> (${esc(c.license)})`).join("، ")}</p>` : ""}
       </div>
       <div class="info">
         <h1>${esc(p.name)}</h1>

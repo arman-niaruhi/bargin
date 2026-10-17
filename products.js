@@ -21,6 +21,7 @@ const SHOP = {
 //  unit:    what the price is for, e.g. "کیلو" (leave "" for none)
 //  images:  put your photos in the "images" folder and list them here.
 //           The first image is shown on the main page.
+//  credits: only needed for photos taken from the internet (photographer + license)
 // ============================================================
 const PRODUCTS = [
   {
@@ -33,7 +34,11 @@ const PRODUCTS = [
       "سبزی قورمه شمالی، تمیز و آماده برای پخت قورمه‌سبزی.\n" +
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
-    images: ["images/placeholder.svg"],
+    images: ["images/sabzi-ghormeh.jpg", "images/ghormeh-sabzi-dish.jpg"],
+    credits: [
+      { by: "Nikowsk", license: "CC BY-SA 4.0", url: "https://commons.wikimedia.org/wiki/File:Fresh_green_chopped_herbs_on_wooden_board.jpg" },
+      { by: "Amin Majidi", license: "CC0", url: "https://commons.wikimedia.org/wiki/File:Ghormeh_Sabzi.JPG" },
+    ],
     soldOut: false,
   },
   {
@@ -46,7 +51,10 @@ const PRODUCTS = [
       "سبزی مرغ ترش شمالی، تمیز و آماده برای پخت مرغ ترش.\n" +
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
-    images: ["images/placeholder.svg"],
+    images: ["images/sabzi-morgh-torsh.jpg"],
+    credits: [
+      { by: "Thomas Rehehäuser", license: "CC0", url: "https://commons.wikimedia.org/wiki/File:Fresh_Herbs_(Unsplash).jpg" },
+    ],
     soldOut: false,
   },
   {
@@ -59,7 +67,10 @@ const PRODUCTS = [
       "رب انار شمالی، مناسب برای فسنجان، زیتون پرورده، سالاد و غذاهای شمالی.\n" +
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
-    images: ["images/placeholder.svg"],
+    images: ["images/rob-anar.jpg"],
+    credits: [
+      { by: "El Mono Español", license: "CC BY-SA 4.0", url: "https://commons.wikimedia.org/wiki/File:Pomegranate_molasses_in_a_chinese_spoon.jpg" },
+    ],
     soldOut: false,
   },
 ];
