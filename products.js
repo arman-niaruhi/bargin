@@ -14,9 +14,20 @@ const SHOP = {
 };
 
 // ============================================================
+//  دسته‌بندی‌ها — CATEGORIES (buttons on the main page, in this order)
+//  id:   short English name, no spaces (used in the link, e.g. index.html?cat=sabzi)
+//  name: what customers see
+// ============================================================
+const CATEGORIES = [
+  { id: "sabzi", name: "سبزی‌ها" },
+  { id: "rob",   name: "رب‌ها" },
+];
+
+// ============================================================
 //  محصولات — PRODUCTS (copy one { ... } block to add a new product)
 //
 //  id:      unique short English name, no spaces (used in the link)
+//  category: the id of one of the CATEGORIES above, e.g. "sabzi"
 //  price:   plain number, e.g. 250000
 //  unit:    what the price is for, e.g. "کیلو" (leave "" for none)
 //  images:  put your photos in the "images" folder and list them here.
@@ -27,6 +38,7 @@ const PRODUCTS = [
   {
     id: "sabzi-ghormeh",
     name: "سبزی قورمه",
+    category: "sabzi",
     price: 900000,
     unit: "کیلو",
     short: "سبزی قورمه شمالی، آماده برای قورمه‌سبزی.",
@@ -34,16 +46,13 @@ const PRODUCTS = [
       "سبزی قورمه شمالی، تمیز و آماده برای پخت قورمه‌سبزی.\n" +
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
-    images: ["images/sabzi-ghormeh.jpg", "images/ghormeh-sabzi-dish.jpg"],
-    credits: [
-      { by: "Nikowsk", license: "CC BY-SA 4.0", url: "https://commons.wikimedia.org/wiki/File:Fresh_green_chopped_herbs_on_wooden_board.jpg" },
-      { by: "Amin Majidi", license: "CC0", url: "https://commons.wikimedia.org/wiki/File:Ghormeh_Sabzi.JPG" },
-    ],
+    images: ["images/sabzi-ghormeh.jpg"],
     soldOut: false,
   },
   {
     id: "sabzi-morgh-torsh",
     name: "سبزی مرغ ترش",
+    category: "sabzi",
     price: 1000000,
     unit: "کیلو",
     short: "سبزی معطر شمالی، آماده برای مرغ ترش.",
@@ -52,14 +61,12 @@ const PRODUCTS = [
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
     images: ["images/sabzi-morgh-torsh.jpg"],
-    credits: [
-      { by: "Thomas Rehehäuser", license: "CC0", url: "https://commons.wikimedia.org/wiki/File:Fresh_Herbs_(Unsplash).jpg" },
-    ],
     soldOut: false,
   },
   {
     id: "rob-anar",
     name: "رب انار شمالی",
+    category: "rob",
     price: 1300000,
     unit: "کیلو",
     short: "رب انار شمالی، برای خورش، سالاد و غذاهای شمالی.",
@@ -68,9 +75,6 @@ const PRODUCTS = [
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
     images: ["images/rob-anar.jpg"],
-    credits: [
-      { by: "El Mono Español", license: "CC BY-SA 4.0", url: "https://commons.wikimedia.org/wiki/File:Pomegranate_molasses_in_a_chinese_spoon.jpg" },
-    ],
     soldOut: false,
   },
 ];

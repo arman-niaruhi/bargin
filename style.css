@@ -47,6 +47,21 @@ img { display: block; max-width: 100%; }
   content: ""; flex: 1; height: 2px; background: var(--brown); opacity: .7;
 }
 
+/* Category filter buttons, centered under the title */
+.filters {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+  margin: -8px 0 26px;
+}
+.chip {
+  font: inherit; font-weight: 700; font-size: .95rem; cursor: pointer;
+  padding: 6px 20px; border-radius: 999px;
+  color: var(--brown); background: var(--surface);
+  border: 2px solid var(--brown);
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.chip:hover { border-color: var(--green); color: var(--green); }
+.chip.active, .chip.active:hover { background: var(--green); border-color: var(--green); color: #fff; }
+
 /* Grid: cards always centered, whatever the number of products */
 .grid {
   display: flex;
@@ -113,6 +128,9 @@ img { display: block; max-width: 100%; }
 .credits a { color: inherit; }
 .info { text-align: center; }
 .info h1 { margin: 0 0 6px; font-size: clamp(1.6rem, 4vw, 2.2rem); color: var(--green-dark); }
+.category { margin: 0 0 8px; color: var(--muted); }
+.category a { color: var(--green); font-weight: 700; text-decoration: none; }
+.category a:hover { color: var(--green-dark); text-decoration: underline; }
 .price.big { font-size: 1.5rem; margin: 0 0 18px; }
 .details { white-space: pre-line; margin: 0 0 20px; }
 .specs { width: 100%; max-width: 420px; margin-inline: auto; border-collapse: collapse; margin-bottom: 24px; }
@@ -163,4 +181,6 @@ img { display: block; max-width: 100%; }
   .grid > .card { width: calc(50% - 7px); }
   .card-body { padding: 12px; }
   .more { display: none; }
+  .filters { gap: 8px; }
+  .chip { padding: 5px 16px; font-size: .9rem; }
 }

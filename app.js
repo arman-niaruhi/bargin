@@ -40,11 +40,24 @@ function renderShell() {
     `<p>&copy; ${year} ${esc(SHOP.name)}</p>`;
 }
 
+function categoryOf(p) {
+  return (typeof CATEGORIES !== "undefined" ? CATEGORIES : []).find((c) => c.id === p.category);
+}
+
 function renderHome() {
   renderShell();
   document.title = `${SHOP.name} | ${SHOP.tagline}`;
 
-  document.getElementById("product-grid").innerHTML = PRODUCTS.map((p) => `
+  // only show categories that have at least one product
+  const cats = (typeof CATEGORIES !== "undefined" ? CATEGORIES : [])
+    .filter((c) => PRODUCTS.some((p) => p.category === c.id));
+  const filters = document.getElementById("filters");
+  const grid = document.getElementById("product-grid");
+
+  function show(catId) {
+    if (!cats.some((c) => c.id === catId)) catId = "";
+    const list = catId ? PRODUCTS.filter((p) => p.category === catId) : PRODUCTS;
+    grid.innerHTML = list.map((p) => `
     <a class="card" href="product.html?id=${encodeURIComponent(p.id)}">
       <div class="card-img">
         <img src="${esc(p.images[0])}" alt="${esc(p.name)}" loading="lazy">
@@ -59,6 +72,32 @@ function renderHome() {
         </div>
       </div>
     </a>`).join("");
+    if (filters) {
+      filters.querySelectorAll(".chip").forEach((b) => {
+        const on = b.dataset.cat === catId;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+    return catId;
+  }
+
+  if (filters && cats.length > 1) {
+    filters.innerHTML = [{ id: "", name: "همه" }, ...cats].map((c) =>
+      `<button type="button" class="chip" data-cat="${esc(c.id)}">${esc(c.name)}</button>`).join("");
+    filters.addEventListener("click", (e) => {
+      const b = e.target.closest(".chip");
+      if (!b) return;
+      const catId = show(b.dataset.cat);
+      const url = new URL(location.href);
+      if (catId) url.searchParams.set("cat", catId); else url.searchParams.delete("cat");
+      history.replaceState(null, "", url);
+    });
+  } else if (filters) {
+    filters.hidden = true;
+  }
+
+  show(new URLSearchParams(location.search).get("cat") || "");
 }
 
 function renderProduct() {
@@ -73,6 +112,7 @@ function renderProduct() {
   }
   document.title = `${p.name} | ${SHOP.name}`;
 
+  const cat = categoryOf(p);
   const specs = Object.entries(p.specs || {});
   const thumbs = p.images.length > 1
     ? `<div class="thumbs">${p.images.map((src, i) =>
@@ -91,6 +131,7 @@ function renderProduct() {
       </div>
       <div class="info">
         <h1>${esc(p.name)}</h1>
+        ${cat ? `<p class="category">دسته‌بندی: <a href="index.html?cat=${encodeURIComponent(cat.id)}">${esc(cat.name)}</a></p>` : ""}
         <p class="price big">${price(p)} ${p.soldOut ? '<span class="badge inline">ناموجود</span>' : ""}</p>
         <p class="details">${esc(p.details || p.short || "")}</p>
         ${specs.length ? `<table class="specs">${specs.map(([k, v]) =>
