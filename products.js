@@ -1,53 +1,55 @@
 // ============================================================
-//  YOUR SHOP SETTINGS — edit these
+//  تنظیمات فروشگاه — SHOP SETTINGS (edit these)
 // ============================================================
 const SHOP = {
-  name: "Bargin",
-  tagline: "Handpicked products, honest prices.",
-  currency: "€",
+  name: "برگین",
+  tagline: "از طبیعت تا خانه شما",
+  currency: "تومان",      // shown after the price
   // How people contact you to buy (leave "" to hide)
   email: "arman.niaruhi@gmail.com",
-  phone: "",            // e.g. "+49 123 456789"
-  whatsapp: "",         // number with country code, digits only, e.g. "49123456789"
+  phone: "",            // e.g. "+989121234567"
+  whatsapp: "",         // number with country code, digits only, e.g. "989121234567"
+  telegram: "",         // username without @
   instagram: "",        // username without @
 };
 
 // ============================================================
-//  YOUR PRODUCTS — copy one { ... } block to add a new product
+//  محصولات — PRODUCTS (copy one { ... } block to add a new product)
 //
-//  id:      unique short name, no spaces (used in the link)
+//  id:      unique short English name, no spaces (used in the link)
+//  price:   plain number, e.g. 250000
 //  images:  put your photos in the "images" folder and list them here.
 //           The first image is shown on the main page.
 // ============================================================
 const PRODUCTS = [
   {
     id: "product-1",
-    name: "Product One",
-    price: 25,
-    short: "A short one-line description of this product.",
+    name: "محصول اول",
+    price: 250000,
+    short: "توضیح کوتاه یک‌خطی درباره این محصول.",
     details:
-      "Write the full description here: material, size, condition, " +
-      "what is included, and anything else a buyer should know.",
-    specs: { Size: "Medium", Color: "Black", Condition: "New" },
+      "توضیحات کامل محصول را اینجا بنویسید: جنس، اندازه، " +
+      "شرایط نگهداری و هر چیزی که خریدار باید بداند.",
+    specs: { "وزن": "۵۰۰ گرم", "جنس": "طبیعی" },
     images: ["images/placeholder.svg"],
     soldOut: false,
   },
   {
     id: "product-2",
-    name: "Product Two",
-    price: 40,
-    short: "A short one-line description of this product.",
-    details: "Full description of product two.",
-    specs: { Size: "Large", Color: "White" },
+    name: "محصول دوم",
+    price: 480000,
+    short: "توضیح کوتاه یک‌خطی درباره این محصول.",
+    details: "توضیحات کامل محصول دوم.",
+    specs: { "اندازه": "متوسط" },
     images: ["images/placeholder.svg"],
     soldOut: false,
   },
   {
     id: "product-3",
-    name: "Product Three",
-    price: 15.5,
-    short: "A short one-line description of this product.",
-    details: "Full description of product three.",
+    name: "محصول سوم",
+    price: 120000,
+    short: "توضیح کوتاه یک‌خطی درباره این محصول.",
+    details: "توضیحات کامل محصول سوم.",
     specs: {},
     images: ["images/placeholder.svg"],
     soldOut: true,
