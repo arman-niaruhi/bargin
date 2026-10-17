@@ -31,12 +31,17 @@ function contactLinks(subject) {
   return links.map((l, i) => i ? l.replace('class="btn"', 'class="btn btn-ghost"') : l).join("");
 }
 
-function renderShell() {
+// showContact: false on product pages that already have the order box
+function renderShell(showContact = true) {
   const year = new Date().getFullYear().toLocaleString("fa-IR", { useGrouping: false });
+  const links = showContact ? contactLinks(SHOP.name) : "";
   document.getElementById("footer").innerHTML =
     `<div class="ornament"></div>` +
     `<p class="footer-tagline">${esc(SHOP.tagline)}</p>` +
-    `<div class="contact">${contactLinks(SHOP.name)}</div>` +
+    (links
+      ? `<p class="footer-cta">برای اطلاعات بیشتر و ثبت سفارش:</p>` +
+        `<div class="contact">${links}</div>`
+      : "") +
     `<p>&copy; ${year} ${esc(SHOP.name)}</p>`;
 }
 
@@ -58,7 +63,7 @@ function renderHome() {
     if (!cats.some((c) => c.id === catId)) catId = "";
     const list = catId ? PRODUCTS.filter((p) => p.category === catId) : PRODUCTS;
     grid.innerHTML = list.map((p) => `
-    <a class="card" href="product.html?id=${encodeURIComponent(p.id)}">
+    <a class="card${p.soldOut ? " sold-out" : ""}" href="product.html?id=${encodeURIComponent(p.id)}">
       <div class="card-img">
         <img src="${esc(p.images[0])}" alt="${esc(p.name)}" loading="lazy">
         ${p.soldOut ? '<span class="badge">ناموجود</span>' : ""}
@@ -101,9 +106,10 @@ function renderHome() {
 }
 
 function renderProduct() {
-  renderShell();
   const id = new URLSearchParams(location.search).get("id");
   const p = PRODUCTS.find((x) => x.id === id);
+  const hasBuyBox = Boolean(p && !p.soldOut && contactLinks(p.name));
+  renderShell(!hasBuyBox);
   const box = document.getElementById("product-detail");
 
   if (!p) {
@@ -124,7 +130,7 @@ function renderProduct() {
   box.innerHTML = `
     <div class="detail">
       <div class="gallery">
-        <div class="main-img"><img id="main-img" src="${esc(p.images[0])}" alt="${esc(p.name)}"></div>
+        <div class="main-img${p.soldOut ? " sold-out" : ""}"><img id="main-img" src="${esc(p.images[0])}" alt="${esc(p.name)}"></div>
         ${thumbs}
         ${(p.credits || []).length ? `<p class="credits">عکس: ${p.credits.map((c) =>
           `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.by)}</a> (${esc(c.license)})`).join("، ")}</p>` : ""}

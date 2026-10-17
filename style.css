@@ -103,6 +103,15 @@ img { display: block; max-width: 100%; }
   font-size: .78rem; font-weight: 700;
   padding: 2px 12px; border-radius: 999px;
 }
+/* Sold-out: faded, partly grey image and a muted card (red badge stays bright) */
+.card.sold-out { background: #f1e4cc; }
+.card.sold-out .card-img img,
+.main-img.sold-out img {
+  -webkit-filter: grayscale(.7) opacity(.6);
+          filter: grayscale(.7) opacity(.6);
+}
+.card.sold-out .card-body h3,
+.card.sold-out .price { opacity: .65; }
 .badge.inline { position: static; vertical-align: middle; margin-right: 8px; }
 
 /* Detail page */
@@ -161,6 +170,7 @@ img { display: block; max-width: 100%; }
   display: flex; flex-direction: column; align-items: center; gap: 14px;
 }
 .site-footer p { margin: 0; }
+.footer-cta { color: var(--brown); font-weight: 700; margin-bottom: -4px !important; }
 .footer-tagline { color: var(--brown); font-size: 1.15rem; font-weight: 700; }
 .ornament {
   width: min(420px, 80%); height: 2px; background: var(--brown); position: relative;

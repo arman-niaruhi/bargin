@@ -8,9 +8,9 @@ const SHOP = {
   // How people contact you to buy (leave "" to hide)
   email: "",           // not used
   phone: "",            // شماره تماس، e.g. "09121234567"
-  whatsapp: "",         // شماره واتساپ با کد کشور، فقط عدد، e.g. "989121234567"
+  whatsapp: "989000000000", // TEST — replace before going live (شماره واتساپ با کد کشور، فقط عدد)
   telegram: "",         // username without @
-  instagram: "",        // آیدی اینستاگرام بدون @، e.g. "bargin.shop"
+  instagram: "bargin.shop", // TEST — replace before going live (آیدی اینستاگرام بدون @)
 };
 
 // ============================================================
@@ -21,6 +21,7 @@ const SHOP = {
 const CATEGORIES = [
   { id: "sabzi", name: "سبزی‌ها" },
   { id: "rob",   name: "رب‌ها" },
+  { id: "moraba", name: "مرباها" },
 ];
 
 // ============================================================
@@ -47,7 +48,7 @@ const PRODUCTS = [
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
     images: ["images/sabzi-ghormeh.jpg"],
-    soldOut: false,
+    soldOut: true,
   },
   {
     id: "sabzi-morgh-torsh",
@@ -75,6 +76,20 @@ const PRODUCTS = [
       "فروش به صورت کیلویی.",
     specs: { "واحد فروش": "کیلو" },
     images: ["images/rob-anar.jpg"],
+    soldOut: false,
+  },
+  {
+    id: "moraba-havij",
+    name: "مربای هویج",
+    category: "moraba",
+    price: 500000,
+    unit: "نیم کیلو",
+    short: "مربای هویج، در بسته‌بندی نیم کیلویی.",
+    details:
+      "مربای هویج.\n" +
+      "فروش در بسته‌بندی نیم کیلویی.",
+    specs: { "واحد فروش": "نیم کیلو" },
+    images: ["images/moraba-havij.jpg"],
     soldOut: false,
   },
 ];
