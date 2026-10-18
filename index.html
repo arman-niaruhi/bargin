@@ -12,18 +12,29 @@
 <body>
   <section class="hero">
     <img class="hero-logo" src="images/logo.jpg" alt="برگین — از طبیعت تا خانه شما">
+    <p class="hero-lead">محصولات خانگی برگین</p>
+    <p class="hero-intro">ما انواع سبزی‌ها، رب‌ها، مرباها، ترشیجات و کلی چیز دیگه رو توی خونه‌ی خودمون تولید می‌کنیم؛ از خونه‌ی ما، برای خونه‌ی تو 🌿</p>
   </section>
 
   <main class="container">
     <h2 class="section-title"><span>محصولات</span></h2>
     <nav class="filters" id="filters" aria-label="دسته‌بندی محصولات"></nav>
     <div class="grid" id="product-grid"></div>
+
+    <section class="steps" aria-label="راهنمای سفارش">
+      <h2 class="section-title"><span>چطوری سفارش بدم؟</span></h2>
+      <ol>
+        <li><span class="step-num">۱</span><strong>محصولتو انتخاب کن</strong></li>
+        <li><span class="step-num">۲</span><strong>تو واتساپ یا اینستاگرام بهمون پیام بده</strong></li>
+        <li><span class="step-num">۳</span><strong>سفارشت ثبت می‌شه!</strong></li>
+      </ol>
+    </section>
   </main>
 
   <footer class="site-footer" id="footer"></footer>
 
   <script src="products.js"></script>
   <script src="app.js"></script>
-  <script>renderHome();</script>
+  <script>loadData().then(renderHome);</script>
 </body>
 </html>
