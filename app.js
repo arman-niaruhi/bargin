@@ -126,20 +126,32 @@ function categoryOf(p) {
   return (typeof CATEGORIES !== "undefined" ? CATEGORIES : []).find((c) => c.id === p.category);
 }
 
-function renderHome() {
-  renderShell();
-  document.title = `${SHOP.name} | ${SHOP.tagline}`;
+// search text → comparable form: Arabic ي/ك/ة → Persian, no ZWNJ / harakat /
+// tatweel, Persian and Arabic digits → 0-9, lowercase, single spaces
+function normalize(s) {
+  return String(s || "")
+    .replace(/[يى]/g, "ی").replace(/ك/g, "ک").replace(/ة/g, "ه")
+    .replace(/[‌‍ـً-ٰٟ]/g, "")
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+    .toLowerCase().replace(/\s+/g, " ").trim()
+    .replace(SPELLINGS, (w) => SPELLING_MAP[w]);
+}
 
-  // only show categories that have at least one product
-  const cats = (typeof CATEGORIES !== "undefined" ? CATEGORIES : [])
-    .filter((c) => PRODUCTS.some((p) => p.category === c.id));
-  const filters = document.getElementById("filters");
-  const grid = document.getElementById("product-grid");
+// common spelling variants → one form, so either spelling finds the product
+const SPELLING_MAP = { "قورمه": "قرمه" };
+const SPELLINGS = new RegExp(Object.keys(SPELLING_MAP).join("|"), "g");
 
-  function show(catId) {
-    if (!cats.some((c) => c.id === catId)) catId = "";
-    const list = catId ? PRODUCTS.filter((p) => p.category === catId) : PRODUCTS;
-    grid.innerHTML = list.map((p, i) => `
+// every word of the search must appear in name, category, short or details
+function matches(p, q) {
+  const words = normalize(q).split(" ").filter(Boolean);
+  if (!words.length) return true;
+  const text = normalize([p.name, p.category, p.short, p.details].join(" "));
+  return words.every((w) => text.includes(w));
+}
+
+function cardHTML(p, i) {
+  return `
     <a class="card${p.soldOut ? " sold-out" : ""}" style="--i:${i}" href="product.html?id=${encodeURIComponent(p.id)}">
       <div class="card-img">
         <img src="${esc(p.images[0])}" alt="${esc(p.name)}" loading="lazy">
@@ -153,15 +165,55 @@ function renderHome() {
           <span class="more">بیشتر ببین</span>
         </div>
       </div>
-    </a>`).join("") || `<p class="empty">فعلاً محصولی اینجا نیست.</p>`;
+    </a>`;
+}
+
+// shown when a search finds nothing: "all" = matches exist in other categories
+function noResultsHTML(action) {
+  const label = action === "all" ? "جستجو در همه" : "نمایش همه";
+  return `<div class="no-results"><p>چیزی پیدا نکردیم! یه کلمه‌ی دیگه امتحان کن</p>` +
+    `<button type="button" class="btn btn-ghost" data-action="${action}">${label}</button></div>`;
+}
+
+function renderHome() {
+  renderShell();
+  document.title = `${SHOP.name} | ${SHOP.tagline}`;
+
+  // only show categories that have at least one product
+  const cats = (typeof CATEGORIES !== "undefined" ? CATEGORIES : [])
+    .filter((c) => PRODUCTS.some((p) => p.category === c.id));
+  const filters = document.getElementById("filters");
+  const grid = document.getElementById("product-grid");
+  const search = document.getElementById("search");
+  const clear = document.querySelector(".search-clear");
+  const params = new URLSearchParams(location.search);
+  const state = { cat: params.get("cat") || "", q: params.get("q") || "" };
+
+  function show() {
+    if (!cats.some((c) => c.id === state.cat)) state.cat = "";
+    const found = PRODUCTS.filter((p) => matches(p, state.q));
+    const list = state.cat ? found.filter((p) => p.category === state.cat) : found;
+    if (list.length) grid.innerHTML = list.map(cardHTML).join("");
+    else if (!normalize(state.q)) grid.innerHTML = `<p class="empty">فعلاً محصولی اینجا نیست.</p>`;
+    else grid.innerHTML = noResultsHTML(found.length ? "all" : "clear");
     if (filters) {
       filters.querySelectorAll(".chip").forEach((b) => {
-        const on = b.dataset.cat === catId;
+        const on = b.dataset.cat === state.cat;
         b.classList.toggle("active", on);
         b.setAttribute("aria-pressed", on ? "true" : "false");
       });
     }
-    return catId;
+    if (clear) clear.hidden = !state.q;
+  }
+
+  // keep ?cat= and ?q= in the address bar so the view can be shared
+  function update() {
+    show();
+    const url = new URL(location.href);
+    for (const [key, val] of [["cat", state.cat], ["q", state.q.trim()]]) {
+      if (val) url.searchParams.set(key, val); else url.searchParams.delete(key);
+    }
+    history.replaceState(null, "", url);
   }
 
   if (filters && cats.length > 1) {
@@ -170,16 +222,35 @@ function renderHome() {
     filters.addEventListener("click", (e) => {
       const b = e.target.closest(".chip");
       if (!b) return;
-      const catId = show(b.dataset.cat);
-      const url = new URL(location.href);
-      if (catId) url.searchParams.set("cat", catId); else url.searchParams.delete("cat");
-      history.replaceState(null, "", url);
+      state.cat = b.dataset.cat;
+      update();
     });
   } else if (filters) {
     filters.hidden = true;
   }
 
-  show(new URLSearchParams(location.search).get("cat") || "");
+  if (search) {
+    search.value = state.q;
+    search.addEventListener("input", () => { state.q = search.value; update(); });
+  }
+  if (clear) {
+    clear.addEventListener("click", () => {
+      state.q = "";
+      if (search) { search.value = ""; search.focus(); }
+      update();
+    });
+  }
+
+  // buttons in the no-results message
+  grid.addEventListener("click", (e) => {
+    const b = e.target.closest(".no-results [data-action]");
+    if (!b) return;
+    if (b.dataset.action === "all") state.cat = "";
+    else { state.q = ""; if (search) search.value = ""; }
+    update();
+  });
+
+  show();
 }
 
 // recipe text from the CSV: first line = dish name, "- " lines = ingredients,
