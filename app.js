@@ -40,9 +40,11 @@ function productFromRow(r) {
     category: r.category,
     price: Number(digits),
     unit: r.unit,
+    serves: r.serves || "",
+    recipe: r.recipe || "",
     short: r.short,
     details: r.details,
-    specs: r.unit ? { "واحد فروش": r.unit } : {},
+    specs: {},  // owner removed the «واحد فروش» row
     images: r.images.split("|").map((s) => s.trim()).filter(Boolean),
     soldOut: /^(yes|true|1|بله|آره)$/i.test(r.soldOut),
   };
@@ -180,6 +182,27 @@ function renderHome() {
   show(new URLSearchParams(location.search).get("cat") || "");
 }
 
+// recipe text from the CSV: first line = dish name, "- " lines = ingredients,
+// lines starting with a number = steps, anything else = a tip
+function recipeHTML(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return "";
+  const title = lines.shift();
+  const items = [], steps = [], tips = [];
+  for (const l of lines) {
+    if (/^[-•]/.test(l)) items.push(l.replace(/^[-•]\s*/, ""));
+    else if (/^[0-9۰-۹]+[.)\-]/.test(l)) steps.push(l.replace(/^[0-9۰-۹]+[.)\-]\s*/, ""));
+    else tips.push(l);
+  }
+  return `
+    <section class="recipe">
+      <h2>🍲 دستور پخت: ${esc(title)}</h2>
+      ${items.length ? `<h3>مواد لازم</h3><ul class="ingredients">${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}
+      ${steps.length ? `<h3>طرز تهیه</h3><ol class="steps-list">${steps.map((st) => `<li>${esc(st)}</li>`).join("")}</ol>` : ""}
+      ${tips.map((t) => `<p class="tip">💡 ${esc(t)}</p>`).join("")}
+    </section>`;
+}
+
 function renderProduct() {
   const id = new URLSearchParams(location.search).get("id");
   const p = PRODUCTS.find((x) => x.id === id);
@@ -217,6 +240,8 @@ function renderProduct() {
         <p class="details">${esc(p.details || p.short || "")}</p>
         ${specs.length ? `<table class="specs">${specs.map(([k, v]) =>
           `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
+        ${p.serves ? `<p class="serves-note"><span>👥 چقدر برای هر نفر؟</span>${esc(p.serves)}</p>` : ""}
+        ${recipeHTML(p.recipe)}
         ${p.soldOut || !contactLinks(p.name) ? "" : `<div class="buy"><p>برای سفارش بهمون پیام بده:</p><div class="contact">${contactLinks(p.name)}</div></div>`}
       </div>
     </div>`;

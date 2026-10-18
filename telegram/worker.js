@@ -83,9 +83,11 @@ export function productFromRow(r) {
     category: r.category,
     price: Number(digits),
     unit: r.unit,
+    serves: r.serves || "",
+    recipe: r.recipe || "",
     short: r.short,
     details: r.details,
-    specs: r.unit ? { "واحد فروش": r.unit } : {},
+    specs: {},  // owner removed the «واحد فروش» row
     images: r.images.split("|").map((s) => s.trim()).filter(Boolean),
     soldOut: /^(yes|true|1|بله|آره)$/i.test(r.soldOut),
   };
@@ -243,9 +245,11 @@ function productScreen(env, data, id, from) {
   const parts = [`<b>${esc(p.name)}</b>`];
   if (cat) parts.push(`دسته‌بندی: ${esc(cat.name)}`);
   parts.push("", `💰 ${esc(price(p, shop))}`);
+  if (p.serves && !p.recipe) parts.push("", `👥 ${esc(p.serves)}`);
   if (p.soldOut) parts.push("❌ <b>ناموجود</b>");
   if (p.details) parts.push("", esc(p.details));
   const rows = [[{ text: "🌐 مشاهده در سایت", url: `${env.SITE_URL}product.html?id=${p.id}` }]];
+  if (p.recipe) rows.unshift([{ text: "🍲 دستور پخت", callback_data: `r:${p.id}:${from || ""}` }]);
   if (!p.soldOut && shop.whatsapp) rows.push([{ text: "💬 سفارش در واتساپ", url: orderUrl(shop, p.name) }]);
   const back = from || String(categories.indexOf(cat));
   rows.push([{ text: "🔙 بازگشت", callback_data: "cat:" + back }, BACK_HOME]);
@@ -253,6 +257,27 @@ function productScreen(env, data, id, from) {
     photo: env.SITE_URL + (p.images && p.images[0] ? p.images[0] : "images/logo.jpg"),
     caption: parts.join("\n").slice(0, 1024), // Telegram caption limit
     keyboard: rows,
+  };
+}
+
+// recipe text: first line = dish, "- " = ingredients, numbered = steps, rest = tips
+function recipeScreen(env, data, id, from) {
+  const p = data.products.find((x) => x.id === id);
+  if (!p || !p.recipe) return homeScreen(env, data);
+  const lines = p.recipe.split("\n").map((l) => l.trim()).filter(Boolean);
+  const out = [];
+  if (p.serves) out.push(`👥 <b>چقدر برای هر نفر؟</b>`, esc(p.serves), "");
+  out.push(`🍲 <b>دستور پخت: ${esc(lines.shift())}</b>`);
+  const items = lines.filter((l) => /^[-•]/.test(l));
+  const steps = lines.filter((l) => /^[0-9۰-۹]+[.)\-]/.test(l));
+  const tips = lines.filter((l) => !/^[-•]/.test(l) && !/^[0-9۰-۹]+[.)\-]/.test(l));
+  if (items.length) out.push("", "<b>مواد لازم:</b>", ...items.map((l) => "▫️ " + esc(l.replace(/^[-•]\s*/, ""))));
+  if (steps.length) out.push("", "<b>طرز تهیه:</b>", ...steps.map(esc));
+  if (tips.length) out.push("", ...tips.map((t) => "💡 " + esc(t)));
+  return {
+    photo: env.SITE_URL + (p.images && p.images[0] ? p.images[0] : "images/logo.jpg"),
+    caption: out.join("\n").slice(0, 1024),
+    keyboard: [[{ text: "🔙 بازگشت", callback_data: `p:${p.id}:${from}` }, BACK_HOME]],
   };
 }
 
@@ -277,6 +302,10 @@ function screenFor(env, data, action) {
   if (action.startsWith("p:")) {
     const [, id, from] = action.split(":");
     return productScreen(env, data, id, from);
+  }
+  if (action.startsWith("r:")) {
+    const [, id, from] = action.split(":");
+    return recipeScreen(env, data, id, from);
   }
   if (action === "contact") return contactScreen(env, data);
   return homeScreen(env, data);

@@ -153,6 +153,41 @@ img { display: block; max-width: 100%; }
   transition: background .15s ease, color .15s ease;
 }
 .card:hover .more { background: var(--green); color: #fff; }
+/* friendly "how much per person" note, just above the recipe */
+.serves-note {
+  margin: 0 0 14px; padding: 14px 16px;
+  background: rgba(47, 122, 31, .08); border: 1px solid rgba(47, 122, 31, .25);
+  border-radius: var(--radius); color: var(--text); font-size: .95rem;
+}
+.serves-note span { display: block; margin-bottom: 4px; color: var(--green-dark); font-weight: 800; }
+
+/* Recipe on the product page */
+.recipe {
+  margin: 0 0 24px; padding: 20px 16px 18px;
+  background: var(--bg); border: 1.5px dashed var(--brown); border-radius: var(--radius);
+}
+.recipe h2 { margin: 0 0 12px; font-size: 1.15rem; color: var(--green-dark); }
+.recipe h3 { margin: 14px 0 8px; font-size: .95rem; color: var(--brown); }
+.ingredients {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+}
+.ingredients li {
+  font-size: .85rem; padding: 3px 12px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line);
+}
+.steps-list { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+.steps-list li {
+  counter-increment: step; position: relative;
+  margin: 0 auto 10px; padding-top: 30px; max-width: 420px; font-size: .92rem;
+}
+.steps-list li::before {
+  content: counter(step, persian);
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 26px; height: 26px; line-height: 26px; border-radius: 50%;
+  background: var(--green); color: #fff; font-weight: 800; font-size: .85rem;
+}
+.tip { margin: 8px 0 0; font-size: .88rem; color: var(--muted); }
 
 .badge {
   position: absolute; top: 10px; right: 10px; z-index: 1;
@@ -285,6 +320,7 @@ img { display: block; max-width: 100%; }
   .grid > .card { width: calc(50% - 7px); }
   .card-body { padding: 12px; }
   .more { display: none; }
+  .card .price { font-size: .82rem; padding: 2px 8px; white-space: normal; }
   .filters { gap: 6px; }
   .chip { padding: 6px 12px; font-size: .92rem; gap: 5px; }
   .chip::before { width: 7px; height: 7px; }
