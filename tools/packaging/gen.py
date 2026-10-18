@@ -49,6 +49,8 @@ GREENS_FRESH = ["#3f8a2a", "#4f9a33", "#5ea83b", "#2f7a1f", "#6db048", "#47862c"
 DRY_MINT = ["#5f7a45", "#6e8a52", "#7d9660", "#556e3c", "#8aa16b", "#4c6535"]
 DRY_DILL = ["#6b7f35", "#7a8d3f", "#88994b", "#5e7230", "#95a457", "#71853a"]
 DRY_PARSLEY = ["#3e5f24", "#4a6d2c", "#567934", "#36541f", "#62843d", "#43662a"]
+DRY_ZALANG = ["#55703a", "#617d42", "#6d894b", "#4a6332", "#7a9556", "#5a7540"]
+DRY_SHAMI = ["#46632a", "#526f31", "#5e7b39", "#3d5824", "#6a8743", "#4f6c2f"]
 
 
 def page(svg_body, labels_html):
@@ -244,6 +246,10 @@ files = {
                    pouch_labels("شوید", "سبزی خشک خانگی", "۱۰۰ گرم")),
     "jafari": page(pouch(43, DRY_PARSLEY, "#36541f"),
                    pouch_labels("جعفری", "سبزی خشک خانگی", "۱۰۰ گرم")),
+    "zalang": page(pouch(47, DRY_ZALANG, "#4a6332"),
+                   pouch_labels("زلنگ", "سبزی خشک خانگی", "۱۰۰ گرم")),
+    "sabzi-shami": page(pouch(53, DRY_SHAMI, "#3d5824"),
+                        pouch_labels("سبزی شامی", "سبزی خشک خانگی", "۱۰۰ گرم")),
     "rob-anar": page(jar(), jar_labels()),
     "moraba-havij": page(jar(JAR_CARROT, "carrot"),
                          jar_labels("مربای هویج", "#b34a0a", "نیم کیلو")),
