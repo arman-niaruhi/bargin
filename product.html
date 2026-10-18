@@ -35,6 +35,7 @@
 
   <script src="products.js"></script>
   <script src="app.js"></script>
-  <script>loadData().then(renderProduct);</script>
+  <script src="cart.js"></script>
+  <script>loadData().then(function () { renderProduct(); initCart(); });</script>
 </body>
 </html>

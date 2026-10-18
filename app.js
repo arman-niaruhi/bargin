@@ -105,19 +105,21 @@ const ICONS = {
   telegram: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.9 4.6 18.7 19.4c-.2 1-.9 1.3-1.7.8l-4.8-3.5-2.3 2.2c-.3.3-.5.5-1 .5l.3-4.9 8.9-8c.4-.3-.1-.5-.6-.2l-11 6.9-4.7-1.5c-1-.3-1-1 .2-1.5L20.6 3.4c.8-.3 1.6.2 1.3 1.2Z"/></svg>',
 };
 
-// WhatsApp order message. With a product name (order box, sticky order bar) it names
-// the product; without one (footer) it is the general shop message.
-function orderMsg(product) {
-  return encodeURIComponent(product
-    ? `سلام، می‌خوام «${product}» رو سفارش بدم.`
-    : `سلام! می‌خواستم از محصولات ${SHOP.name} سفارش بدم 🌿`);
+// general WhatsApp message (footer, empty cart). With items in the cart, cart.js
+// replaces the footer link with the cart message (cartWhatsAppUrl).
+function orderMsg() {
+  return encodeURIComponent(`سلام! می‌خواستم از محصولات ${SHOP.name} سفارش بدم 🌿`);
 }
 
-function contactLinks(product) {
-  const msg = orderMsg(product);
+function orderUrl() {
+  return `https://wa.me/${SHOP.whatsapp}?text=${orderMsg()}`;
+}
+
+// footer contact buttons (same on every page). a.wa-order is kept up to date by cart.js.
+function contactLinks() {
   const links = [];
   if (SHOP.whatsapp) {
-    links.push(`<a class="btn" href="https://wa.me/${esc(SHOP.whatsapp)}?text=${msg}" target="_blank" rel="noopener">${ICONS.whatsapp}سفارش در واتساپ</a>`);
+    links.push(`<a class="btn wa-order" href="${esc(orderUrl())}" target="_blank" rel="noopener">${ICONS.whatsapp}سفارش در واتساپ<span class="wa-count"></span></a>`);
   }
   if (SHOP.telegram) {
     links.push(`<a class="btn" href="https://t.me/${esc(SHOP.telegram)}" target="_blank" rel="noopener">${ICONS.telegram}تلگرام</a>`);
@@ -129,16 +131,16 @@ function contactLinks(product) {
     links.push(`<a class="btn" href="https://instagram.com/${esc(SHOP.instagram)}" target="_blank" rel="noopener">${ICONS.instagram}اینستاگرام</a>`);
   }
   if (SHOP.email) {
-    links.push(`<a class="btn" href="mailto:${esc(SHOP.email)}?subject=${encodeURIComponent(product || SHOP.name)}">ایمیل</a>`);
+    links.push(`<a class="btn" href="mailto:${esc(SHOP.email)}?subject=${encodeURIComponent(SHOP.name)}">ایمیل</a>`);
   }
   // first button is filled, the rest are outlined
   return links.map((l, i) => i ? l.replace('class="btn"', 'class="btn btn-ghost"') : l).join("");
 }
 
-// showContact: false on product pages that already have the order box
-function renderShell(showContact = true) {
+// footer: tagline, contact block (every page), copyright
+function renderShell() {
   const year = new Date().getFullYear().toLocaleString("fa-IR", { useGrouping: false });
-  const links = showContact ? contactLinks() : "";
+  const links = contactLinks();
   document.getElementById("footer").innerHTML =
     `<div class="ornament"></div>` +
     `<p class="footer-tagline">${esc(SHOP.tagline)}</p>` +
@@ -183,22 +185,30 @@ function matches(p, q) {
   return rawWords.every((rawW) => rawText.includes(rawW) || mapText.includes(normalize(rawW)));
 }
 
+// cart control (cart.js) for a product, or "" when cart.js isn't loaded / sold out
+function cartControl(p) {
+  return !p.soldOut && typeof cartCtlHTML === "function" ? cartCtlHTML(p) : "";
+}
+
+// The whole card opens the product through one stretched link (the title link's ::after);
+// the cart control sits inside the card above that link (a button inside <a> is invalid HTML)
 function cardHTML(p, i) {
   return `
-    <a class="card${p.soldOut ? " sold-out" : ""}" style="--i:${i}" href="product.html?id=${encodeURIComponent(p.id)}">
+    <div class="card${p.soldOut ? " sold-out" : ""}" style="--i:${i}">
       <div class="card-img">
         <img src="${esc(p.images[0])}" alt="${esc(p.name)}" loading="lazy">
         ${p.soldOut ? '<span class="badge">ناموجود</span>' : ""}
       </div>
       <div class="card-body">
-        <h3>${esc(p.name)}</h3>
+        <h3><a class="card-link" href="product.html?id=${encodeURIComponent(p.id)}">${esc(p.name)}</a></h3>
         <p class="short">${esc(p.short || "")}</p>
         <div class="card-foot">
           <span class="price">${price(p)}</span>
           <span class="more">بیشتر ببین</span>
+          ${cartControl(p)}
         </div>
       </div>
-    </a>`;
+    </div>`;
 }
 
 // shown when a search finds nothing: "all" = matches exist in other categories
@@ -337,8 +347,9 @@ function recipeHTML(text) {
 function renderProduct() {
   const id = new URLSearchParams(location.search).get("id");
   const p = PRODUCTS.find((x) => x.id === id);
-  const hasBuyBox = Boolean(p && !p.soldOut && contactLinks(p.name));
-  renderShell(!hasBuyBox);
+  // order box: only the cart control (contacts are in the footer); none when sold out
+  const buyCtl = p && !p.soldOut ? cartControl(p) : "";
+  renderShell();
   const box = document.getElementById("product-detail");
 
   if (!p) {
@@ -375,7 +386,7 @@ function renderProduct() {
           `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
         ${p.serves ? `<p class="serves-note"><span>👥 چقدر برای هر نفر؟</span>${esc(p.serves)}</p>` : ""}
         ${recipeHTML(p.recipe)}
-        ${p.soldOut || !contactLinks(p.name) ? "" : `<div class="buy"><p>برای سفارش بهمون پیام بده:</p><div class="contact">${contactLinks(p.name)}</div></div>`}
+        ${buyCtl ? `<div class="buy">${buyCtl}</div>` : ""}
       </div>
     </div>`;
 
@@ -395,12 +406,12 @@ function renderProduct() {
     });
   }
 
-  // sticky order bar (shown only on phones by style.css)
-  if (!p.soldOut && SHOP.whatsapp) {
-    const msg = orderMsg(p.name);
+  // sticky order bar (shown only on phones by style.css); cart.js fills it with
+  // «بنداز تو سبد» (empty cart) or «سبد خرید (n) — ارسال در واتساپ»
+  if (buyCtl && SHOP.whatsapp) {
     const bar = document.createElement("div");
     bar.className = "order-bar";
-    bar.innerHTML = `<a class="btn" href="https://wa.me/${esc(SHOP.whatsapp)}?text=${msg}" target="_blank" rel="noopener">${ICONS.whatsapp}سفارش در واتساپ</a>`;
+    bar.setAttribute("data-id", p.id);
     document.body.appendChild(bar);
     document.body.classList.add("has-order-bar");
   }
