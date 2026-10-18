@@ -7,8 +7,8 @@ const SHOP = {
   currency: "تومان",      // shown after the price
   // How people contact you to buy (leave "" to hide)
   email: "",           // not used
-  phone: "",            // شماره تماس، e.g. "09121234567"
-  whatsapp: "989000000000", // TEST — replace before going live (شماره واتساپ با کد کشور، فقط عدد)
+  phone: "09369725836",  // شماره تماس
+  whatsapp: "989369725836", // شماره واتساپ با کد کشور، فقط عدد
   telegram: "",         // username without @
   instagram: "bargin.shop", // TEST — replace before going live (آیدی اینستاگرام بدون @)
 };
