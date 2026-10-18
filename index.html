@@ -18,11 +18,11 @@
 
   <main class="container">
     <h2 class="section-title"><span>محصولات</span></h2>
-    <div class="search">
+    <form class="search" role="search" action="#">
       <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 0 1 6.3 12.9l5.4 5.4-1.4 1.4-5.4-5.4A8 8 0 1 1 10 2Zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12Z"/></svg>
-      <input type="search" id="search" placeholder="دنبال چی می‌گردی؟" aria-label="جستجوی محصولات" autocomplete="off">
+      <input type="search" id="search" placeholder="دنبال چی می‌گردی؟" aria-label="جستجوی محصولات" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
       <button type="button" class="search-clear" aria-label="پاک کردن" hidden>×</button>
-    </div>
+    </form>
     <nav class="filters" id="filters" aria-label="دسته‌بندی محصولات"></nav>
     <div class="grid" id="product-grid"></div>
 

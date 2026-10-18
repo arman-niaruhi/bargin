@@ -28,7 +28,11 @@ function parseCSV(text) {
   const head = (rows.shift() || []).map((h) => h.trim());
   return rows
     .filter((r) => r.some((v) => v.trim()))
-    .map((r) => Object.fromEntries(head.map((h, k) => [h, (r[k] || "").trim()])));
+    .map((r) => {
+      const obj = {};
+      for (let k = 0; k < head.length; k++) obj[head[k]] = (r[k] || "").trim();
+      return obj;
+    });
 }
 
 // one products.csv row → the product object the pages use
@@ -54,18 +58,32 @@ function categoriesOf(products) {
   return [...new Set(products.map((p) => p.category).filter(Boolean))].map((name) => ({ id: name, name }));
 }
 
+// true when data/products.csv could not be loaded (offline, blocked, error)
+let LOAD_FAILED = false;
+
 async function loadData() {
-  const get = (f) => fetch(f, { cache: "no-cache" }).then((r) => {
+  const get = (f, opts) => fetch(f, opts).then((r) => {
     if (!r.ok) throw new Error(f);
     return r.text();
   });
   try {
-    PRODUCTS = parseCSV(await get("data/products.csv")).filter((r) => r.id && r.name).map(productFromRow);
+    let text;
+    try {
+      text = await get("data/products.csv", { cache: "no-cache" });
+    } catch (e) {
+      // retry once with the default cache (some old browsers reject the option)
+      text = await get("data/products.csv");
+    }
+    PRODUCTS = parseCSV(text).filter((r) => r.id && r.name).map(productFromRow);
     CATEGORIES = categoriesOf(PRODUCTS);
+    LOAD_FAILED = false;
   } catch (e) {
+    LOAD_FAILED = true;
     console.error("could not load products", e);
   }
 }
+
+const LOAD_FAILED_TEXT = "اوه! نتونستیم محصولات رو بیاریم. اینترنتت رو چک کن و دوباره امتحان کن 🌿";
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
@@ -96,7 +114,7 @@ function contactLinks(subject) {
     links.push(`<a class="btn" href="https://t.me/${esc(SHOP.telegram)}" target="_blank" rel="noopener">${ICONS.telegram}تلگرام</a>`);
   }
   if (SHOP.phone) {
-    links.push(`<a class="btn" href="tel:${esc(SHOP.phone)}">${ICONS.phone}تماس: <span dir="ltr">${esc(SHOP.phone)}</span></a>`);
+    links.push(`<a class="btn" href="tel:${esc(SHOP.phone)}">${ICONS.phone}تماس: <span dir="ltr">${esc(String(SHOP.phone).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]))}</span></a>`);
   }
   if (SHOP.instagram) {
     links.push(`<a class="btn" href="https://instagram.com/${esc(SHOP.instagram)}" target="_blank" rel="noopener">${ICONS.instagram}اینستاگرام</a>`);
@@ -126,28 +144,34 @@ function categoryOf(p) {
   return (typeof CATEGORIES !== "undefined" ? CATEGORIES : []).find((c) => c.id === p.category);
 }
 
-// search text → comparable form: Arabic ي/ك/ة → Persian, no ZWNJ / harakat /
-// tatweel, Persian and Arabic digits → 0-9, lowercase, single spaces
-function normalize(s) {
-  return String(s || "")
-    .replace(/[يى]/g, "ی").replace(/ك/g, "ک").replace(/ة/g, "ه")
-    .replace(/[‌‍ـً-ٰٟ]/g, "")
+// search text → comparable form: Arabic ي/ك/ة → Persian, آ/أ/إ → ا, ۀ → ه,
+// ؤ → و, no ZWNJ / harakat (incl. U+0653–U+0655) / tatweel, Persian and Arabic
+// digits → 0-9, lowercase, single spaces. noMap: skip the spelling map.
+function normalize(s, noMap) {
+  const out = String(s || "")
+    .replace(/[\u064A\u0649]/g, "\u06CC").replace(/\u0643/g, "\u06A9").replace(/[\u0629\u06C0]/g, "\u0647")
+    .replace(/[\u0622\u0623\u0625]/g, "\u0627").replace(/\u0624/g, "\u0648")
+    .replace(/[\u200C\u200D\u0640\u064B-\u065F\u0670]/g, "")
     .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
     .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
-    .toLowerCase().replace(/\s+/g, " ").trim()
-    .replace(SPELLINGS, (w) => SPELLING_MAP[w]);
+    .toLowerCase().replace(/\s+/g, " ").trim();
+  return noMap ? out : out.replace(SPELLINGS, (w) => SPELLING_MAP[w]);
 }
 
 // common spelling variants → one form, so either spelling finds the product
 const SPELLING_MAP = { "قورمه": "قرمه" };
 const SPELLINGS = new RegExp(Object.keys(SPELLING_MAP).join("|"), "g");
 
-// every word of the search must appear in name, category, short or details
+// every word of the search must appear in name, category, short or details.
+// Each word is compared with and without the spelling map, so a half-typed
+// word («قور») and either spelling («قرمه» / «قورمه») all match.
 function matches(p, q) {
-  const words = normalize(q).split(" ").filter(Boolean);
-  if (!words.length) return true;
-  const text = normalize([p.name, p.category, p.short, p.details].join(" "));
-  return words.every((w) => text.includes(w));
+  const rawWords = normalize(q, true).split(" ").filter(Boolean);
+  if (!rawWords.length) return true;
+  const all = [p.name, p.category, p.short, p.details].join(" ");
+  const rawText = normalize(all, true);
+  const mapText = normalize(all);
+  return rawWords.every((rawW) => rawText.includes(rawW) || mapText.includes(normalize(rawW)));
 }
 
 function cardHTML(p, i) {
@@ -175,6 +199,12 @@ function noResultsHTML(action) {
     `<button type="button" class="btn btn-ghost" data-action="${action}">${label}</button></div>`;
 }
 
+// shown instead of products when data/products.csv could not be loaded
+function loadFailedHTML() {
+  return `<div class="no-results"><p>${LOAD_FAILED_TEXT}</p>` +
+    `<button type="button" class="btn btn-ghost" data-action="reload">دوباره امتحان کن</button></div>`;
+}
+
 function renderHome() {
   renderShell();
   document.title = `${SHOP.name} | ${SHOP.tagline}`;
@@ -193,7 +223,8 @@ function renderHome() {
     if (!cats.some((c) => c.id === state.cat)) state.cat = "";
     const found = PRODUCTS.filter((p) => matches(p, state.q));
     const list = state.cat ? found.filter((p) => p.category === state.cat) : found;
-    if (list.length) grid.innerHTML = list.map(cardHTML).join("");
+    if (LOAD_FAILED) grid.innerHTML = loadFailedHTML();
+    else if (list.length) grid.innerHTML = list.map(cardHTML).join("");
     else if (!normalize(state.q)) grid.innerHTML = `<p class="empty">فعلاً محصولی اینجا نیست.</p>`;
     else grid.innerHTML = noResultsHTML(found.length ? "all" : "clear");
     if (filters) {
@@ -213,7 +244,7 @@ function renderHome() {
     for (const [key, val] of [["cat", state.cat], ["q", state.q.trim()]]) {
       if (val) url.searchParams.set(key, val); else url.searchParams.delete(key);
     }
-    history.replaceState(null, "", url);
+    try { history.replaceState(null, "", url); } catch (e) { /* e.g. file:// or old browser */ }
   }
 
   if (filters && cats.length > 1) {
@@ -231,7 +262,22 @@ function renderHome() {
 
   if (search) {
     search.value = state.q;
-    search.addEventListener("input", () => { state.q = search.value; update(); });
+    const onSearch = () => {
+      if (state.q === search.value) return;
+      state.q = search.value;
+      update();
+    };
+    // "search" = the × / Enter in some browsers, "change" = older phone keyboards
+    ["input", "search", "change"].forEach((ev) => search.addEventListener(ev, onSearch));
+    // the keyboard's search/Enter key: stay on the page, keep ?q=, close the keyboard
+    const form = search.form || search.closest("form");
+    if (form) {
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        onSearch();
+        search.blur();
+      });
+    }
   }
   if (clear) {
     clear.addEventListener("click", () => {
@@ -245,6 +291,7 @@ function renderHome() {
   grid.addEventListener("click", (e) => {
     const b = e.target.closest(".no-results [data-action]");
     if (!b) return;
+    if (b.dataset.action === "reload") { location.reload(); return; }
     if (b.dataset.action === "all") state.cat = "";
     else { state.q = ""; if (search) search.value = ""; }
     update();
@@ -282,7 +329,9 @@ function renderProduct() {
   const box = document.getElementById("product-detail");
 
   if (!p) {
-    box.innerHTML = `<p class="empty">محصول پیدا نشد.</p>`;
+    box.innerHTML = LOAD_FAILED
+      ? `<p class="empty">${LOAD_FAILED_TEXT}</p>`
+      : `<p class="empty">محصول پیدا نشد.</p>`;
     return;
   }
   document.title = `${p.name} | ${SHOP.name}`;

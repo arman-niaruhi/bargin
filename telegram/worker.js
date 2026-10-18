@@ -71,7 +71,11 @@ export function parseCSV(text) {
   const head = (rows.shift() || []).map((h) => h.trim());
   return rows
     .filter((r) => r.some((v) => v.trim()))
-    .map((r) => Object.fromEntries(head.map((h, k) => [h, (r[k] || "").trim()])));
+    .map((r) => {
+      const obj = {};
+      for (let k = 0; k < head.length; k++) obj[head[k]] = (r[k] || "").trim();
+      return obj;
+    });
 }
 
 // one products.csv row → the product object the pages use
@@ -289,7 +293,7 @@ function contactScreen(env, data) {
   if (shop.instagram) rows.push([{ text: "📷 اینستاگرام", url: "https://instagram.com/" + shop.instagram }]);
   rows.push([BACK_HOME]);
   // Telegram buttons can't dial a number, so the phone is shown as text
-  const phone = shop.phone ? `\n\n📞 تماس: ${esc(shop.phone)}` : "";
+  const phone = shop.phone ? `\n\n📞 تماس: ${esc(String(shop.phone).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]))}` : "";
   return {
     photo: env.SITE_URL + "images/logo.jpg",
     caption: `🌿 <b>${esc(shop.name)}</b>\n\nسؤالی داری یا می‌خوای سفارش بدی؟ بهمون پیام بده:${phone}`,
