@@ -300,12 +300,16 @@ function renderHome() {
   show();
 }
 
-// recipe text from the CSV: first line = dish name, "- " lines = ingredients,
+// recipe text from the CSV: first line = dish name (or «طرز تهیه: …» for things that
+// aren't cooked, like the دلال‌ها), "- " lines = ingredients,
 // lines starting with a number = steps, anything else = a tip
 function recipeHTML(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return "";
-  const title = lines.shift();
+  let title = lines.shift();
+  // «طرز تهیه: X» → box title «طرز تهیه» and steps heading «مراحل»
+  const prep = /^طرز تهیه\s*:/.test(title);
+  if (prep) title = title.replace(/^طرز تهیه\s*:\s*/, "");
   const items = [], steps = [], tips = [];
   for (const l of lines) {
     if (/^[-•]/.test(l)) items.push(l.replace(/^[-•]\s*/, ""));
@@ -314,9 +318,9 @@ function recipeHTML(text) {
   }
   return `
     <section class="recipe">
-      <h2>🍲 دستور پخت: ${esc(title)}</h2>
+      <h2>${prep ? "🥗 طرز تهیه" : "🍲 دستور پخت"}: ${esc(title)}</h2>
       ${items.length ? `<h3>مواد لازم</h3><ul class="ingredients">${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}
-      ${steps.length ? `<h3>طرز تهیه</h3><ol class="steps-list">${steps.map((st) => `<li>${esc(st)}</li>`).join("")}</ol>` : ""}
+      ${steps.length ? `<h3>${prep ? "مراحل" : "طرز تهیه"}</h3><ol class="steps-list">${steps.map((st) => `<li>${esc(st)}</li>`).join("")}</ol>` : ""}
       ${tips.map((t) => `<p class="tip">💡 ${esc(t)}</p>`).join("")}
     </section>`;
 }

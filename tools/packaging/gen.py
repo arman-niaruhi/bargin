@@ -1,7 +1,7 @@
 """Generate packaging mockup pages (HTML+SVG) for Bargin products.
 
 To add a product: add an entry to `files` at the bottom (pouch for herbs/dry goods,
-jar for رب/pastes), then run tools/packaging/render.sh.
+jar for رب/pastes/مربا/دلال), then run tools/packaging/render.sh.
 """
 import math
 import random
@@ -175,6 +175,10 @@ def carrot_slices(seed):
 
 JAR_POMEGRANATE = ("#3a0709", "#6d1016", "#5a0c12", "#2c0507")
 JAR_CARROT = ("#8a3a06", "#d9661a", "#c4560f", "#6e2d04")
+# دلال: green salt pastes
+JAR_DALAL_MAST = ("#4f6a2c", "#8fae5c", "#7a9a4a", "#3e5822")
+JAR_DALAL_KAHOO = ("#2f6a1a", "#5fa83a", "#4c922c", "#245614")
+JAR_DALAL_NAZKHATOON = ("#3a3d18", "#6b7330", "#5a6226", "#2c2f10")
 
 
 def jar(glass=JAR_POMEGRANATE, decor="pomegranate"):
@@ -189,7 +193,11 @@ def jar(glass=JAR_POMEGRANATE, decor="pomegranate"):
     for _ in range(30):
         x, y = rnd.uniform(585, 700), rnd.uniform(585, 650)
         seeds.append(f'<ellipse cx="{x:.0f}" cy="{y:.0f}" rx="6" ry="8" transform="rotate({rnd.uniform(0,180):.0f} {x:.0f} {y:.0f})" fill="{rnd.choice(["#b3121c","#c8202a","#8f0d15"])}"/>')
-    if decor == "carrot":
+    if decor == "herbs":
+        decor_svg = (sprig(120, 700, -72, 0.85, GREENS_FRESH, 21) + sprig(150, 712, -58, 0.7, GREENS_DARK, 22)
+                     + sprig(690, 712, 68, 0.8, GREENS_FRESH, 23) + sprig(660, 705, 52, 0.65, GREENS_DARK, 24)
+                     + herb_fill(600, 640, 700, 690, GREENS_FRESH, 25, n=18, size=(12, 20)))
+    elif decor == "carrot":
         decor_svg = carrot(140, 655, -14, 125, 4) + carrot(160, 700, -4, 115, 5) + carrot_slices(6)
     else:
         decor_svg = pomegranate(165, 615, 62, 1) + "<g>" + "".join(seeds) + "</g>"
@@ -226,11 +234,12 @@ def jar(glass=JAR_POMEGRANATE, decor="pomegranate"):
 """
 
 
-def jar_labels(name="رب انار شمالی", name_color="#8a1914", weight="۱ کیلوگرم", name_size=30):
+def jar_labels(name="رب انار شمالی", name_color="#8a1914", weight="۱ کیلوگرم", name_size=30, sub=None):
+    sub_html = f'\n  <div class="sub" style="font-size:14px;margin-top:-2px">{sub}</div>' if sub else ""
     return f"""
 <div class="label" style="left:255px;top:356px;width:290px">
   <img src="logo-oval.png" style="width:188px">
-  <div class="name" style="font-size:{name_size}px;margin-top:0;color:{name_color}">{name}</div>
+  <div class="name" style="font-size:{name_size}px;margin-top:0;color:{name_color}">{name}</div>{sub_html}
   <span class="weight" style="font-size:14px;padding:1px 14px;margin-top:2px">{weight}</span>
 </div>"""
 
@@ -258,9 +267,17 @@ files = {
                    pouch_labels("زلنگ", "سبزی خشک خانگی", "۱۰۰ گرم")),
     "sabzi-shami": page(pouch(53, DRY_SHAMI, "#3d5824"),
                         pouch_labels("سبزی شامی", "سبزی خشک خانگی", "۱۰۰ گرم")),
-    "rob-anar": page(jar(), jar_labels()),
+    "rob-anar": page(jar(), jar_labels(weight="۵۰۰ گرم")),
+    "anar-doon": page(pouch(79, ["#8a1914", "#a3221c", "#6d1016", "#b8322a", "#5a0c12", "#c4453a"], "#8a1914"),
+                      pouch_labels("انار دون", "انار دون خشک خانگی", "۵۰۰ گرم")),
     "moraba-havij": page(jar(JAR_CARROT, "carrot"),
                          jar_labels("مربای هویج", "#b34a0a", "نیم کیلو")),
+    "dalal-mast": page(jar(JAR_DALAL_MAST, "herbs"),
+                       jar_labels("دلال ماست", "#1f5714", "۳۵۰ گرم", 26, "دلال خانگی")),
+    "dalal-kahoo": page(jar(JAR_DALAL_KAHOO, "herbs"),
+                        jar_labels("دلال کاهو", "#1f5714", "۳۵۰ گرم", 26, "دلال خانگی")),
+    "dalal-nazkhatoon": page(jar(JAR_DALAL_NAZKHATOON, "herbs"),
+                             jar_labels("دلال نازخاتون", "#4a2c1a", "۳۵۰ گرم", 26, "دلال خانگی")),
 }
 for name, html in files.items():
     with open(f"{OUT}/{name}.html", "w") as f:

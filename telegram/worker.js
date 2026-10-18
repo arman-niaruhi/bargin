@@ -253,7 +253,8 @@ function productScreen(env, data, id, from) {
   if (p.soldOut) parts.push("❌ <b>ناموجود</b>");
   if (p.details) parts.push("", esc(p.details));
   const rows = [[{ text: "🌐 مشاهده در سایت", url: `${env.SITE_URL}product.html?id=${p.id}` }]];
-  if (p.recipe) rows.unshift([{ text: "🍲 دستور پخت", callback_data: `r:${p.id}:${from || ""}` }]);
+  const prepOnly = /^طرز تهیه\s*:/.test(p.recipe);
+  if (p.recipe) rows.unshift([{ text: prepOnly ? "🥗 طرز تهیه" : "🍲 دستور پخت", callback_data: `r:${p.id}:${from || ""}` }]);
   if (!p.soldOut && shop.whatsapp) rows.push([{ text: "💬 سفارش در واتساپ", url: orderUrl(shop, p.name) }]);
   const back = from || String(categories.indexOf(cat));
   rows.push([{ text: "🔙 بازگشت", callback_data: "cat:" + back }, BACK_HOME]);
@@ -271,12 +272,16 @@ function recipeScreen(env, data, id, from) {
   const lines = p.recipe.split("\n").map((l) => l.trim()).filter(Boolean);
   const out = [];
   if (p.serves) out.push(`👥 <b>چقدر برای هر نفر؟</b>`, esc(p.serves), "");
-  out.push(`🍲 <b>دستور پخت: ${esc(lines.shift())}</b>`);
+  // «طرز تهیه: X» (not cooked, e.g. دلال‌ها) → title «طرز تهیه», steps heading «مراحل»
+  let title = lines.shift();
+  const prep = /^طرز تهیه\s*:/.test(title);
+  if (prep) title = title.replace(/^طرز تهیه\s*:\s*/, "");
+  out.push(`${prep ? "🥗" : "🍲"} <b>${prep ? "طرز تهیه" : "دستور پخت"}: ${esc(title)}</b>`);
   const items = lines.filter((l) => /^[-•]/.test(l));
   const steps = lines.filter((l) => /^[0-9۰-۹]+[.)\-]/.test(l));
   const tips = lines.filter((l) => !/^[-•]/.test(l) && !/^[0-9۰-۹]+[.)\-]/.test(l));
   if (items.length) out.push("", "<b>مواد لازم:</b>", ...items.map((l) => "▫️ " + esc(l.replace(/^[-•]\s*/, ""))));
-  if (steps.length) out.push("", "<b>طرز تهیه:</b>", ...steps.map(esc));
+  if (steps.length) out.push("", `<b>${prep ? "مراحل" : "طرز تهیه"}:</b>`, ...steps.map(esc));
   if (tips.length) out.push("", ...tips.map((t) => "💡 " + esc(t)));
   return {
     photo: env.SITE_URL + (p.images && p.images[0] ? p.images[0] : "images/logo.jpg"),

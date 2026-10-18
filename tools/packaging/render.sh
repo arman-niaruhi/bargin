@@ -20,8 +20,8 @@ for f in out/*.html; do
   python3 - "out/$n.png" "../../images/$n.jpg" "$n" <<'PY'
 import sys
 from PIL import Image
-jars = ("rob-anar", "moraba-havij")  # glass jars sit lower, so crop them differently
-box = (85, 145, 715, 775) if sys.argv[3] in jars else (90, 110, 710, 730)
+jars = ("rob-", "moraba-", "dalal-")  # glass jars sit lower, so crop them differently
+box = (85, 145, 715, 775) if sys.argv[3].startswith(jars) else (90, 110, 710, 730)
 Image.open(sys.argv[1]).convert("RGB").crop(box).resize((800, 800), Image.LANCZOS) \
     .save(sys.argv[2], quality=88, optimize=True)
 PY
