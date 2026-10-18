@@ -5,8 +5,8 @@ A simple personal shop website hosted on GitHub Pages.
 ## Add or change products
 
 1. Put your product photos in the `images/` folder (e.g. `images/shoes-1.jpg`).
-2. Open `products.js` and edit the `PRODUCTS` list: name, price, description, details, and image paths.
-3. Change your shop name and contact info in `SHOP` at the top of `products.js`.
+2. Open `data/products.csv` in Excel or LibreOffice and add, change or delete rows (name, category, price, description, details, image paths, sold out). Save as **CSV UTF-8**.
+3. Change your shop name and contact info in `SHOP` in `products.js`.
 4. Commit and push. The site updates in about a minute.
 
 ## Turn on GitHub Pages (one time)
