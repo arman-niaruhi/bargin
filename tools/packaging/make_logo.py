@@ -1,4 +1,4 @@
-"""Cut the full Bargin logo (images/logo.jpg) out along its oval frame -> logo-oval.png.
+"""Cut the full Bargin logo (logo-original.jpg, the full-size copy of images/logo.jpg) out along its oval frame -> logo-oval.png.
 
 The logo's frame is an oval on top with the slogan scrolls below it, so the mask is the
 union of two ellipses (top + bottom), with a soft edge so it blends into the label.
@@ -8,7 +8,8 @@ import os
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-src = Image.open(os.path.join(HERE, "..", "..", "images", "logo.jpg")).convert("RGB")
+# full-resolution original (the site's images/logo.jpg is a smaller web copy)
+src = Image.open(os.path.join(HERE, "logo-original.jpg")).convert("RGB")
 W, H = src.size  # 767 x 1280
 
 S = 4  # draw the mask big, then shrink, for a smooth edge

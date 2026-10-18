@@ -81,6 +81,7 @@ img { display: block; max-width: 100%; }
 .chip {
   font: inherit; font-weight: 800; font-size: 1.05rem; cursor: pointer;
   display: inline-flex; align-items: center; gap: 7px;
+  min-height: 44px; /* comfortable tap target on phones */
   padding: 8px 22px; border-radius: 999px;
   color: var(--brown); background: linear-gradient(to bottom, #fdf7ea, var(--surface));
   border: 1.5px solid var(--line);
@@ -155,6 +156,11 @@ img { display: block; max-width: 100%; }
   background: var(--green); border-color: var(--green); color: #fff; outline: none;
 }
 .search-clear[hidden] { display: none; }
+/* invisible 44px tap area around the small × circle */
+.search-clear::before {
+  content: ""; position: absolute; top: -8px; right: -8px; bottom: -8px; left: -8px;
+  border-radius: 50%;
+}
 .search + .filters { margin-top: 0; padding-top: 14px; }
 
 /* "nothing found" card inside the product grid */
@@ -207,6 +213,8 @@ img { display: block; max-width: 100%; }
   padding-top: 12px; border-top: 1px dashed var(--line);
 }
 .price { font-weight: 800; color: var(--brown); white-space: nowrap; }
+/* « / ۴۰۰ گرم» never splits; if the price must wrap, the whole unit goes to the next line */
+.unit { white-space: nowrap; }
 .card .price {
   padding: 2px 14px; border-radius: 999px;
   background: var(--bg); border: 1px solid var(--line);
@@ -272,8 +280,16 @@ img { display: block; max-width: 100%; }
 .badge.inline { position: static; vertical-align: middle; margin-right: 8px; }
 
 /* Detail page */
-.back { display: table; margin: 24px auto; color: var(--green); font-weight: 600; text-decoration: none; }
-.back:hover { color: var(--green-dark); }
+/* back link: cream pill like the category buttons, 44px+ tall */
+.back {
+  display: table; margin: 24px auto; padding: 8px 24px;
+  color: var(--green-dark); font-weight: 800; text-decoration: none; line-height: 1.6;
+  background: linear-gradient(to bottom, #fdf7ea, var(--surface));
+  border: 1.5px solid var(--line); border-radius: 999px;
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(74, 44, 26, .1), 0 5px 12px rgba(74, 44, 26, .09);
+  transition: border-color .2s ease, transform .2s ease;
+}
+.back:hover { border-color: var(--green); transform: translateY(-2px); }
 .detail { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
 .main-img {
   position: relative; aspect-ratio: 1; background: var(--bg-deep);
@@ -331,6 +347,10 @@ img { display: block; max-width: 100%; }
 .btn-ghost { background: transparent; color: var(--green); }
 .btn-ghost:hover { background: var(--green); color: #fff; }
 .ico { width: 1.15em; height: 1.15em; flex: none; }
+.contact .btn { min-height: 44px; }
+
+/* Sticky order bar: product pages, phones only (see the 720px block) */
+.order-bar { display: none; }
 
 /* Footer */
 .site-footer {
@@ -384,7 +404,9 @@ img { display: block; max-width: 100%; }
   .grid > .card { width: calc(50% - 7px); }
   .card-body { padding: 12px; }
   .more { display: none; }
-  .card .price { font-size: .82rem; padding: 2px 8px; white-space: normal; }
+  .card .price { font-size: .82rem; padding: 3px 10px; white-space: normal; line-height: 1.6; border-radius: 16px; }
+  /* phones: price on the first line, unit always on its own second line (same on every card) */
+  .card .price .unit { display: block; font-size: .92em; font-weight: 700; }
   .filters { gap: 6px; }
   .chip { padding: 6px 12px; font-size: .92rem; gap: 5px; }
   .chip::before { width: 7px; height: 7px; }
@@ -393,6 +415,29 @@ img { display: block; max-width: 100%; }
   .search input { height: 44px; }
   .info { padding: 22px 16px; }
   .steps li { width: 100%; max-width: 340px; flex-direction: row; justify-content: center; padding: 14px 16px; }
+
+  .order-bar {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    padding: 10px 16px;
+    /* iPhone home bar: plain value first, then old (iOS 11.0) and current syntax */
+    padding-bottom: 10px;
+    padding-bottom: calc(10px + constant(safe-area-inset-bottom));
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    background: #f8ecd5; background: rgba(248, 236, 213, .97);
+    border-top: 1.5px solid var(--line);
+    box-shadow: 0 -6px 18px rgba(74, 44, 26, .14);
+  }
+  .order-bar .btn {
+    display: flex; justify-content: center;
+    width: 100%; max-width: 480px; min-height: 50px; margin: 0 auto; padding: 10px 20px;
+    font-size: 1.05rem;
+  }
+  /* keep the footer clear of the fixed bar (bar is about 72px tall) */
+  body.has-order-bar .site-footer {
+    padding-bottom: 108px;
+    padding-bottom: calc(108px + constant(safe-area-inset-bottom));
+    padding-bottom: calc(108px + env(safe-area-inset-bottom));
+  }
 }
 
 /* ---------- Old Safari fallbacks (modern browsers skip these blocks) ---------- */

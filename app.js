@@ -92,8 +92,9 @@ function esc(s) {
 }
 
 function price(p) {
-  const unit = p.unit ? ` / ${esc(p.unit)}` : "";
-  return `${Number(p.price).toLocaleString("fa-IR")} ${esc(SHOP.currency)}${unit}`;
+  // non-breaking spaces (\u00a0) + span.unit keep «۴۰۰ گرم» and «… تومان» from wrapping apart
+  const unit = p.unit ? ` <span class="unit">/\u00a0${esc(String(p.unit).replace(/ /g, "\u00a0"))}</span>` : "";
+  return `${Number(p.price).toLocaleString("fa-IR")}\u00a0${esc(SHOP.currency)}${unit}`;
 }
 
 // small inline icons for the contact buttons (currentColor, so they follow the button)
@@ -104,8 +105,13 @@ const ICONS = {
   telegram: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.9 4.6 18.7 19.4c-.2 1-.9 1.3-1.7.8l-4.8-3.5-2.3 2.2c-.3.3-.5.5-1 .5l.3-4.9 8.9-8c.4-.3-.1-.5-.6-.2l-11 6.9-4.7-1.5c-1-.3-1-1 .2-1.5L20.6 3.4c.8-.3 1.6.2 1.3 1.2Z"/></svg>',
 };
 
+// WhatsApp order message (order box, footer and the sticky order bar)
+function orderMsg(subject) {
+  return encodeURIComponent(`سلام، می‌خوام «${subject}» رو سفارش بدم.`);
+}
+
 function contactLinks(subject) {
-  const msg = encodeURIComponent(`سلام، می‌خوام «${subject}» رو سفارش بدم.`);
+  const msg = orderMsg(subject);
   const links = [];
   if (SHOP.whatsapp) {
     links.push(`<a class="btn" href="https://wa.me/${esc(SHOP.whatsapp)}?text=${msg}" target="_blank" rel="noopener">${ICONS.whatsapp}سفارش در واتساپ</a>`);
@@ -369,6 +375,32 @@ function renderProduct() {
         ${p.soldOut || !contactLinks(p.name) ? "" : `<div class="buy"><p>برای سفارش بهمون پیام بده:</p><div class="contact">${contactLinks(p.name)}</div></div>`}
       </div>
     </div>`;
+
+  // back link: open the home page on this product's category; if the customer came from the
+  // home page, go back in history instead (restores scroll, category and search)
+  const back = document.getElementById("back");
+  if (back) {
+    if (cat) back.href = `index.html?cat=${encodeURIComponent(cat.id)}`;
+    back.addEventListener("click", (e) => {
+      try {
+        const ref = document.referrer ? new URL(document.referrer) : null;
+        if (ref && ref.origin === location.origin && /(\/|index\.html)$/.test(ref.pathname) && history.length > 1) {
+          e.preventDefault();
+          history.back();
+        }
+      } catch (err) { /* keep the normal link */ }
+    });
+  }
+
+  // sticky order bar (shown only on phones by style.css)
+  if (!p.soldOut && SHOP.whatsapp) {
+    const msg = orderMsg(p.name);
+    const bar = document.createElement("div");
+    bar.className = "order-bar";
+    bar.innerHTML = `<a class="btn" href="https://wa.me/${esc(SHOP.whatsapp)}?text=${msg}" target="_blank" rel="noopener">${ICONS.whatsapp}سفارش در واتساپ</a>`;
+    document.body.appendChild(bar);
+    document.body.classList.add("has-order-bar");
+  }
 
   box.querySelectorAll(".thumb").forEach((t) => t.addEventListener("click", () => {
     document.getElementById("main-img").src = t.dataset.src;
