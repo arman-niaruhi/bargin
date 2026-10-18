@@ -45,6 +45,10 @@ def sprig(x, y, angle, scale, palette, seed):
 
 GREENS_DARK = ["#1f4d14", "#2a5e1a", "#2f6b1d", "#376f22", "#1b4310", "#41782a"]
 GREENS_FRESH = ["#3f8a2a", "#4f9a33", "#5ea83b", "#2f7a1f", "#6db048", "#47862c", "#7cb956"]
+# dried herbs: duller, grey/olive greens
+DRY_MINT = ["#5f7a45", "#6e8a52", "#7d9660", "#556e3c", "#8aa16b", "#4c6535"]
+DRY_DILL = ["#6b7f35", "#7a8d3f", "#88994b", "#5e7230", "#95a457", "#71853a"]
+DRY_PARSLEY = ["#3e5f24", "#4a6d2c", "#567934", "#36541f", "#62843d", "#43662a"]
 
 
 def page(svg_body, labels_html):
@@ -234,6 +238,12 @@ files = {
                           pouch_labels("سبزی قورمه", "سبزی شمالی", "۱ کیلوگرم")),
     "sabzi-morgh-torsh": page(pouch(23, GREENS_FRESH, "#4f7d1f"),
                               pouch_labels("سبزی مرغ ترش", "سبزی معطر شمالی", "۱ کیلوگرم")),
+    "nana": page(pouch(31, DRY_MINT, "#4c6535"),
+                 pouch_labels("نعنا", "سبزی خشک خانگی", "۱۰۰ گرم")),
+    "shevid": page(pouch(37, DRY_DILL, "#5e7230"),
+                   pouch_labels("شوید", "سبزی خشک خانگی", "۱۰۰ گرم")),
+    "jafari": page(pouch(43, DRY_PARSLEY, "#36541f"),
+                   pouch_labels("جعفری", "سبزی خشک خانگی", "۱۰۰ گرم")),
     "rob-anar": page(jar(), jar_labels()),
     "moraba-havij": page(jar(JAR_CARROT, "carrot"),
                          jar_labels("مربای هویج", "#b34a0a", "نیم کیلو")),
