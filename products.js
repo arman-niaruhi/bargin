@@ -10,7 +10,7 @@ const SHOP = {
   phone: "09117139108",  // شماره تماس
   whatsapp: "989117139108", // شماره واتساپ با کد کشور، فقط عدد
   telegram: "",         // username without @
-  instagram: "bargin.shop", // TEST — replace before going live (آیدی اینستاگرام بدون @)
+  instagram: "Bargiiin", // آیدی اینستاگرام بدون @
 };
 
 // ============================================================
