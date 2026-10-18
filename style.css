@@ -75,19 +75,36 @@ img { display: block; max-width: 100%; }
 
 /* Category filter buttons, centered under the title */
 .filters {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
-  margin: -8px 0 26px;
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px;
+  margin: -8px 0 26px; padding: 10px 0;
 }
 .chip {
-  font: inherit; font-weight: 700; font-size: .95rem; cursor: pointer;
-  padding: 6px 20px; border-radius: 999px;
-  color: var(--brown); background: var(--surface);
-  border: 2px solid var(--brown);
-  box-shadow: 0 2px 0 rgba(74, 44, 26, .12);
-  transition: background .15s ease, color .15s ease, border-color .15s ease;
+  font: inherit; font-weight: 800; font-size: 1.05rem; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 22px; border-radius: 999px;
+  color: var(--brown); background: linear-gradient(to bottom, #fdf7ea, var(--surface));
+  border: 1.5px solid var(--line);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(74, 44, 26, .1), 0 5px 12px rgba(74, 44, 26, .09);
+  transition: transform .3s cubic-bezier(.34, 1.56, .64, 1), background .2s ease,
+    color .2s ease, border-color .2s ease, box-shadow .2s ease;
 }
-.chip:hover { border-color: var(--green); color: var(--green); }
-.chip.active, .chip.active:hover { background: var(--green); border-color: var(--green); color: #fff; }
+/* small leaf before every name */
+.chip::before {
+  content: ""; width: 9px; height: 9px; flex: none; background: var(--green);
+  border-radius: 0 70% 0 70%; transform: rotate(-45deg);
+  transition: background .2s ease;
+}
+.chip:hover { border-color: var(--green); color: var(--green-dark); transform: translateY(-2px); }
+/* selected: deep green, white inner ring, walnut outer ring, 20% bigger */
+.chip.active, .chip.active:hover {
+  color: #fff; border-color: var(--green-dark);
+  background: linear-gradient(to bottom, #3b9128, var(--green-dark));
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .85), 0 0 0 3px var(--brown),
+    0 6px 18px rgba(31, 87, 20, .4);
+  transform: scale(1.2);
+  margin-inline: 10px;
+}
+.chip.active::before { background: #fff; }
 
 /* Grid: cards always centered, whatever the number of products */
 .grid {
@@ -268,8 +285,10 @@ img { display: block; max-width: 100%; }
   .grid > .card { width: calc(50% - 7px); }
   .card-body { padding: 12px; }
   .more { display: none; }
-  .filters { gap: 8px; }
-  .chip { padding: 5px 16px; font-size: .9rem; }
+  .filters { gap: 6px; }
+  .chip { padding: 6px 12px; font-size: .92rem; gap: 5px; }
+  .chip::before { width: 7px; height: 7px; }
+  .chip.active { margin-inline: 7px; transform: scale(1.15); }
   .info { padding: 22px 16px; }
   .steps li { width: 100%; max-width: 340px; flex-direction: row; justify-content: center; padding: 14px 16px; }
 }
