@@ -195,8 +195,11 @@ function price(p, shop) {
   return `${Number(p.price).toLocaleString("fa-IR")} ${shop.currency}${unit}`;
 }
 
-function orderUrl(shop, subject) {
-  const msg = encodeURIComponent(`سلام، می‌خوام «${subject}» رو سفارش بدم.`);
+// With a product name: names the product; without: the general shop message (same as the site)
+function orderUrl(shop, product) {
+  const msg = encodeURIComponent(product
+    ? `سلام، می‌خوام «${product}» رو سفارش بدم.`
+    : `سلام! می‌خواستم از محصولات ${shop.name} سفارش بدم 🌿`);
   return `https://wa.me/${shop.whatsapp}?text=${msg}`;
 }
 
@@ -293,7 +296,7 @@ function recipeScreen(env, data, id, from) {
 function contactScreen(env, data) {
   const { shop } = data;
   const rows = [];
-  if (shop.whatsapp) rows.push([{ text: "💬 سفارش در واتساپ", url: orderUrl(shop, shop.name) }]);
+  if (shop.whatsapp) rows.push([{ text: "💬 سفارش در واتساپ", url: orderUrl(shop) }]);
   if (shop.telegram) rows.push([{ text: "تلگرام", url: "https://t.me/" + shop.telegram }]);
   if (shop.instagram) rows.push([{ text: "📷 اینستاگرام", url: "https://instagram.com/" + shop.instagram }]);
   rows.push([BACK_HOME]);

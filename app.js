@@ -105,13 +105,16 @@ const ICONS = {
   telegram: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.9 4.6 18.7 19.4c-.2 1-.9 1.3-1.7.8l-4.8-3.5-2.3 2.2c-.3.3-.5.5-1 .5l.3-4.9 8.9-8c.4-.3-.1-.5-.6-.2l-11 6.9-4.7-1.5c-1-.3-1-1 .2-1.5L20.6 3.4c.8-.3 1.6.2 1.3 1.2Z"/></svg>',
 };
 
-// WhatsApp order message (order box, footer and the sticky order bar)
-function orderMsg(subject) {
-  return encodeURIComponent(`سلام، می‌خوام «${subject}» رو سفارش بدم.`);
+// WhatsApp order message. With a product name (order box, sticky order bar) it names
+// the product; without one (footer) it is the general shop message.
+function orderMsg(product) {
+  return encodeURIComponent(product
+    ? `سلام، می‌خوام «${product}» رو سفارش بدم.`
+    : `سلام! می‌خواستم از محصولات ${SHOP.name} سفارش بدم 🌿`);
 }
 
-function contactLinks(subject) {
-  const msg = orderMsg(subject);
+function contactLinks(product) {
+  const msg = orderMsg(product);
   const links = [];
   if (SHOP.whatsapp) {
     links.push(`<a class="btn" href="https://wa.me/${esc(SHOP.whatsapp)}?text=${msg}" target="_blank" rel="noopener">${ICONS.whatsapp}سفارش در واتساپ</a>`);
@@ -126,7 +129,7 @@ function contactLinks(subject) {
     links.push(`<a class="btn" href="https://instagram.com/${esc(SHOP.instagram)}" target="_blank" rel="noopener">${ICONS.instagram}اینستاگرام</a>`);
   }
   if (SHOP.email) {
-    links.push(`<a class="btn" href="mailto:${esc(SHOP.email)}?subject=${encodeURIComponent(subject)}">ایمیل</a>`);
+    links.push(`<a class="btn" href="mailto:${esc(SHOP.email)}?subject=${encodeURIComponent(product || SHOP.name)}">ایمیل</a>`);
   }
   // first button is filled, the rest are outlined
   return links.map((l, i) => i ? l.replace('class="btn"', 'class="btn btn-ghost"') : l).join("");
@@ -135,7 +138,7 @@ function contactLinks(subject) {
 // showContact: false on product pages that already have the order box
 function renderShell(showContact = true) {
   const year = new Date().getFullYear().toLocaleString("fa-IR", { useGrouping: false });
-  const links = showContact ? contactLinks(SHOP.name) : "";
+  const links = showContact ? contactLinks() : "";
   document.getElementById("footer").innerHTML =
     `<div class="ornament"></div>` +
     `<p class="footer-tagline">${esc(SHOP.tagline)}</p>` +
