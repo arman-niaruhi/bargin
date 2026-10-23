@@ -8,7 +8,7 @@ const csvFile = read("data/products.csv");
 
 // Code.gs: pure functions only (no Apps Script calls at load time)
 const gs = {};
-vm.runInNewContext(read("tools/admin/Code.gs") + ";this.buildCsv=buildCsv;this.validateRows=validateRows;this.planSave=planSave;this.HEADER=HEADER;this.EOL=EOL;", gs);
+vm.runInNewContext(read("tools/admin/Code.gs") + ";this.buildCsv=buildCsv;this.validateRows=validateRows;this.planSave=planSave;this.HEADER=HEADER;this.EOL=EOL;this.checkClaims_=checkClaims_;this.handleRequest_=handleRequest_;this.tokenShapeOk_=tokenShapeOk_;this.ACTION_NAMES=ACTION_NAMES;this.ADMIN_CLIENT_ID=ADMIN_CLIENT_ID;this.OWNER_EMAIL=OWNER_EMAIL;", gs);
 
 // app.js: the same parser the website and the bot use
 const site = {};
@@ -214,6 +214,106 @@ check("(c) clean file has no issues", issuesOf(base()).length === 0, JSON.string
 
   const soldBad = gs.planSave(rows, form({ soldOut: "maybe" }), rows[0].id);
   check("(d) edit: a bad soldOut is refused", soldBad.issues.length === 1 && /soldOut/.test(soldBad.issues[0].message));
+}
+
+// (e) token claims (checkClaims_ is pure)
+const OWNER = gs.OWNER_EMAIL, CID = "123-abc.apps.googleusercontent.com", NOW = 1800000000;
+const good = () => ({ iss: "https://accounts.google.com", aud: CID, exp: String(NOW + 600), email: OWNER, email_verified: "true" });
+const cc = (over, cid = CID) => gs.checkClaims_({ ...good(), ...over }, NOW, cid, OWNER);
+check("(e) good claims are accepted", cc({}).ok === true && cc({}).email === OWNER);
+check("(e) iss accounts.google.com is accepted too", cc({ iss: "accounts.google.com" }).ok === true);
+check("(e) email_verified true (boolean) is accepted", cc({ email_verified: true }).ok === true);
+check("(e) owner email in other case is accepted", cc({ email: OWNER.toUpperCase() }).ok === true);
+check("(e) wrong audience refused", cc({ aud: "other" }).reason === "audience");
+check("(e) wrong issuer refused", cc({ iss: "https://evil.example" }).reason === "issuer");
+check("(e) expired refused", cc({ exp: String(NOW - 1) }).reason === "expired");
+check("(e) exp missing or not a number refused", cc({ exp: undefined }).ok === false && cc({ exp: "abc" }).ok === false);
+check("(e) email not verified refused", cc({ email_verified: "false" }).reason === "unverified" && cc({ email_verified: undefined }).ok === false);
+check("(e) other account refused (forbidden)", cc({ email: "someone@gmail.com" }).reason === "forbidden");
+check("(e) missing email refused", cc({ email: undefined }).ok === false);
+check("(e) empty client ID in settings refuses everything", cc({ aud: "" }, "").reason === "config");
+check("(e) null / non-object claims refused", gs.checkClaims_(null, NOW, CID, OWNER).ok === false && gs.checkClaims_("x", NOW, CID, OWNER).ok === false);
+check("(e) ADMIN_CLIENT_ID placeholder in Code.gs is empty (owner fills it in)", gs.ADMIN_CLIENT_ID === "");
+
+// (f) token shape
+const TOK = "aaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc";
+check("(f) a JWT-shaped token passes", gs.tokenShapeOk_(TOK));
+check("(f) empty, non-string, no dots, bad characters, oversized tokens fail",
+  ["", null, 5, "abc", "a.b", "aaaaaaaaaaaa.bbbbbbbbbbbb.cccc cccccccc", "aaaaaaaaaaaa.bbbbbbbbbbbb.cccccc!ccccc", "a".repeat(5000) + ".b.c"].every((t) => !gs.tokenShapeOk_(t)));
+
+// (g) dispatcher: no action runs unless the token is verified and is the owner's
+function harness(verifyResult) {
+  const calls = { verify: 0, ran: [] };
+  const actions = {};
+  for (const name of ["getProducts", "saveProduct", "deleteProduct", "publishCsv", "evil"]) {
+    actions[name] = (d) => { calls.ran.push(name); return { name, d }; };
+  }
+  const deps = { owner: OWNER, actions, verify: (t) => { calls.verify++; return typeof verifyResult === "function" ? verifyResult(t) : verifyResult; } };
+  return { calls, run: (body) => gs.handleRequest_(typeof body === "string" ? body : JSON.stringify(body), deps) };
+}
+const okWho = { ok: true, email: OWNER };
+const req = (action, data) => ({ token: TOK, action, ...(data === undefined ? {} : { data }) });
+{
+  const h = harness(okWho);
+  const r = h.run(req("saveProduct", { item: { id: "x" }, originalId: "" }));
+  check("(g) verified owner: the action runs once with its data", r.ok === true && h.calls.ran.join() === "saveProduct" && r.data.d.item.id === "x", JSON.stringify(r));
+  for (const a of ["getProducts", "deleteProduct", "publishCsv"]) {
+    check(`(g) allow-list action ${a} runs`, harness(okWho).run(req(a, {})).ok === true);
+  }
+}
+{
+  const failures = [
+    ["token rejected by Google", { ok: false, reason: "rejected" }, "auth"],
+    ["token expired", { ok: false, reason: "expired" }, "auth"],
+    ["wrong audience", { ok: false, reason: "audience" }, "auth"],
+    ["other Google account", { ok: false, reason: "forbidden" }, "forbidden"],
+    ["verify returns nothing", undefined, "auth"],
+    ["verify says ok for another email (second guard)", { ok: true, email: "x@gmail.com" }, "forbidden"],
+    ["verify throws", () => { throw new Error("boom"); }, "server"]
+  ];
+  for (const [name, result, want] of failures) {
+    const h = harness(result);
+    const r = h.run(req("deleteProduct", { id: "a" }));
+    check(`(g) failed verify (${name}): refused as ${want}, no write function ran`,
+      r.ok === false && r.error === want && h.calls.ran.length === 0, JSON.stringify(r));
+  }
+}
+{
+  const bad = [
+    ["not JSON", "{oops"], ["empty body", ""], ["JSON array", "[]"], ["JSON null", "null"], ["number", "5"],
+    ["no token", { action: "getProducts" }], ["token not JWT-shaped", { token: "abc", action: "getProducts" }],
+    ["token not a string", { token: 5, action: "getProducts" }], ["oversized token", { token: "a".repeat(5000) + ".b.c", action: "getProducts" }],
+    ["data is an array", { token: TOK, action: "getProducts", data: [] }], ["data is a string", { token: TOK, action: "getProducts", data: "x" }],
+    ["body over the size limit", JSON.stringify({ token: TOK, action: "getProducts", data: { big: "x".repeat(250000) } })]
+  ];
+  for (const [name, body] of bad) {
+    const h = harness(okWho);
+    const r = h.run(body);
+    check(`(g) malformed request (${name}) refused before any fetch or action`,
+      r.ok === false && r.error === "bad_request" && h.calls.verify === 0 && h.calls.ran.length === 0, JSON.stringify(r));
+  }
+  for (const a of ["evil", "constructor", "__proto__", "toString", "", 5, null]) {
+    const h = harness(okWho);
+    const r = h.run({ token: TOK, action: a });
+    check(`(g) unknown action ${JSON.stringify(a)} refused before verify`,
+      r.ok === false && r.error === "unknown_action" && h.calls.verify === 0 && h.calls.ran.length === 0, JSON.stringify(r));
+  }
+  const h = harness(okWho);
+  h.run("{oops");
+  check("(g) only the 4 allowed actions exist", gs.ACTION_NAMES.join() === "getProducts,saveProduct,deleteProduct,publishCsv");
+}
+{
+  const throwing = { owner: OWNER, verify: () => okWho, actions: { getProducts: () => { throw new Error("sheet down"); } } };
+  const r = gs.handleRequest_(JSON.stringify(req("getProducts")), throwing);
+  check("(g) an action that throws gives a plain server error (no details leak)", r.ok === false && r.error === "server" && !JSON.stringify(r).includes("sheet"), JSON.stringify(r));
+}
+
+// (h) no old HtmlService page; doGet is plain text
+{
+  const src = read("tools/admin/Code.gs");
+  check("(h) Code.gs no longer uses HtmlService", !/HtmlService/.test(src));
+  check("(h) every sheet function still calls assertOwner (second guard)",
+    ["getProducts", "saveProduct", "deleteProduct", "publishCsv"].every((f) => new RegExp("function " + f + "\\([^)]*\\) \\{\\s*assertOwner\\(\\)").test(src)));
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");

@@ -1,12 +1,26 @@
-// Bargin product admin (Google Apps Script). Bind this project to the products Google Sheet.
-// Only the owner can open the page or call these functions. The Sheet is the editor;
-// publishCsv() checks the rows and builds data/products.csv for download.
-// The pure functions (validateRows, buildCsv and the cell helpers) make no Apps Script
-// calls, so tools/admin/test.mjs can run them in Node.
+// Bargin product admin API (Google Apps Script). Bind this project to the products Google Sheet.
+// The admin page lives on the site (admin/index.html). It signs the owner in with Google
+// (Google Identity Services) and sends the ID token with every request to doPost().
+// doPost() checks the token with Google, checks that it belongs to OWNER_EMAIL, and only
+// then runs one of the allowed actions. Anything else is refused (fail closed).
+// The pure functions (validateRows, buildCsv, checkClaims_, handleRequest_ and the cell
+// helpers) make no Apps Script calls, so tools/admin/test.mjs can run them in Node.
 // Style: ES2017 only, like the site (no newer syntax or methods).
 
 // The owner's Google account. Nobody else can open the page or call the functions.
 var OWNER_EMAIL = 'arman.niaruhi@gmail.com';
+
+// The OAuth client ID from Google Cloud (ends with .apps.googleusercontent.com). Must be the
+// same as SHOP.adminClientId in products.js. Empty = everything is refused.
+var ADMIN_CLIENT_ID = '';
+
+// The only actions doPost() will run.
+var ACTION_NAMES = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv'];
+
+// Limits checked before anything else happens.
+var MAX_BODY = 200000;   // characters in the request body
+var MAX_TOKEN = 4096;    // characters in an ID token
+var CACHE_SECONDS = 300; // a checked token is remembered at most this long
 
 // The CSV columns, in this order (same as data/products.csv).
 var HEADER = ['id', 'name', 'category', 'price', 'unit', 'serves', 'short', 'details', 'recipe', 'images', 'soldOut'];
@@ -18,7 +32,8 @@ var EOL = '\r\n';
 // TODO: bargin-content to review the wording.
 var MSG = {
   pageTitle: 'مدیریت محصولات برگین',
-  notOwner: 'این صفحه فقط برای مالک برگین است.',
+  notOwner: 'این حساب اجازه نداره.',
+  useSite: 'صفحه‌ی مدیریت برگین روی خود سایت است: /admin',
   missingColumn: 'ستون «{name}» توی شیت پیدا نشد.',
   missingId: 'شناسه (id) خالیه.',
   missingName: 'اسم (name) خالیه.',
@@ -164,25 +179,120 @@ function buildCsv(rows, eol) {
   return '﻿' + lines.join(eol) + eol;
 }
 
+// ---- Token check and request handling (pure) ----
+
+// A Google ID token is three base64url parts joined by dots.
+function tokenShapeOk_(token) {
+  return typeof token === 'string' && token.length > 20 && token.length <= MAX_TOKEN &&
+    /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
+}
+
+// Checks the claims Google returned for a token (pure). `nowSec` is the time in seconds.
+// Returns {ok:true, email, exp} or {ok:false, reason}. Reasons: config, claims, issuer,
+// audience, expired, unverified, email, forbidden.
+function checkClaims_(claims, nowSec, clientId, ownerEmail) {
+  if (!clientId) return { ok: false, reason: 'config' };
+  if (!claims || typeof claims !== 'object') return { ok: false, reason: 'claims' };
+  if (claims.iss !== 'accounts.google.com' && claims.iss !== 'https://accounts.google.com') return { ok: false, reason: 'issuer' };
+  if (claims.aud !== clientId) return { ok: false, reason: 'audience' };
+  var exp = Number(claims.exp);
+  if (!isFinite(exp) || exp <= nowSec) return { ok: false, reason: 'expired' };
+  if (claims.email_verified !== true && claims.email_verified !== 'true') return { ok: false, reason: 'unverified' };
+  if (typeof claims.email !== 'string' || !claims.email) return { ok: false, reason: 'email' };
+  var email = claims.email.trim().toLowerCase();
+  if (email !== String(ownerEmail || '').trim().toLowerCase()) return { ok: false, reason: 'forbidden' };
+  return { ok: true, email: email, exp: exp };
+}
+
+// Reads the request body, checks the token (deps.verify), then runs one allowed action
+// (deps.actions). Returns a plain object: {ok:true, data} or {ok:false, error} where error is
+// bad_request, unknown_action, auth, forbidden or server. No action runs unless the token
+// was verified and belongs to the owner.
+function handleRequest_(body, deps) {
+  try {
+    if (typeof body !== 'string' || !body || body.length > MAX_BODY) return { ok: false, error: 'bad_request' };
+    var req;
+    try { req = JSON.parse(body); } catch (err) { return { ok: false, error: 'bad_request' }; }
+    if (!req || typeof req !== 'object' || Array.isArray(req)) return { ok: false, error: 'bad_request' };
+    if (!tokenShapeOk_(req.token)) return { ok: false, error: 'bad_request' };
+    if (typeof req.action !== 'string' || ACTION_NAMES.indexOf(req.action) < 0) return { ok: false, error: 'unknown_action' };
+    if (req.data !== undefined && (req.data === null || typeof req.data !== 'object' || Array.isArray(req.data))) return { ok: false, error: 'bad_request' };
+
+    var who = deps.verify(req.token);
+    if (!who || who.ok !== true) return { ok: false, error: who && who.reason === 'forbidden' ? 'forbidden' : 'auth' };
+    // Second guard: the verified email must be the owner's.
+    if (String(who.email || '').trim().toLowerCase() !== String(deps.owner || '').trim().toLowerCase()) return { ok: false, error: 'forbidden' };
+
+    var fn = deps.actions[req.action];
+    if (typeof fn !== 'function') return { ok: false, error: 'unknown_action' };
+    return { ok: true, data: fn(req.data || {}) };
+  } catch (e) {
+    return { ok: false, error: 'server' };
+  }
+}
+
 // ---- Apps Script only below this line ----
 
-function isOwner() {
-  var email = Session.getActiveUser().getEmail();
-  return String(email || '').trim().toLowerCase() === OWNER_EMAIL;
-}
+// The email of the token that doPost() verified for the current request.
+var verifiedEmail_ = '';
 
+// Second guard inside every action: only the verified owner passes.
 function assertOwner() {
-  if (!isOwner()) throw new Error(MSG.notOwner);
+  if (String(verifiedEmail_ || '').trim().toLowerCase() !== OWNER_EMAIL) throw new Error(MSG.notOwner);
 }
 
-// Serves the admin page to the owner only.
-function doGet() {
-  if (!isOwner()) {
-    return HtmlService.createHtmlOutput(
-      '<!doctype html><meta charset="utf-8"><p dir="rtl" style="font-family:sans-serif">' + MSG.notOwner + '</p>'
-    );
+// Checks an ID token with Google (tokeninfo) and the claims with checkClaims_.
+// Good answers are cached (hash of the token as key) for at most CACHE_SECONDS.
+// Returns {ok:true, email} or {ok:false, reason}. Any error = not ok.
+function verifyIdToken_(token) {
+  try {
+    if (!ADMIN_CLIENT_ID) return { ok: false, reason: 'config' };
+    if (!tokenShapeOk_(token)) return { ok: false, reason: 'shape' };
+    var now = Math.floor(Date.now() / 1000);
+    var cache = CacheService.getScriptCache();
+    var key = 'tok_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token));
+    var hit = cache.get(key);
+    if (hit) {
+      var c = JSON.parse(hit);
+      if (c && c.exp > now && String(c.email).toLowerCase() === OWNER_EMAIL) return { ok: true, email: c.email };
+    }
+    var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token), { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return { ok: false, reason: 'rejected' };
+    var verdict = checkClaims_(JSON.parse(res.getContentText()), now, ADMIN_CLIENT_ID, OWNER_EMAIL);
+    if (!verdict.ok) return verdict;
+    var ttl = Math.min(CACHE_SECONDS, verdict.exp - now);
+    if (ttl > 0) cache.put(key, JSON.stringify({ email: verdict.email, exp: verdict.exp }), ttl);
+    return { ok: true, email: verdict.email };
+  } catch (e) {
+    return { ok: false, reason: 'error' };
   }
-  return HtmlService.createHtmlOutputFromFile('admin').setTitle(MSG.pageTitle);
+}
+
+// The API: the site's admin page sends POST {token, action, data} as text/plain JSON.
+function doPost(e) {
+  var body = e && e.postData && typeof e.postData.contents === 'string' ? e.postData.contents : '';
+  verifiedEmail_ = '';
+  var out = handleRequest_(body, {
+    owner: OWNER_EMAIL,
+    verify: function (token) {
+      var who = verifyIdToken_(token);
+      if (who.ok) verifiedEmail_ = who.email;
+      return who;
+    },
+    actions: {
+      getProducts: function () { return getProducts(); },
+      saveProduct: function (d) { return saveProduct(d.item, d.originalId); },
+      deleteProduct: function (d) { return deleteProduct(d.id); },
+      publishCsv: function () { return publishCsv(); }
+    }
+  });
+  verifiedEmail_ = '';
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Opening the link in a browser: no admin page here any more.
+function doGet() {
+  return ContentService.createTextOutput(MSG.useSite).setMimeType(ContentService.MimeType.TEXT);
 }
 
 // Reads the first sheet. Returns {rows, issues}. Row 1 is the header; the
@@ -211,7 +321,7 @@ function readSheetRows() {
   return { rows: rows, issues: issues };
 }
 
-// Called by the page: the sheet rows and every issue found.
+// Action getProducts: the sheet rows and every issue found.
 function getProducts() {
   assertOwner();
   var data = readSheetRows();

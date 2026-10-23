@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/; connect-src 'self' https://script.google.com https://*.googleusercontent.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; base-uri 'none'; form-action 'none'">
   <title>مدیریت برگین</title>
   <meta name="theme-color" content="#ecd1a3">
   <link rel="icon" href="../images/icon.png">
@@ -11,40 +12,104 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap">
   <link rel="stylesheet" href="../style.css">
   <style>
-    .admin-box {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 18px;
-      padding: 24px 16px;
-      text-align: center;
-    }
-    .admin-box p { margin: 0; }
-    .admin-box .btn[hidden] { display: none; }
+    .adm { max-width: 760px; margin: 0 auto; padding: 24px 16px 60px; text-align: center; }
+    .adm h1 { font-size: 1.5rem; margin: 8px 0 6px; color: var(--brown); }
+    .adm p { margin: 8px 0; line-height: 1.9; }
+    .adm [hidden] { display: none !important; }
+    .adm-logo { display: block; margin: 0 auto; width: 120px; height: auto; border-radius: 50%; }
+    .adm-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 16px; margin: 16px 0; }
+    .adm-bar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 14px 0; }
+    .adm .btn { font-family: inherit; cursor: pointer; min-height: 44px; justify-content: center; }
+    .adm .btn[disabled] { opacity: .55; cursor: default; }
+    .adm .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
+    .adm .btn-danger:hover { background: var(--red); border-color: var(--red); color: #fff; }
+    #gsi-button { display: flex; justify-content: center; min-height: 44px; margin: 16px 0; }
+    .adm-status { min-height: 1.6em; font-weight: 700; }
+    .adm-status.err { color: var(--red); }
+    .adm-status.ok { color: var(--green-dark); }
+    .adm-issues { text-align: right; background: #fbe9e4; border: 1px dashed var(--red); border-radius: 12px; padding: 12px 28px 12px 16px; margin: 12px 0; }
+    .adm-issues h2 { font-size: 1rem; margin: 0 0 6px -12px; color: var(--red); }
+    .adm-issues li { margin: 4px 0; }
+    .row-no { font-weight: 700; }
+    .adm-list { list-style: none; margin: 0; padding: 0; text-align: right; }
+    .adm-list li { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+    .adm-list .nm { flex: 1; min-width: 0; }
+    .adm-list .nm small { display: block; color: var(--muted); }
+    .adm-list .tag { font-size: .8rem; padding: 2px 10px; border-radius: 999px; background: #e7f2df; color: var(--green-dark); white-space: nowrap; }
+    .adm-list .tag.out { background: #f6d9d3; color: var(--red); }
+    .adm-list .btn { padding: 4px 16px; font-size: .9rem; min-height: 44px; }
+    .adm-form { text-align: right; }
+    .adm-form label { display: block; font-weight: 700; margin: 12px 0 4px; }
+    .adm-form .hint { display: block; font-weight: 400; font-size: .85rem; color: var(--muted); }
+    .adm-form input, .adm-form textarea { width: 100%; font-family: inherit; font-size: 1rem; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fffaf0; color: var(--text); }
+    .adm-form input:focus, .adm-form textarea:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(47, 122, 31, .2); }
+    .adm-form .ltr { direction: ltr; text-align: left; }
+    .adm-confirm { background: #fbe9e4; border: 1px dashed var(--red); border-radius: 12px; padding: 12px; margin-top: 12px; }
   </style>
 </head>
 <body>
-  <main class="admin-box">
-    <p id="admin-msg">در حال انتقال به صفحه مدیریت…</p>
-    <a class="btn" id="admin-go" href="#">باز کردن صفحه مدیریت</a>
+  <main class="adm">
+    <img class="adm-logo" src="../images/logo.jpg" alt="برگین">
+    <h1>مدیریت محصولات برگین</h1>
+
+    <!-- not set up / blocked / errors -->
+    <section class="adm-card" id="s-setup" hidden>
+      <p id="setup-msg"></p>
+    </section>
+
+    <!-- sign in -->
+    <section class="adm-card" id="s-signin" hidden>
+      <p id="signin-msg">برای مدیریت محصولات با حساب گوگل خودت وارد شو.</p>
+      <div id="gsi-button"></div>
+      <p class="adm-status" id="signin-status" role="status"></p>
+    </section>
+
+    <!-- wrong account -->
+    <section class="adm-card" id="s-denied" hidden>
+      <p><strong>این حساب اجازه نداره.</strong></p>
+      <p>این صفحه فقط برای مالک برگینه. با حساب درست وارد شو.</p>
+      <div class="adm-bar"><button type="button" class="btn" id="other-account">حساب دیگه</button></div>
+    </section>
+
+    <!-- admin -->
+    <section id="s-app" hidden>
+      <div class="adm-bar">
+        <button type="button" class="btn btn-ghost" id="reload">بارگذاری دوباره</button>
+        <button type="button" class="btn" id="add-new">افزودن محصول جدید</button>
+        <button type="button" class="btn btn-ghost" id="download">دانلود فایل CSV (نسخه‌ی پشتیبان)</button>
+        <button type="button" class="btn btn-ghost" id="logout">خروج</button>
+      </div>
+      <p class="adm-status" id="status" role="status"></p>
+      <div class="adm-issues" id="issues" hidden>
+        <h2 id="issues-title">این موارد باید درست بشن:</h2>
+        <ul id="issues-list"></ul>
+      </div>
+
+      <div class="adm-card" id="list-card">
+        <p id="count"></p>
+        <ul class="adm-list" id="list"></ul>
+      </div>
+
+      <form class="adm-card adm-form" id="form" hidden novalidate>
+        <h2 id="form-title"></h2>
+        <div id="fields"></div>
+        <div class="adm-bar">
+          <button type="submit" class="btn" id="save">ذخیره</button>
+          <button type="button" class="btn btn-ghost" id="cancel">انصراف</button>
+          <button type="button" class="btn btn-danger" id="delete">حذف</button>
+        </div>
+        <div class="adm-confirm" id="confirm" hidden>
+          <p id="confirm-text"></p>
+          <div class="adm-bar">
+            <button type="button" class="btn btn-danger" id="confirm-yes">آره، پاکش کن</button>
+            <button type="button" class="btn btn-ghost" id="confirm-no">نه</button>
+          </div>
+        </div>
+      </form>
+    </section>
   </main>
 
   <script src="../products.js"></script>
-  <script>
-    (function () {
-      var msg = document.getElementById('admin-msg');
-      var go = document.getElementById('admin-go');
-      var url = (typeof SHOP !== 'undefined' && SHOP && SHOP.adminUrl) ? String(SHOP.adminUrl) : '';
-      if (!url) {
-        msg.textContent = 'لینک صفحه مدیریت هنوز تنظیم نشده.';
-        go.hidden = true;
-        return;
-      }
-      go.href = url;
-      window.location.replace(url);
-    })();
-  </script>
+  <script src="admin.js"></script>
 </body>
 </html>
