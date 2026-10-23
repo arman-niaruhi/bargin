@@ -515,7 +515,11 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     out.push(r.ok && mails.length === 1 && mails[0].to === em && v.ok && post({ action: "getProducts", session: v.data.session }).ok);
   }
   check("(k) both allowed emails get a code mailed to themselves and can log in and read the sheet", out.length === 2 && out.every(Boolean), out.join());
-  check("(k) the allowed list is exactly the two agreed lowercase addresses", ALLOWED.join() === "arman.niaruhi@gmail.com,zeinamkia023@gmail.com");
+  check("(k) the allowed list is exactly the two agreed lowercase addresses", ALLOWED.join() === "arman.niaruhi@gmail.com,zeinabkia023@gmail.com");
+  check("(k) the allowed list is exactly ['arman.niaruhi@gmail.com','zeinabkia023@gmail.com']", JSON.stringify(ALLOWED) === JSON.stringify(["arman.niaruhi@gmail.com", "zeinabkia023@gmail.com"]));
+  reset();
+  const typo = reqCode("zeinamkia023@gmail.com");
+  check("(k) the old wrong spelling zeinamkia023@gmail.com is unknown: decoy answer, no mail", typo.ok === true && mails.length === 0 && !ALLOWED.includes("zeinamkia023@gmail.com"), JSON.stringify(typo));
 }
 {
   reset();
@@ -587,13 +591,13 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
 {
   // the mail address is never the raw input
   const cases = [
-    ["ARMAN.Niaruhi@Gmail.com", OWNER], ["  zeinamkia023@gmail.com  ", SECOND], ["\tZEINAMKIA023@GMAIL.COM\n", SECOND]
+    ["ARMAN.Niaruhi@Gmail.com", OWNER], ["  zeinabkia023@gmail.com  ", SECOND], ["\tZEINABKIA023@GMAIL.COM\n", SECOND]
   ];
   const res = cases.map(([input, want]) => { reset(); reqCode(input); return mails.length === 1 && mails[0].to === want && typeof mails[0].to === "string"; });
   check("(k) different case / spaces: the mail goes to the exact list entry", res.every(Boolean), res.join());
-  const evil = ["a@b.com,zeinamkia023@gmail.com", "zeinamkia023@gmail.com,a@b.com", "zeinamkia023@gmail.com;a@b.com", "a@b.com zeinamkia023@gmail.com",
-    "zeinamkia023@gmail.com\r\nBcc: a@b.com", "<zeinamkia023@gmail.com>", "Z <zeinamkia023@gmail.com>", "zeinamkia023@gmail.com.evil.com", "evil.com@zeinamkia023@gmail.com",
-    "zeinamkia023+x@gmail.com", "zeinamkia023@gmail.com ", "arman.niaruhi@gmail.com\u0000", "a@b.com,arman.niaruhi@gmail.com"];
+  const evil = ["a@b.com,zeinabkia023@gmail.com", "zeinabkia023@gmail.com,a@b.com", "zeinabkia023@gmail.com;a@b.com", "a@b.com zeinabkia023@gmail.com",
+    "zeinabkia023@gmail.com\r\nBcc: a@b.com", "<zeinabkia023@gmail.com>", "Z <zeinabkia023@gmail.com>", "zeinabkia023@gmail.com.evil.com", "evil.com@zeinabkia023@gmail.com",
+    "zeinabkia023+x@gmail.com", "zeinabkia023@gmail.com ", "arman.niaruhi@gmail.com\u0000", "a@b.com,arman.niaruhi@gmail.com"];
   const outs = evil.map((input) => { reset(); const r = reqCode(input); return { input, r, to: mails.map((m) => m.to) }; });
   check("(k) injected / lookalike addresses never mail two addresses or a different one",
     outs.every((o) => o.to.length === 0 || (o.to.length === 1 && ALLOWED.includes(o.to[0]) && o.input.trim().toLowerCase() === o.to[0])),

@@ -1,7 +1,7 @@
 # Product admin (admin page on the site + Google Sheet + Apps Script)
 
 The admin page is **`/admin/`** on the site (`admin/index.html` + `admin/admin.js`). The people on the allowed list log in with a
-**one-time code sent by email** (the list is `ALLOWED_EMAILS` in `Code.gs`: arman.niaruhi@gmail.com and zeinamkia023@gmail.com), edit products there, and can download a CSV
+**one-time code sent by email** (the list is `ALLOWED_EMAILS` in `Code.gs`: arman.niaruhi@gmail.com and zeinabkia023@gmail.com), edit products there, and can download a CSV
 backup. The Google Sheet is the product data; the site reads its published CSV.
 Owner decision 2026-10-23: email-code login. No Google sign-in, no Google Cloud project, no OAuth client.
 

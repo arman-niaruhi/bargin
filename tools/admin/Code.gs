@@ -16,7 +16,7 @@
 // The people who may log in (owner decision 2026-10-23). All of them get FULL admin access.
 // Lowercase only. To add or remove someone: edit this list and deploy a new version.
 // The code is mailed to the list entry that matches, never to the raw text of the request.
-var ALLOWED_EMAILS = ['arman.niaruhi@gmail.com', 'zeinamkia023@gmail.com'];
+var ALLOWED_EMAILS = ['arman.niaruhi@gmail.com', 'zeinabkia023@gmail.com'];
 var MAX_EMAIL_LENGTH = 254;
 var FAKE_SEND_DELAY_MS = 700;    // an unknown address waits about as long as a real mail send takes
 
