@@ -288,18 +288,18 @@ function login() { reset(); const { r, code } = ask(); const v = post({ action: 
 {
   reset();
   let ok = 0;
-  for (let i = 0; i < 5; i++) { if (post({ action: "requestCode" }).ok) ok++; clock.t += 61 * 1000; }
+  for (let i = 0; i < 10; i++) { if (post({ action: "requestCode" }).ok) ok++; clock.t += 61 * 1000; }
   const sixth = post({ action: "requestCode" });
-  check("(e) 5 sends per hour, the 6th is refused (LIMIT_HOUR)", ok === 5 && sixth.ok === false && sixth.error === "LIMIT_HOUR" && mails.length === 5, JSON.stringify(sixth));
+  check("(e) 10 sends per hour, the 11th is refused (LIMIT_HOUR)", ok === 10 && sixth.ok === false && sixth.error === "LIMIT_HOUR" && mails.length === 10, JSON.stringify(sixth));
   clock.t += 61 * MIN;
   check("(e) an hour later sending works again", post({ action: "requestCode" }).ok === true);
 }
 {
   reset();
   let ok = 0;
-  for (let h = 0; h < 4; h++) { for (let i = 0; i < 5; i++) { if (post({ action: "requestCode" }).ok) ok++; clock.t += 61 * 1000; } clock.t += 61 * MIN; }
+  for (let h = 0; h < 3; h++) { for (let i = 0; i < 10; i++) { if (post({ action: "requestCode" }).ok) ok++; clock.t += 61 * 1000; } clock.t += 61 * MIN; }
   const n21 = post({ action: "requestCode" });
-  check("(e) 20 sends per day, the 21st is refused (LIMIT_DAY) even though the hour is free", ok === 20 && n21.ok === false && n21.error === "LIMIT_DAY" && mails.length === 20, JSON.stringify(n21));
+  check("(e) 30 sends per day, the 31st is refused (LIMIT_DAY) even though the hour is free", ok === 30 && n21.ok === false && n21.error === "LIMIT_DAY" && mails.length === 30, JSON.stringify(n21));
   world.cache.clear();   // a cache reset must not lift the caps (they live in script properties)
   check("(e) clearing the cache does not lift the daily cap", post({ action: "requestCode" }).error === "LIMIT_DAY");
 }
@@ -307,6 +307,15 @@ function login() { reset(); const { r, code } = ask(); const v = post({ action: 
   reset(); world.mailFail = true;
   const r = post({ action: "requestCode" });
   check("(e) a failed mail gives MAIL_FAIL and no usable challenge", r.ok === false && r.error === "MAIL_FAIL" && world.cache.size === 0, JSON.stringify(r));
+  // failed sends are not counted: 15 failures, then the first good request works at once (no cooldown, no cap)
+  let fails = 0;
+  for (let i = 0; i < 15; i++) { if (post({ action: "requestCode" }).error === "MAIL_FAIL") fails++; }
+  check("(e) failed mails never start the cooldown or hit a cap (15 retries all reach MailApp)", fails === 15 && world.cache.size === 0);
+  world.mailFail = false;
+  const good = post({ action: "requestCode" });
+  check("(e) after failures the next good request works at once (nothing counted)", good.ok === true && mails.length === 1, JSON.stringify(good));
+  const next = post({ action: "requestCode" });
+  check("(e) only the real send starts the cooldown", next.error === "COOLDOWN");
 }
 
 // (f) verifyCode

@@ -29,8 +29,8 @@ var CODE_MAX_TRIES = 5;          // wrong tries per code
 var COOLDOWN_MS = 60 * 1000;     // minimum time between two sends
 var HOUR_MS = 3600 * 1000;
 var DAY_MS = 24 * HOUR_MS;
-var MAX_PER_HOUR = 5;
-var MAX_PER_DAY = 20;
+var MAX_PER_HOUR = 10;
+var MAX_PER_DAY = 30;
 var SESSION_IDLE_MS = HOUR_MS;       // logged out after 1 hour without use
 var SESSION_MAX_MS = 6 * HOUR_MS;    // and after 6 hours whatever happens (CacheService's own maximum)
 var LOCK_WAIT_MS = 10000;
@@ -295,7 +295,7 @@ function withLock_(fn) {
 
 function cache_() { return CacheService.getScriptCache(); }
 
-// requestCode: make a code, email it to OWNER_EMAIL only. Caps: 60 s apart, 5 per hour, 20 per day
+// requestCode: make a code, email it to OWNER_EMAIL only. Caps: 60 s apart, 10 per hour, 30 per day (failed sends are not counted)
 // (a log of the send times is kept in script properties, so a cache reset does not lift the caps).
 // A new code cancels the old one. Returns {ok:true, data:{challenge, cooldown, expiresIn}} or {ok:false, error, retryAfter?}.
 function requestCode() {
@@ -303,7 +303,8 @@ function requestCode() {
     var now = nowMs_();
     var props = PropertiesService.getScriptProperties();
     var log = [];
-    try { log = JSON.parse(props.getProperty('sendLog') || '[]'); } catch (err) { log = []; }
+    // Key renamed from 'sendLog' on 2026-10-23 to reset the counter: the old log also counted failed sends.
+    try { log = JSON.parse(props.getProperty('sendLog2') || '[]'); } catch (err) { log = []; }
     if (!Array.isArray(log)) log = [];
     log = log.filter(function (t) { return typeof t === 'number' && now - t < DAY_MS && t <= now + 60000; });
     var last = log.length ? Math.max.apply(null, log) : 0;
@@ -321,10 +322,10 @@ function requestCode() {
     c.put(key, JSON.stringify({ h: sha256Hex_(challenge + ':' + code), tries: 0, exp: now + CODE_TTL_S * 1000 }), CODE_TTL_S);
     c.put('active_ch', key, CODE_TTL_S);
 
-    log.push(now);
-    props.setProperty('sendLog', JSON.stringify(log));   // counted before sending: a failed send still counts
     try {
       MailApp.sendEmail(OWNER_EMAIL, MSG.mailSubject.replace('{code}', code), MSG.mailBody);
+      log.push(now);   // counted only after the mail was really sent: a failed send does not count
+      props.setProperty('sendLog2', JSON.stringify(log));
     } catch (err) {
       c.remove(key);
       c.remove('active_ch');

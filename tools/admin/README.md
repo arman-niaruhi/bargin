@@ -17,8 +17,8 @@ Rules in `Code.gs`:
 - Code: 6 digits, only from `Utilities.getUuid()` with rejection sampling; stored hashed (SHA-256 with its challenge id)
   in CacheService; valid **10 minutes**, **5 tries**, **single use**; constant-time compare; Persian/Arabic digits accepted.
   A new code cancels the old one.
-- Sending caps (kept in script properties, so a cache reset does not lift them): **60 s** between sends, **5 per hour**,
-  **20 per day**. (MailApp's own limit for a normal account is about 100 mails a day.)
+- Sending caps (kept in script properties, so a cache reset does not lift them): **60 s** between sends, **10 per hour**,
+  **30 per day**. A send that fails (MailApp error) is not counted and does not start the 60 s wait. (MailApp's own limit for a normal account is about 100 mails a day.)
 - Session: **1 hour idle** (each use renews it) and **6 hours absolute**; stored hashed; `logout` deletes it on the server.
 - `LockService` around every read-modify-write (sending, checking a code, save, delete). If the lock cannot be taken the
   answer is `BUSY` and nothing changes (fail closed).
@@ -32,8 +32,8 @@ Settings (not secret) are in `products.js`: `SHOP.adminApi` (the web app `/exec`
 ## Residual risks (accepted)
 - Whoever can read the owner's mailbox can log in (that is the whole point of the email code). Use a strong password and
   2-step verification on the Gmail account.
-- Someone who knows the web app URL can make the script email a code to the owner (up to 5 per hour / 20 per day). It is only
-  annoying. A guess needs the right 6 digits in 5 tries: about 5 in a million per code, at most 25 guesses an hour.
+- Someone who knows the web app URL can make the script email a code to the owner (up to 10 per hour / 30 per day). It is only
+  annoying. A guess needs the right 6 digits in 5 tries: about 5 in a million per code, at most 50 guesses an hour.
 - CacheService is not a guaranteed store: Google may drop a code or session early (the owner just logs in again). It can never
   make a session last longer than 6 hours. The sending caps are in script properties and survive it.
 - The page and the URL are public (`ANYONE_ANONYMOUS`); the protection is the code and session, not a secret URL.
@@ -67,7 +67,7 @@ unique; `soldOut` is `yes`, `no` or empty. Blank rows are skipped. Problems are 
 - **No email arrives:** look in spam; wait for the 60 s countdown and press «ارسال دوباره». «نتونستیم ایمیل رو بفرستیم» means
   MailApp failed: run `authorizeOnce` again (permissions) and check the daily mail quota in Apps Script.
 - **«تو این یه ساعت چند بار کد خواستی» / «امروز زیاد کد خواستی»:** the caps. Wait an hour / a day. To reset by hand: Apps Script →
-  Project Settings → Script properties → delete `sendLog`.
+  Project Settings → Script properties → delete `sendLog2`.
 - **«کد منقضی شده» / «چند بار اشتباه زدی»:** press «ارسال دوباره» for a new code.
 - **«نشستت تموم شد»:** 1 hour idle or 6 hours passed. Log in again; an open form keeps what you typed.
 - **«به سرور وصل نشدیم» / the page says not set up:** `adminApi` in `products.js` is empty or wrong, or the deployment is archived.
