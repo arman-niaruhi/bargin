@@ -1,5 +1,5 @@
 // Admin page for the Bargin products sheet.
-// Login: a one-time 6-digit code is emailed to the owner by the Apps Script web app (SHOP.adminApi).
+// Login: the person types their email; if it is allowed, a one-time 6-digit code is emailed to it by the Apps Script web app (SHOP.adminApi).
 // The code gives a random session token; the page sends it with every request. The token is kept in
 // sessionStorage (survives a reload in this tab, gone when the tab closes), with a memory fallback.
 // Sheet data is shown with textContent only.
@@ -9,10 +9,13 @@
 
   var TEXT = {
     notSetUp: 'صفحه‌ی مدیریت هنوز راه‌اندازی نشده. لینک Apps Script رو توی products.js بذار.',
-    loginIntro: 'برای ورود، یه کد ۶ رقمی به ایمیل مالک برگین می‌فرستیم.',
+    loginIntro: 'برای ورود، ایمیلتو بنویس تا یه کد ۶ رقمی برات بفرستیم.',
+    needEmail: 'ایمیلتو بنویس.',
+    badEmail: 'این ایمیل درست به نظر نمی‌رسه. دوباره چکش کن.',
+    codeSentTo: 'کد به {email} فرستاده شد (اگه این ایمیل مجاز باشه).',
     sendCode: 'ارسال کد به ایمیل',
     sendingCode: 'در حال فرستادن کد…',
-    codeSent: 'کد رو به ایمیلت فرستادیم. ایمیلتو چک کن (پوشه‌ی اسپم رو هم نگاه کن). ده دقیقه اعتبار داره.',
+    codeSent: 'ایمیلتو چک کن (پوشه‌ی اسپم رو هم نگاه کن). کد ده دقیقه اعتبار داره.',
     codeLabel: 'کد ۶ رقمی',
     codeHint: 'مثلاً ۱۲۳۴۵۶',
     login: 'ورود',
@@ -85,6 +88,8 @@
   var COOLDOWN_DEFAULT = 60;
 
   var memSession = '';     // fallback when sessionStorage is not available
+  var EMAIL_KEY = 'bargin-admin-email';
+  var memEmail = '';       // the typed email (fallback when sessionStorage is not available)
   var challenge = '';      // the id of the code we asked for
   var resendAt = 0;        // time (ms) when «ارسال دوباره» is allowed
   var resendTimer = 0;
@@ -114,6 +119,28 @@
     try {
       if (v) window.sessionStorage.setItem(SESSION_KEY, v); else window.sessionStorage.removeItem(SESSION_KEY);
     } catch (e) { /* memory only */ }
+  }
+
+  // The email typed on the login screen, kept only for this tab so the code screen can show it.
+  function getEmail() {
+    try { var v = window.sessionStorage.getItem(EMAIL_KEY); if (v) return v; } catch (e) { /* use memory */ }
+    return memEmail;
+  }
+  function setEmail(v) {
+    memEmail = v || '';
+    try {
+      if (v) window.sessionStorage.setItem(EMAIL_KEY, v); else window.sessionStorage.removeItem(EMAIL_KEY);
+    } catch (e) { /* memory only */ }
+  }
+  function showSentTo() {
+    var p = $('code-sent');
+    var parts = TEXT.codeSentTo.split('{email}');
+    p.textContent = '';
+    p.appendChild(document.createTextNode(parts[0]));
+    var b = document.createElement('bdi');
+    b.textContent = getEmail();
+    p.appendChild(b);
+    p.appendChild(document.createTextNode(parts.slice(1).join('{email}')));
   }
 
   // ---- screens ----
@@ -225,6 +252,7 @@
       case 'BAD_CODE': return err.triesLeft !== undefined ? fill(TEXT.badCode, { n: toFa(err.triesLeft) }) : TEXT.needCode;
       case 'CODE_EXPIRED': return TEXT.codeExpired;
       case 'TOO_MANY': return TEXT.tooMany;
+      case 'bad_request': return TEXT.badEmail;
       case 'BUSY': return TEXT.busy;
       case 'network': return TEXT.network;
       default: return TEXT.serverFail;
@@ -235,15 +263,21 @@
   function sendCode(fromCodeScreen) {
     if (busy) return;
     var statusId = fromCodeScreen ? 'code-status' : 'login-status';
+    var email = fromCodeScreen ? getEmail() : $('email').value.trim();
+    if (!email) { setLoginStatus('login-status', TEXT.needEmail, 'err'); if (fromCodeScreen) { show('s-login'); } $('email').focus(); return; }
+    if (!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email)) { setLoginStatus('login-status', TEXT.badEmail, 'err'); $('email').focus(); return; }
+    setEmail(email);
+    $('email').value = email;
     busy = true;
     $('send').disabled = true;
     setLoginStatus(statusId, TEXT.sendingCode);
-    api('requestCode', {}, false).then(function (d) {
+    api('requestCode', { email: email }, false).then(function (d) {
       busy = false;
       $('send').disabled = false;
       challenge = String(d && d.challenge || '');
       $('code').value = '';
       show('s-code');
+      showSentTo();
       setLoginStatus('code-status', TEXT.codeSent, 'ok');
       setLoginStatus('login-status', '');
       startCountdown(d && typeof d.cooldown === 'number' ? d.cooldown : COOLDOWN_DEFAULT);
@@ -579,7 +613,7 @@
     $('add-new').addEventListener('click', function () { openForm(null); });
     $('download').addEventListener('click', download);
     $('logout').addEventListener('click', logout);
-    $('send').addEventListener('click', function () { sendCode(false); });
+    $('email-form').addEventListener('submit', function (ev) { ev.preventDefault(); sendCode(false); });
     $('resend').addEventListener('click', function () { sendCode(true); });
     $('code-form').addEventListener('submit', verify);
     $('form').addEventListener('submit', save);
@@ -589,6 +623,7 @@
     $('confirm-yes').addEventListener('click', doDelete);
 
     if (!conf('adminApi')) { showSetup(TEXT.notSetUp); return; }
+    $('email').value = getEmail();
     if (getSession()) { onLoggedIn(); } else { show('s-login'); }
   }
 

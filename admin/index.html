@@ -27,7 +27,11 @@
     .adm-code-form label { display: block; font-weight: 700; margin-bottom: 4px; }
     .adm-code-form input { width: 100%; font-family: inherit; font-size: 1.6rem; letter-spacing: .35em; text-align: center; direction: ltr; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fffaf0; color: var(--text); }
     .adm-code-form input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(47, 122, 31, .2); }
+    .adm-code-form input.email { font-size: 1.05rem; letter-spacing: 0; text-align: left; }
+    .adm-code-form input.email::placeholder { color: var(--muted); opacity: .7; }
     .adm-code-form .hint { display: block; font-weight: 400; font-size: .85rem; color: var(--muted); }
+    .adm-sent { font-weight: 700; margin: 0 0 10px; }
+    .adm-sent bdi { direction: ltr; unicode-bidi: isolate; }
     .adm-status { min-height: 1.6em; font-weight: 700; }
     .adm-status.err { color: var(--red); }
     .adm-status.ok { color: var(--green-dark); }
@@ -66,14 +70,19 @@
 
     <!-- login: ask for a code -->
     <section class="adm-card" id="s-login" hidden>
-      <p id="login-msg">برای ورود، یه کد ۶ رقمی به ایمیل مالک برگین می‌فرستیم.</p>
-      <div class="adm-bar"><button type="button" class="btn" id="send">ارسال کد به ایمیل</button></div>
+      <form class="adm-code-form" id="email-form" novalidate>
+        <p id="login-msg">برای ورود، ایمیلتو بنویس تا یه کد ۶ رقمی برات بفرستیم.</p>
+        <label for="email">ایمیل<span class="hint">همون ایمیلی که اجازه‌ی ورود داره</span></label>
+        <input id="email" class="email" type="email" inputmode="email" autocomplete="email" dir="ltr" required maxlength="254" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="name@gmail.com">
+        <div class="adm-bar"><button type="submit" class="btn" id="send">ارسال کد به ایمیل</button></div>
+      </form>
       <p class="adm-status" id="login-status" role="status"></p>
     </section>
 
     <!-- login: type the code -->
     <section class="adm-card" id="s-code" hidden>
       <form class="adm-code-form" id="code-form" novalidate>
+        <p class="adm-sent" id="code-sent"></p>
         <label for="code">کد ۶ رقمی<span class="hint">مثلاً ۱۲۳۴۵۶</span></label>
         <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" enterkeyhint="done" autocapitalize="off" autocorrect="off" spellcheck="false">
         <div class="adm-bar">

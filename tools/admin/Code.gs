@@ -1,18 +1,24 @@
 // Bargin product admin API (Google Apps Script). Bind this project to the products Google Sheet.
 // Login (owner decision 2026-10-23): a one-time code sent by email. The admin page (admin/index.html)
-// asks for a code (requestCode), the script emails a 6-digit code ONLY to OWNER_EMAIL, the owner types it
-// (verifyCode) and gets a random session token. Every other action needs that token. No Google sign-in,
+// asks for an email address and a code (requestCode); if the address is on ALLOWED_EMAILS the script emails a
+// 6-digit code to THAT list entry only, the person types it (verifyCode) and gets a random session token
+// that remembers the email. An address that is not on the list gets the same answer but no mail, so the
+// page never reveals who is allowed. Every other action needs that token. No Google sign-in,
 // no OAuth client, no ID tokens.
 // Rules: codes and sessions are stored hashed (CacheService), a code lives 10 minutes, allows 5 tries and
-// works once; sends are capped (60 s apart, 5 per hour, 20 per day); a session lasts 1 hour idle and
+// works once; sends are capped (60 s apart, 10 per hour, 30 per day, shared by all addresses); a session lasts 1 hour idle and
 // 6 hours at most; the session is checked in ONE place (handleRequest_) before every sheet action;
 // read-modify-write runs under LockService and fails closed. Codes and tokens are never logged.
 // The pure functions (validateRows, buildCsv, handleRequest_ and the cell helpers) make no Apps Script
 // calls at load time, so tools/admin/test.mjs can run them in Node with stubbed services.
 // Style: ES2017 only, like the site (no newer syntax or methods).
 
-// The owner's email. The code is sent here and nowhere else (the address is never taken from a request).
-var OWNER_EMAIL = 'arman.niaruhi@gmail.com';
+// The people who may log in (owner decision 2026-10-23). All of them get FULL admin access.
+// Lowercase only. To add or remove someone: edit this list and deploy a new version.
+// The code is mailed to the list entry that matches, never to the raw text of the request.
+var ALLOWED_EMAILS = ['arman.niaruhi@gmail.com', 'zeinamkia023@gmail.com'];
+var MAX_EMAIL_LENGTH = 254;
+var FAKE_SEND_DELAY_MS = 700;    // an unknown address waits about as long as a real mail send takes
 
 // Actions that need no session: ask for a code, send the code, log out.
 var PUBLIC_ACTIONS = ['requestCode', 'verifyCode', 'logout'];
@@ -295,11 +301,34 @@ function withLock_(fn) {
 
 function cache_() { return CacheService.getScriptCache(); }
 
-// requestCode: make a code, email it to OWNER_EMAIL only. Caps: 60 s apart, 10 per hour, 30 per day (failed sends are not counted)
-// (a log of the send times is kept in script properties, so a cache reset does not lift the caps).
-// A new code cancels the old one. Returns {ok:true, data:{challenge, cooldown, expiresIn}} or {ok:false, error, retryAfter?}.
-function requestCode() {
-  return withLock_(function () {
+// What was typed as the email → trimmed lowercase address, or '' if it is not an email-looking string.
+function normalizeEmail_(input) {
+  if (typeof input !== 'string' || input.length > MAX_EMAIL_LENGTH + 40) return '';
+  var s = input.trim().toLowerCase();
+  if (!s || s.length > MAX_EMAIL_LENGTH) return '';
+  return /^[a-z0-9._%+\-]+@[a-z0-9\-]+(\.[a-z0-9\-]+)*\.[a-z]{2,}$/.test(s) ? s : '';
+}
+
+// The ALLOWED_EMAILS entry equal to this address, or '' (the entry itself is returned, not the input).
+function allowedEntry_(email) {
+  for (var i = 0; i < ALLOWED_EMAILS.length; i++) {
+    if (typeof email === 'string' && email !== '' && safeEqual_(ALLOWED_EMAILS[i], email)) return ALLOWED_EMAILS[i];
+  }
+  return '';
+}
+
+// requestCode: data = {email}. A malformed email is refused at once (bad_request). Otherwise the answer has the
+// same shape for every address: {ok:true, data:{challenge, cooldown, expiresIn}}. Only if the address is on
+// ALLOWED_EMAILS a code is mailed (to that list entry only); for any other address nothing is mailed and the
+// challenge is a decoy that never verifies. Caps and cooldown are shared by all addresses and also hit
+// unknown ones (the cooldown time is kept in script properties, so a cache reset does not lift it); only real
+// sends go into the hour/day send log. A new code cancels the old one of the same address.
+// Returns {ok:true, data} or {ok:false, error, retryAfter?}.
+function requestCode(data) {
+  var email = normalizeEmail_(data && data.email);
+  if (!email) return { ok: false, error: 'bad_request' };
+  var entry = allowedEntry_(email);
+  var out = withLock_(function () {
     var now = nowMs_();
     var props = PropertiesService.getScriptProperties();
     var log = [];
@@ -307,7 +336,9 @@ function requestCode() {
     try { log = JSON.parse(props.getProperty('sendLog2') || '[]'); } catch (err) { log = []; }
     if (!Array.isArray(log)) log = [];
     log = log.filter(function (t) { return typeof t === 'number' && now - t < DAY_MS && t <= now + 60000; });
-    var last = log.length ? Math.max.apply(null, log) : 0;
+    var lastAny = parseInt(props.getProperty('lastReq') || '0', 10);
+    if (!(lastAny > 0) || lastAny > now + 60000) lastAny = 0;
+    var last = Math.max(lastAny, log.length ? Math.max.apply(null, log) : 0);
     if (last && now - last < COOLDOWN_MS) return { ok: false, error: 'COOLDOWN', retryAfter: Math.ceil((COOLDOWN_MS - (now - last)) / 1000) };
     var inHour = log.filter(function (t) { return now - t < HOUR_MS; });
     if (inHour.length >= MAX_PER_HOUR) return { ok: false, error: 'LIMIT_HOUR', retryAfter: Math.ceil((HOUR_MS - (now - Math.min.apply(null, inHour))) / 1000) };
@@ -316,23 +347,38 @@ function requestCode() {
     var code = randomCode_();
     var challenge = randomHex_(32);
     var c = cache_();
-    var oldKey = c.get('active_ch');
-    if (oldKey) c.remove(oldKey);
     var key = 'ch_' + sha256Hex_(challenge);
-    c.put(key, JSON.stringify({ h: sha256Hex_(challenge + ':' + code), tries: 0, exp: now + CODE_TTL_S * 1000 }), CODE_TTL_S);
-    c.put('active_ch', key, CODE_TTL_S);
-
+    var activeKey = entry ? 'active_' + sha256Hex_(entry) : '';
+    if (entry) {
+      var oldKey = c.get(activeKey);
+      if (oldKey) c.remove(oldKey);
+    }
+    // The challenge remembers its address ('' for a decoy). A decoy holds a code nobody receives.
+    c.put(key, JSON.stringify({ h: sha256Hex_(challenge + ':' + code), tries: 0, exp: now + CODE_TTL_S * 1000, e: entry }), CODE_TTL_S);
+    var shape = { ok: true, data: { challenge: challenge, cooldown: COOLDOWN_MS / 1000, expiresIn: CODE_TTL_S } };
+    if (!entry) {
+      props.setProperty('lastReq', String(now));   // starts the cooldown, not the hour/day log
+      shape.decoy = true;
+      return shape;
+    }
+    c.put(activeKey, key, CODE_TTL_S);
     try {
-      MailApp.sendEmail(OWNER_EMAIL, MSG.mailSubject.replace('{code}', code), MSG.mailBody);
+      MailApp.sendEmail(entry, MSG.mailSubject.replace('{code}', code), MSG.mailBody);
       log.push(now);   // counted only after the mail was really sent: a failed send does not count
       props.setProperty('sendLog2', JSON.stringify(log));
+      props.setProperty('lastReq', String(now));
     } catch (err) {
       c.remove(key);
-      c.remove('active_ch');
+      c.remove(activeKey);
       return { ok: false, error: 'MAIL_FAIL' };
     }
-    return { ok: true, data: { challenge: challenge, cooldown: COOLDOWN_MS / 1000, expiresIn: CODE_TTL_S } };
+    return shape;
   });
+  if (out.decoy) {
+    delete out.decoy;
+    Utilities.sleep(FAKE_SEND_DELAY_MS);   // roughly the time a real send takes
+  }
+  return out;
 }
 
 // verifyCode: check the typed code for this challenge. Hashed, 5 tries, 10 minutes, single use,
@@ -358,17 +404,21 @@ function verifyCode(data) {
       c.put(key, JSON.stringify(st), Math.max(1, Math.ceil((st.exp - now) / 1000)));
       return { ok: false, error: 'BAD_CODE', triesLeft: CODE_MAX_TRIES - st.tries };
     }
+    var who = allowedEntry_(st.e);   // a decoy challenge has no address, so it never logs in
+    if (!who) { c.remove(key); return { ok: false, error: 'BAD_CODE', triesLeft: 0 }; }
     c.remove(key);   // single use
-    c.remove('active_ch');
+    c.remove('active_' + sha256Hex_(who));
     var token = randomHex_(64);
-    c.put('ss_' + sha256Hex_(token), JSON.stringify({ c: now, l: now }), SESSION_IDLE_MS / 1000);
+    c.put('ss_' + sha256Hex_(token), JSON.stringify({ c: now, l: now, e: who }), SESSION_IDLE_MS / 1000);
     return { ok: true, data: { session: token, idle: SESSION_IDLE_MS / 1000, max: SESSION_MAX_MS / 1000 } };
   });
 }
 
-// requireSession_: true only for a live session (under 1 hour idle and under 6 hours old).
-// Each good check renews the idle time (sliding). Anything wrong = false.
+// requireSession_: true only for a live session (under 1 hour idle and under 6 hours old) whose email is on
+// ALLOWED_EMAILS (so removing someone from the list ends their session at once). Each good check renews the
+// idle time (sliding). On success sessionEmail_ is set for the second guard. Anything wrong = false.
 function requireSession_(token) {
+  sessionEmail_ = '';
   try {
     if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) return false;
     var now = nowMs_();
@@ -377,11 +427,13 @@ function requireSession_(token) {
     var raw = c.get(key);
     if (!raw) return false;
     var s = JSON.parse(raw);
-    if (!s || !(now - s.c < SESSION_MAX_MS) || !(now - s.l < SESSION_IDLE_MS) || now < s.c) { c.remove(key); return false; }
+    if (!s || !allowedEntry_(s.e)) { c.remove(key); return false; }
+    if (!(now - s.c < SESSION_MAX_MS) || !(now - s.l < SESSION_IDLE_MS) || now < s.c) { c.remove(key); return false; }
     s.l = now;
     var ttl = Math.min(SESSION_IDLE_MS, SESSION_MAX_MS - (now - s.c)) / 1000;
     c.put(key, JSON.stringify(s), Math.max(1, Math.floor(ttl)));
-    return true;
+    sessionEmail_ = allowedEntry_(s.e);
+    return sessionEmail_ !== '';
   } catch (e) {
     return false;
   }
@@ -395,26 +447,26 @@ function logout(data, token) {
   return { ok: true, data: {} };
 }
 
-// Set while doPost runs a protected action; the sheet functions check it again (second guard).
-var sessionGranted_ = false;
+// Set while doPost runs a protected action: the email of the checked session. The sheet functions check it
+// again (second guard): it must still be on ALLOWED_EMAILS.
+var sessionEmail_ = '';
 
 function assertSession_() {
-  if (sessionGranted_ !== true) throw new Error(MSG.noSession);
+  if (allowedEntry_(sessionEmail_) === '') throw new Error(MSG.noSession);
 }
 
 // The API: the admin page sends POST {action, data, session} as text/plain JSON.
 function doPost(e) {
   var body = e && e.postData && typeof e.postData.contents === 'string' ? e.postData.contents : '';
-  sessionGranted_ = false;
+  sessionEmail_ = '';
   var out = handleRequest_(body, {
     publicActions: {
-      requestCode: function () { return requestCode(); },
+      requestCode: function (d) { return requestCode(d); },
       verifyCode: function (d) { return verifyCode(d); },
       logout: function (d, token) { return logout(d, token); }
     },
     requireSession: function (token) {
-      sessionGranted_ = requireSession_(token);
-      return sessionGranted_;
+      return requireSession_(token);
     },
     actions: {
       getProducts: function () { return getProducts(); },
@@ -423,7 +475,7 @@ function doPost(e) {
       publishCsv: function () { return publishCsv(); }
     }
   });
-  sessionGranted_ = false;
+  sessionEmail_ = '';
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 

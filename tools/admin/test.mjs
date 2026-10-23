@@ -10,7 +10,7 @@ const csvFile = read("data/products.csv");
 import nodeCrypto from "node:crypto";
 const clock = { t: 1800000000000 };
 const mails = [];
-const world = { lockBusy: false, props: {}, cache: new Map(), uuidFail: false, sessionUsed: 0 };
+const world = { lockBusy: false, props: {}, cache: new Map(), uuidFail: false, sessionUsed: 0, sleeps: [] };
 const cacheStub = {
   get(k) { const e = world.cache.get(k); if (!e) return null; if (e.until <= clock.t) { world.cache.delete(k); return null; } return e.v; },
   put(k, v, ttl) {
@@ -26,6 +26,7 @@ const stubs = {
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in world.props ? world.props[k] : null), setProperty: (k, v) => { world.props[k] = String(v); } }) },
   Session: { getActiveUser() { world.sessionUsed++; return { getEmail: () => "" }; } },
   Utilities: {
+    sleep: (ms) => { world.sleeps.push(ms); },
     getUuid: () => { if (world.uuidFail) throw new Error("uuid"); return nodeCrypto.randomUUID(); },
     DigestAlgorithm: { SHA_256: "SHA_256" },
     computeDigest: (alg, text) => Array.from(nodeCrypto.createHash("sha256").update(String(text), "utf8").digest()).map((b) => (b > 127 ? b - 256 : b))
@@ -33,7 +34,7 @@ const stubs = {
 };
 const gs = { ...stubs };
 vm.createContext(gs);
-vm.runInContext(read("tools/admin/Code.gs") + ";this.buildCsv=buildCsv;this.validateRows=validateRows;this.planSave=planSave;this.HEADER=HEADER;this.EOL=EOL;this.handleRequest_=handleRequest_;this.OWNER_EMAIL=OWNER_EMAIL;", gs);
+vm.runInContext(read("tools/admin/Code.gs") + ";this.buildCsv=buildCsv;this.validateRows=validateRows;this.planSave=planSave;this.HEADER=HEADER;this.EOL=EOL;this.handleRequest_=handleRequest_;this.ALLOWED_EMAILS=ALLOWED_EMAILS;", gs);
 gs.nowMs_ = () => clock.t;   // the fake clock (Code.gs calls nowMs_ through the global)
 
 // app.js: the same parser the website and the bot use
@@ -255,7 +256,10 @@ const fakeSheet = {
 gs.SpreadsheetApp = { getActiveSpreadsheet: () => { sheetLog.touched++; return { getSheets: () => [fakeSheet], getName: () => "x" }; } };
 gs.ContentService = { MimeType: { JSON: "JSON" }, createTextOutput: (s) => ({ s, setMimeType() { return this; } }) };
 const post = (obj) => JSON.parse(gs.doPost({ postData: { contents: typeof obj === "string" ? obj : JSON.stringify(obj) } }).s);
-const OWNER = gs.OWNER_EMAIL;
+const ALLOWED = Array.from(gs.ALLOWED_EMAILS);
+const OWNER = ALLOWED[0];
+const SECOND = ALLOWED[1];
+const reqCode = (email) => post({ action: "requestCode", data: { email: email === undefined ? OWNER : email } });
 const MIN = 60 * 1000;
 function reset() {
   world.cache.clear(); world.props = {}; mails.length = 0; world.lockBusy = false; world.mailFail = false;
@@ -263,58 +267,58 @@ function reset() {
   sheetLog.touched = 0; sheetLog.writes = 0; sheetLog.deleted.length = 0;
 }
 const codeOf = (m) => (m.subject.match(/\d{6}/) || [""])[0];
-function ask() { const r = post({ action: "requestCode" }); return { r, code: mails.length ? codeOf(mails[mails.length - 1]) : "" }; }
-function login() { reset(); const { r, code } = ask(); const v = post({ action: "verifyCode", data: { challenge: r.data.challenge, code } }); return { sess: v.data.session, challenge: r.data.challenge, code }; }
+function ask(email) { const r = reqCode(email); return { r, code: mails.length ? codeOf(mails[mails.length - 1]) : "" }; }
+function login(email) { reset(); const { r, code } = ask(email); const v = post({ action: "verifyCode", data: { challenge: r.data.challenge, code } }); return { sess: v.data.session, challenge: r.data.challenge, code }; }
 
 // (e) requestCode
 {
   reset();
   const { r, code } = ask();
   check("(e) requestCode answers ok with a 32-hex challenge, cooldown 60, expiry 600", r.ok === true && /^[0-9a-f]{32}$/.test(r.data.challenge) && r.data.cooldown === 60 && r.data.expiresIn === 600, JSON.stringify(r));
-  check("(e) exactly one mail, to the owner only", mails.length === 1 && mails[0].to === OWNER);
+  check("(e) exactly one mail, to the typed allowed address only", mails.length === 1 && mails[0].to === OWNER);
   check("(e) the code (6 digits) is in the subject, not in the answer", /^\d{6}$/.test(code) && !JSON.stringify(r).includes(code));
-  post({ action: "requestCode", data: { email: "evil@example.com", to: "evil@example.com" } });
-  check("(e) an email address in the request is ignored (second send refused by cooldown, no mail to anyone else)", mails.every((m) => m.to === OWNER));
+  reqCode("evil@example.com");
+  check("(e) an unknown address never gets mail (and is refused by the cooldown anyway)", mails.every((m) => m.to === OWNER));
   const stored = JSON.stringify([...world.cache.entries()]) + JSON.stringify(world.props);
   check("(e) the cache holds the code only hashed (no plain code or challenge)", !stored.includes(code) && !stored.includes(r.data.challenge));
 }
 {
   reset(); ask();
-  const again = post({ action: "requestCode" });
+  const again = reqCode();
   check("(e) a second request within 60 s is refused (COOLDOWN, retryAfter) and sends no mail", again.ok === false && again.error === "COOLDOWN" && again.retryAfter > 0 && again.retryAfter <= 60 && mails.length === 1, JSON.stringify(again));
   clock.t += 61 * 1000;
-  check("(e) after 61 s a new request works", post({ action: "requestCode" }).ok === true && mails.length === 2);
+  check("(e) after 61 s a new request works", reqCode().ok === true && mails.length === 2);
 }
 {
   reset();
   let ok = 0;
-  for (let i = 0; i < 10; i++) { if (post({ action: "requestCode" }).ok) ok++; clock.t += 61 * 1000; }
-  const sixth = post({ action: "requestCode" });
+  for (let i = 0; i < 10; i++) { if (reqCode().ok) ok++; clock.t += 61 * 1000; }
+  const sixth = reqCode();
   check("(e) 10 sends per hour, the 11th is refused (LIMIT_HOUR)", ok === 10 && sixth.ok === false && sixth.error === "LIMIT_HOUR" && mails.length === 10, JSON.stringify(sixth));
   clock.t += 61 * MIN;
-  check("(e) an hour later sending works again", post({ action: "requestCode" }).ok === true);
+  check("(e) an hour later sending works again", reqCode().ok === true);
 }
 {
   reset();
   let ok = 0;
-  for (let h = 0; h < 3; h++) { for (let i = 0; i < 10; i++) { if (post({ action: "requestCode" }).ok) ok++; clock.t += 61 * 1000; } clock.t += 61 * MIN; }
-  const n21 = post({ action: "requestCode" });
+  for (let h = 0; h < 3; h++) { for (let i = 0; i < 10; i++) { if (reqCode().ok) ok++; clock.t += 61 * 1000; } clock.t += 61 * MIN; }
+  const n21 = reqCode();
   check("(e) 30 sends per day, the 31st is refused (LIMIT_DAY) even though the hour is free", ok === 30 && n21.ok === false && n21.error === "LIMIT_DAY" && mails.length === 30, JSON.stringify(n21));
   world.cache.clear();   // a cache reset must not lift the caps (they live in script properties)
-  check("(e) clearing the cache does not lift the daily cap", post({ action: "requestCode" }).error === "LIMIT_DAY");
+  check("(e) clearing the cache does not lift the daily cap", reqCode().error === "LIMIT_DAY");
 }
 {
   reset(); world.mailFail = true;
-  const r = post({ action: "requestCode" });
+  const r = reqCode();
   check("(e) a failed mail gives MAIL_FAIL and no usable challenge", r.ok === false && r.error === "MAIL_FAIL" && world.cache.size === 0, JSON.stringify(r));
   // failed sends are not counted: 15 failures, then the first good request works at once (no cooldown, no cap)
   let fails = 0;
-  for (let i = 0; i < 15; i++) { if (post({ action: "requestCode" }).error === "MAIL_FAIL") fails++; }
+  for (let i = 0; i < 15; i++) { if (reqCode().error === "MAIL_FAIL") fails++; }
   check("(e) failed mails never start the cooldown or hit a cap (15 retries all reach MailApp)", fails === 15 && world.cache.size === 0);
   world.mailFail = false;
-  const good = post({ action: "requestCode" });
+  const good = reqCode();
   check("(e) after failures the next good request works at once (nothing counted)", good.ok === true && mails.length === 1, JSON.stringify(good));
-  const next = post({ action: "requestCode" });
+  const next = reqCode();
   check("(e) only the real send starts the cooldown", next.error === "COOLDOWN");
 }
 
@@ -452,7 +456,7 @@ function login() { reset(); const { r, code } = ask(); const v = post({ action: 
   const { sess } = login();
   world.lockBusy = true;
   const before = mails.length;
-  const a = post({ action: "requestCode" });
+  const a = reqCode();
   const b = post({ action: "verifyCode", data: { challenge: "0".repeat(32), code: "123456" } });
   const c = post({ action: "saveProduct", session: sess, data: { item: { id: "n", name: "n", category: "c", price: "1" }, originalId: "" } });
   const d = post({ action: "deleteProduct", session: sess, data: { id: fileRows[0].id } });
@@ -486,7 +490,7 @@ function login() { reset(); const { r, code } = ask(); const v = post({ action: 
   check("(j) no HtmlService, ID-token or Google sign-in code is left", !/HtmlService|verifyIdToken_|checkClaims_|ADMIN_CLIENT_ID|tokeninfo|UrlFetchApp|oauth2\.googleapis/.test(src));
   check("(j) randomness only from Utilities.getUuid (no Math.random)", !/Math\.random/.test(src) && /Utilities\.getUuid/.test(src));
   check("(j) nothing is logged (no Logger, console, or Session)", !/Logger\.|console\.|Session\./.test(src));
-  check("(j) MailApp is used once and only for OWNER_EMAIL", (src.match(/MailApp\.sendEmail\(/g) || []).length === 1 && /MailApp\.sendEmail\(OWNER_EMAIL,/.test(src));
+  check("(j) MailApp is used once and only for the matched ALLOWED_EMAILS entry", (src.match(/MailApp\.sendEmail\(/g) || []).length === 1 && /MailApp\.sendEmail\(entry,/.test(src) && !/OWNER_EMAIL/.test(src));
   check("(j) authorizeOnce() exists and only touches the sheet and the mail quota", /function authorizeOnce\(\)/.test(src) && !/sendEmail\([^)]*\)[^}]*authorizeOnce/.test(src));
   check("(j) the stubbed Session service was never used", world.sessionUsed === 0);
   const m = JSON.parse(read("tools/admin/appsscript.json"));
@@ -499,6 +503,134 @@ function login() { reset(); const { r, code } = ask(); const v = post({ action: 
   check("(j) no adminClientId or Google sign-in (gsi) anywhere in the admin page or products.js", !/adminClientId|accounts\.google\.com|gsi\b|google\.accounts/.test(adm));
   check("(j) admin.js: ES2017 only (no ?. ?? replaceAll .at( flat matchAll fromEntries)", !/\?\.|\?\?|replaceAll|\.at\(|\.flat\(|matchAll|fromEntries|structuredClone/.test(read("admin/admin.js")));
   check("(j) admin.js: no innerHTML / outerHTML / insertAdjacentHTML / document.write / eval", !/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/.test(read("admin/admin.js")));
+}
+
+// (k) two allowed emails (owner decision 2026-10-23: the user types the email)
+{
+  const out = [];
+  for (const em of ALLOWED) {
+    reset();
+    const { r, code } = ask(em);
+    const v = post({ action: "verifyCode", data: { challenge: r.data.challenge, code } });
+    out.push(r.ok && mails.length === 1 && mails[0].to === em && v.ok && post({ action: "getProducts", session: v.data.session }).ok);
+  }
+  check("(k) both allowed emails get a code mailed to themselves and can log in and read the sheet", out.length === 2 && out.every(Boolean), out.join());
+  check("(k) the allowed list is exactly the two agreed lowercase addresses", ALLOWED.join() === "arman.niaruhi@gmail.com,zeinamkia023@gmail.com");
+}
+{
+  reset();
+  const a = ask(OWNER);                       // code for the first email
+  const wrongTry = post({ action: "verifyCode", data: { challenge: a.r.data.challenge, code: a.code === "000000" ? "111111" : "000000" } });
+  check("(k) a wrong code does not log in", wrongTry.ok === false && wrongTry.error === "BAD_CODE");
+  clock.t += 61 * 1000;
+  const b = ask(SECOND);                      // code for the second email
+  check("(k) the second code went to the second email only", mails.length === 2 && mails[1].to === SECOND && mails[0].to === OWNER);
+  // the second person's code with the first person's challenge (and the reverse) fails
+  const cross1 = post({ action: "verifyCode", data: { challenge: a.r.data.challenge, code: b.code } });
+  const cross2 = post({ action: "verifyCode", data: { challenge: b.r.data.challenge, code: a.code } });
+  check("(k) a code for one email cannot log in through the other email's challenge", cross1.ok === false && cross2.ok === false, JSON.stringify([cross1, cross2]));
+  // both sessions are independent, each remembers its email
+  const sa = post({ action: "verifyCode", data: { challenge: a.r.data.challenge, code: a.code } });
+  const sb = post({ action: "verifyCode", data: { challenge: b.r.data.challenge, code: b.code } });
+  check("(k) both codes still work for their own address (a request for the second did not cancel the first)", sa.ok && sb.ok && sa.data.session !== sb.data.session);
+  post({ action: "logout", session: sa.data.session });
+  check("(k) logging one out leaves the other logged in (sessions are independent)", post({ action: "getProducts", session: sa.data.session }).error === "NO_SESSION" && post({ action: "getProducts", session: sb.data.session }).ok === true);
+  const sess = [...world.cache.entries()].filter(([k]) => k.startsWith("ss_")).map(([, e]) => JSON.parse(e.v));
+  check("(k) the session stores which email it belongs to", sess.length === 1 && sess[0].e === SECOND);
+}
+{
+  reset();
+  const real = reqCode(OWNER);
+  const mailsBefore = mails.length;
+  clock.t += 61 * 1000;
+  world.sleeps.length = 0;
+  const fake = reqCode("stranger@example.com");
+  const shape = (x) => JSON.stringify(Object.keys(x).sort()) + JSON.stringify(Object.keys(x.data).sort()) + typeof x.data.challenge + x.data.challenge.length + x.data.cooldown + x.data.expiresIn;
+  check("(k) an unknown address gets no mail", mails.length === mailsBefore && mails.every((m) => ALLOWED.includes(m.to)));
+  check("(k) ... and an answer of exactly the same shape as a real one (challenge, cooldown, expiresIn)", fake.ok === true && shape(fake) === shape(real), JSON.stringify(fake));
+  check("(k) ... with a pause about as long as a real send", world.sleeps.length === 1 && world.sleeps[0] >= 300, world.sleeps.join());
+  const tries = [];
+  for (let i = 0; i < 4; i++) tries.push(post({ action: "verifyCode", data: { challenge: fake.data.challenge, code: "123456" } }));
+  const realTry = (() => { clock.t += 61 * 1000; const r2 = reqCode(OWNER); return post({ action: "verifyCode", data: { challenge: r2.data.challenge, code: "123456" } }); })();
+  check("(k) the decoy challenge never logs in and answers like a real one (BAD_CODE with triesLeft)", tries.every((t) => t.ok === false && t.error === "BAD_CODE" && typeof t.triesLeft === "number") && realTry.error === "BAD_CODE" && tries[0].triesLeft === realTry.triesLeft, JSON.stringify([tries[0], realTry]));
+  const fifth = post({ action: "verifyCode", data: { challenge: fake.data.challenge, code: "123456" } });
+  check("(k) the decoy runs out of tries like a real challenge (TOO_MANY)", fifth.error === "TOO_MANY", JSON.stringify(fifth));
+}
+{
+  reset();
+  const probe = reqCode("stranger@example.com");
+  const quick = reqCode("stranger2@example.com");
+  const real = reqCode(OWNER);
+  check("(k) the cooldown also hits unknown addresses (and a real request right after a decoy)", probe.ok && quick.error === "COOLDOWN" && quick.retryAfter > 0 && real.error === "COOLDOWN" && mails.length === 0, JSON.stringify([quick, real]));
+  world.cache.clear();
+  check("(k) ... and a cache reset does not lift it", reqCode("x@example.com").error === "COOLDOWN");
+  clock.t += 61 * 1000;
+  check("(k) after 61 s the owner gets a real mail again", reqCode(OWNER).ok && mails.length === 1);
+  check("(k) decoys are not written to the hour/day send log", JSON.parse(world.props.sendLog2).length === 1);
+}
+{
+  reset();
+  let fakes = 0;
+  for (let i = 0; i < 25; i++) { if (reqCode("nobody" + i + "@example.com").ok) fakes++; clock.t += 61 * 1000; }
+  check("(k) 25 unknown requests never use up the real send caps", fakes === 25 && mails.length === 0 && reqCode(OWNER).ok && mails.length === 1);
+}
+{
+  // shared caps: both addresses together share 10/hour
+  reset();
+  let ok = 0;
+  for (let i = 0; i < 12; i++) { if (reqCode(i % 2 ? SECOND : OWNER).ok) ok++; clock.t += 61 * 1000; }
+  check("(k) the hour cap (10) is shared by both addresses", ok === 10 && mails.length === 10 && mails.filter((m) => m.to === SECOND).length === 5);
+  reset();
+  for (let i = 0; i < 10; i++) { reqCode(OWNER); clock.t += 61 * 1000; }
+  check("(k) at the cap an unknown address gets the same LIMIT_HOUR answer (no way to tell)", reqCode("stranger@example.com").error === "LIMIT_HOUR");
+}
+{
+  // the mail address is never the raw input
+  const cases = [
+    ["ARMAN.Niaruhi@Gmail.com", OWNER], ["  zeinamkia023@gmail.com  ", SECOND], ["\tZEINAMKIA023@GMAIL.COM\n", SECOND]
+  ];
+  const res = cases.map(([input, want]) => { reset(); reqCode(input); return mails.length === 1 && mails[0].to === want && typeof mails[0].to === "string"; });
+  check("(k) different case / spaces: the mail goes to the exact list entry", res.every(Boolean), res.join());
+  const evil = ["a@b.com,zeinamkia023@gmail.com", "zeinamkia023@gmail.com,a@b.com", "zeinamkia023@gmail.com;a@b.com", "a@b.com zeinamkia023@gmail.com",
+    "zeinamkia023@gmail.com\r\nBcc: a@b.com", "<zeinamkia023@gmail.com>", "Z <zeinamkia023@gmail.com>", "zeinamkia023@gmail.com.evil.com", "evil.com@zeinamkia023@gmail.com",
+    "zeinamkia023+x@gmail.com", "zeinamkia023@gmail.com ", "arman.niaruhi@gmail.com\u0000", "a@b.com,arman.niaruhi@gmail.com"];
+  const outs = evil.map((input) => { reset(); const r = reqCode(input); return { input, r, to: mails.map((m) => m.to) }; });
+  check("(k) injected / lookalike addresses never mail two addresses or a different one",
+    outs.every((o) => o.to.length === 0 || (o.to.length === 1 && ALLOWED.includes(o.to[0]) && o.input.trim().toLowerCase() === o.to[0])),
+    JSON.stringify(outs.filter((o) => o.to.length).map((o) => [o.input, o.to])));
+  check("(k) comma / semicolon / header-injection / angle-bracket inputs get bad_request and no mail (a valid-looking lookalike domain is just an unknown address: decoy, no mail)", outs.slice(0, 9).every((o, i) => (i === 7 ? o.r.ok === true : o.r.error === "bad_request") && o.to.length === 0), JSON.stringify(outs.slice(0, 9).map((o) => o.r.error)));
+  const junk = [undefined, null, 5, {}, [], true, "", "   ", "nope", "@", "a@b", "x".repeat(300) + "@gmail.com", ("a".repeat(250)) + "@b.co"];
+  const jr = junk.map((v) => { reset(); return post({ action: "requestCode", data: v === undefined ? {} : { email: v } }); });
+  check("(k) missing / non-string / malformed / oversize email: bad_request, no mail, nothing stored", jr.every((x) => x.error === "bad_request") && mails.length === 0 && world.cache.size === 0, jr.map((x) => x.error).join());
+  reset(); post({ action: "requestCode" });
+  check("(k) a request with no data at all is bad_request", mails.length === 0);
+}
+{
+  // session email checks
+  const { sess } = login(SECOND);
+  check("(k) a session for the second email can use every action", post({ action: "getProducts", session: sess }).ok && post({ action: "publishCsv", session: sess }).ok);
+  // the second guard: a granted request whose email is not on the list is refused inside the sheet functions
+  vm.runInContext("sessionEmail_ = 'stranger@example.com'", gs);
+  let threw = false; try { gs.getProducts(); } catch (e) { threw = true; }
+  vm.runInContext("sessionEmail_ = ''", gs);
+  check("(k) assertSession_ refuses an email that is not on ALLOWED_EMAILS", threw);
+  vm.runInContext("sessionEmail_ = '" + SECOND + "'", gs);
+  let okCall = true; try { gs.getProducts(); } catch (e) { okCall = false; }
+  vm.runInContext("sessionEmail_ = ''", gs);
+  check("(k) assertSession_ accepts an allowed email", okCall);
+  // a session whose email is removed from the list (or was forged / old format) dies
+  const key = [...world.cache.keys()].find((k) => k.startsWith("ss_"));
+  const st = JSON.parse(world.cache.get(key).v);
+  const put = (o) => world.cache.set(key, { v: JSON.stringify(o), until: clock.t + 600000 });
+  put({ ...st, e: "stranger@example.com" });
+  check("(k) a session stored for an email not on the list is refused", post({ action: "getProducts", session: sess }).error === "NO_SESSION");
+  const { sess: s2 } = login(OWNER);
+  const key2 = [...world.cache.keys()].find((k) => k.startsWith("ss_"));
+  const st2 = JSON.parse(world.cache.get(key2).v);
+  delete st2.e; world.cache.set(key2, { v: JSON.stringify(st2), until: clock.t + 600000 });
+  check("(k) a session without an email (old format) is refused", post({ action: "getProducts", session: s2 }).error === "NO_SESSION");
+  const src = read("tools/admin/Code.gs");
+  check("(k) no OWNER_EMAIL is left in Code.gs and the list is lowercase", !/OWNER_EMAIL/.test(src) && ALLOWED.every((e) => e === e.toLowerCase()));
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");

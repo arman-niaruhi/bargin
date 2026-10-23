@@ -1,17 +1,23 @@
 # Product admin (admin page on the site + Google Sheet + Apps Script)
 
-The admin page is **`/admin/`** on the site (`admin/index.html` + `admin/admin.js`). The owner logs in with a
-**one-time code sent by email** (arman.niaruhi@gmail.com only), edits products there, and can download a CSV
+The admin page is **`/admin/`** on the site (`admin/index.html` + `admin/admin.js`). The people on the allowed list log in with a
+**one-time code sent by email** (the list is `ALLOWED_EMAILS` in `Code.gs`: arman.niaruhi@gmail.com and zeinamkia023@gmail.com), edit products there, and can download a CSV
 backup. The Google Sheet is the product data; the site reads its published CSV.
 Owner decision 2026-10-23: email-code login. No Google sign-in, no Google Cloud project, no OAuth client.
 
 ## How it works
-1. The page asks the Apps Script web app (`doPost` in `tools/admin/Code.gs`) for a code (`requestCode`).
-2. The script emails a **6-digit code to `OWNER_EMAIL` only** (never to an address from the request). The code is in
-   the mail subject («کد ورود برگین: 123456») so the phone notification shows it.
-3. The owner types the code (`verifyCode`). Right code = a random **session token** (stored hashed on the server).
+1. The person TYPES their email on the login screen (nothing on the page lists the allowed emails). The page asks the
+   Apps Script web app (`doPost` in `tools/admin/Code.gs`) for a code (`requestCode` with `{email}`).
+2. The email is trimmed and lowercased; malformed input is refused at once. If it is on `ALLOWED_EMAILS`, the script emails a
+   **6-digit code to that list entry only** (never to the raw text of the request). The code is in the mail subject
+   («کد ورود برگین: 123456»). If it is NOT on the list, nothing is mailed but the answer looks the same (same shape, a
+   decoy challenge that never logs in, a short pause like a real send, same cooldown and caps), so nobody can find out
+   which emails are allowed.
+3. The person types the code (`verifyCode`). The challenge remembers its email, so a code for one address cannot log in as
+   the other. Right code = a random **session token** (stored hashed) that remembers the email.
 4. Every other action (getProducts, saveProduct, deleteProduct, publishCsv) needs that token. The check is in one
-   place (`handleRequest_`) and again inside each sheet function. No valid session = `NO_SESSION`, nothing is read or written.
+   place (`handleRequest_`) and again inside each sheet function; both checks need the session's email to still be on
+   `ALLOWED_EMAILS`. No valid session = `NO_SESSION`, nothing is read or written.
 
 Rules in `Code.gs`:
 - Code: 6 digits, only from `Utilities.getUuid()` with rejection sampling; stored hashed (SHA-256 with its challenge id)
@@ -29,7 +35,19 @@ Rules in `Code.gs`:
 Settings (not secret) are in `products.js`: `SHOP.adminApi` (the web app `/exec` URL). Empty = the page shows
 «صفحه‌ی مدیریت هنوز راه‌اندازی نشده…».
 
+## Allowed emails
+- `ALLOWED_EMAILS` at the top of `Code.gs` (lowercase). **To add or remove someone: edit that list, then deploy a New
+  version** (Manage deployments). Removing an address also ends that person's sessions at the next request.
+- **Everyone on the list has full admin access** (edit and delete every product, download the CSV). There are no roles.
+- The send caps (60 s apart, 10/hour, 30/day) are shared by all addresses. Requests for unknown addresses also start the
+  60 s cooldown but are not counted in the hour/day send log.
+
 ## Residual risks (accepted)
+- **Each listed Gmail account is a way in.** Anyone who can read any listed mailbox can log in, so each person needs a strong
+  password and 2-step verification on their own account. Remove addresses that are no longer needed.
+- Timing of the answer for an unknown address is only about the same as for a real one (a 0.7 s pause); a very careful
+  observer might still tell them apart. The page itself never lists the emails, and the code is in this repo, so the list is
+  not secret from someone who can read the code.
 - Whoever can read the owner's mailbox can log in (that is the whole point of the email code). Use a strong password and
   2-step verification on the Gmail account.
 - Someone who knows the web app URL can make the script email a code to the owner (up to 10 per hour / 30 per day). It is only
@@ -73,7 +91,7 @@ unique; `soldOut` is `yes`, `no` or empty. Blank rows are skipped. Problems are 
 - **«به سرور وصل نشدیم» / the page says not set up:** `adminApi` in `products.js` is empty or wrong, or the deployment is archived.
 - **Nothing works after a code change:** deploy a **New version** in Manage deployments.
 - **Suspect someone else got in / lost the email account:** Apps Script → **Deploy → Manage deployments → Archive** the deployment
-  (all requests stop at once), or change `OWNER_EMAIL` and deploy again. To end every session at once, change the `'ss_'`
+  (all requests stop at once), or remove the address from `ALLOWED_EMAILS` and deploy again. To end every session at once, change the `'ss_'`
   prefix in `Code.gs` (two places) or wait up to 6 hours. Then deploy again and send the new URL if it changed.
 - **Bad edit in the Sheet:** use the Sheet's **File → Version history**. `data/products.csv` is also a backup.
 
