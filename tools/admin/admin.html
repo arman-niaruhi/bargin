@@ -10,7 +10,7 @@
 <style>
   :root {
     --paper: #ecd1a3; --card: #f8ecd5; --green: #2f7a1f; --green-d: #1f5714;
-    --brown: #4a2c1a; --red: #c8321e; --line: #d9b98a;
+    --brown: #4a2c1a; --red: #c8321e; --line: #d9b98a; --input: #fffaf0;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
@@ -31,8 +31,9 @@
     display: inline-flex; align-items: center; justify-content: center;
   }
   .btn.ghost { background: var(--card); color: var(--green-d); }
+  .btn.danger { background: var(--card); color: var(--red); border-color: var(--red); }
   .btn:disabled { opacity: .55; cursor: wait; }
-  .btn:focus-visible { outline: 3px solid var(--brown); outline-offset: 2px; }
+  .btn:focus-visible, .item:focus-visible { outline: 3px solid var(--brown); outline-offset: 2px; }
   .status { text-align: center; min-height: 1.7em; margin: 14px 0 0; font-weight: 700; }
   .status.bad { color: var(--red); }
   .status.good { color: var(--green-d); }
@@ -41,6 +42,7 @@
     padding: 14px 16px; margin-top: 14px;
   }
   .panel.issues { border: 2px dashed var(--red); }
+  .panel.edit { border: 2px solid var(--green); max-width: 720px; margin-left: auto; margin-right: auto; }
   .panel ul { margin: 6px 0 0; padding-right: 20px; }
   .panel li { margin: 4px 0; }
   .row-no { font-weight: 700; color: var(--red); margin-left: 6px; }
@@ -51,7 +53,9 @@
   .item {
     background: var(--card); border: 1px solid var(--line); border-radius: 12px;
     padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    width: 100%; font: inherit; color: inherit; text-align: start; cursor: pointer;
   }
+  .item:hover { border-color: var(--green); }
   .item .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .item .name { font-weight: 700; overflow-wrap: anywhere; }
   .item .meta { font-size: .9rem; overflow-wrap: anywhere; }
@@ -60,6 +64,19 @@
   .tag.in { background: #dfeed6; color: var(--green-d); }
   .tag.out { background: var(--red); color: #fff; }
   .empty { text-align: center; }
+  .edit h2 { margin-top: 0; }
+  .field { margin: 0 0 12px; }
+  .field label { display: block; font-weight: 700; margin: 0 0 4px; }
+  .field input, .field textarea, .field select {
+    width: 100%; font: inherit; color: var(--brown); background: var(--input);
+    border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-height: 44px;
+  }
+  .field textarea { min-height: 0; resize: vertical; }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    outline: 2px solid var(--green); outline-offset: 0; border-color: var(--green);
+  }
+  .field .fhint { font-size: .85rem; margin: 4px 0 0; }
+  .actions { margin-top: 6px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -70,10 +87,26 @@
 
   <div class="bar">
     <button id="reload" class="btn ghost" type="button"></button>
-    <button id="publish" class="btn" type="button"></button>
+    <button id="addNew" class="btn" type="button"></button>
+    <button id="publish" class="btn ghost" type="button"></button>
   </div>
 
   <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="editBox" class="panel edit" hidden>
+    <h2 id="editTitle"></h2>
+    <form id="editForm" autocomplete="off" novalidate>
+      <div id="fields"></div>
+      <div class="bar actions">
+        <button id="saveBtn" class="btn" type="submit"></button>
+        <button id="deleteBtn" class="btn danger" type="button"></button>
+        <button id="cancelBtn" class="btn ghost" type="button"></button>
+      </div>
+    </form>
+    <section id="editIssuesBox" class="panel issues" hidden>
+      <ul id="editIssues"></ul>
+    </section>
+  </section>
 
   <section id="issuesBox" class="panel issues" hidden>
     <h2 id="issuesTitle" style="margin-top:0"></h2>
@@ -99,11 +132,14 @@
   // TODO: bargin-content to review the Persian wording.
   var TEXT = {
     title: 'مدیریت محصولات برگین',
-    intro: 'محصول‌ها رو توی شیت عوض کن. بعد «ساخت فایل» رو بزن. اگه مشکلی باشه، همه‌ش پایین لیست می‌شه.',
+    intro: 'محصول‌ها رو توی شیت عوض کن یا از همین صفحه ویرایش کن. بعد «ساخت فایل» رو بزن. اگه مشکلی باشه، همه‌ش پایین لیست می‌شه.',
     reload: 'بارگذاری دوباره',
+    addNew: 'افزودن محصول جدید',
     publish: 'ساخت فایل products.csv',
     loading: 'در حال خوندن شیت…',
     busy: 'یه لحظه صبر کن…',
+    saving: 'در حال ذخیره…',
+    deleting: 'در حال حذف…',
     count: 'تعداد محصول: {n}',
     empty: 'هنوز محصولی توی شیت نیست.',
     issuesTitle: 'این موارد باید درست بشن تا فایل ساخته بشه:',
@@ -119,8 +155,46 @@
     soldOut: 'ناموجود',
     loadFail: 'نتونستیم شیت رو بخونیم. دوباره امتحان کن.',
     publishFail: 'ساخت فایل انجام نشد. دوباره امتحان کن.',
-    noGoogle: 'این صفحه باید از داخل Apps Script باز بشه.'
+    noGoogle: 'این صفحه باید از داخل Apps Script باز بشه.',
+    editTitle: 'ویرایش: {name}',
+    newTitle: 'محصول جدید',
+    save: 'ذخیره',
+    del: 'حذف',
+    cancel: 'انصراف',
+    confirmDelete: 'مطمئنی می‌خوای «{name}» رو از شیت پاک کنی؟ این کار برگشت نداره.',
+    saved: 'ذخیره شد. لیست به‌روز شد.',
+    deleted: 'محصول پاک شد. لیست به‌روز شد.',
+    saveBlocked: 'ذخیره نشد. اول مشکل‌ها رو درست کن.',
+    deleteFail: 'پاک نشد. دوباره امتحان کن.',
+    noIdEdit: 'این ردیف شناسه نداره. اول توی شیت شناسه بذار، بعد بارگذاری دوباره رو بزن.',
+    fieldLabel: {
+      id: 'شناسه (id)',
+      name: 'اسم (name)',
+      category: 'دسته‌بندی (category)',
+      price: 'قیمت (price)',
+      unit: 'واحد (unit)',
+      serves: 'چقدر برای هر نفر؟ (serves)',
+      short: 'متن کوتاه (short)',
+      details: 'توضیحات (details)',
+      recipe: 'دستور پخت (recipe)',
+      images: 'عکس‌ها (images)',
+      soldOut: 'ناموجود (soldOut)'
+    },
+    fieldHint: {
+      id: 'انگلیسی و بدون فاصله. اگه عوضش کنی، ردیف همین‌جا تغییر می‌کنه.',
+      price: 'فقط عدد. «,» و رقم فارسی اشکالی نداره. مثلاً ۴۲۰,۰۰۰',
+      unit: 'مثلاً کیلو یا ۴۰۰ گرم',
+      serves: 'مثلاً: هر نفر حدود ۱۰۰ گرم. یه پک برای ۴ نفر کافیه.',
+      images: 'مسیر عکس‌ها رو با | از هم جدا کن. اولی روی کارت می‌آد.',
+      recipe: 'خط اول: اسم غذا. خط‌های «- » مواد. خط‌های شماره‌دار: مراحل. بقیه: نکته.',
+      soldOut: 'yes یا no. خالی یعنی no.'
+    }
   };
+
+  // The Sheet columns, in the order of the form.
+  var FIELDS = ['id', 'name', 'category', 'price', 'unit', 'serves', 'short', 'details', 'recipe', 'images', 'soldOut'];
+  var TEXTAREA_ROWS = { serves: 2, short: 2, details: 4, recipe: 7, images: 2 };
+  var LTR_FIELDS = { id: true, price: true, images: true, soldOut: true };
 
   function fill(template, vars) {
     return template.replace(/\{(\w+)\}/g, function (m, k) {
@@ -131,19 +205,23 @@
   function $(id) { return document.getElementById(id); }
 
   var lastUrl = null;
+  var editing = false;     // the edit form is open
+  var editId = '';        // the id the open product had ('' = new product)
 
   // Calls a server function through google.script.run (the only server link).
-  function callServer(fn, onOk, onFail) {
+  // args is an array of arguments for that function.
+  function callServer(fn, args, onOk, onFail) {
     if (!window.google || !google.script || !google.script.run) {
       onFail(TEXT.noGoogle);
       return;
     }
-    google.script.run
+    var runner = google.script.run
       .withSuccessHandler(onOk)
       .withFailureHandler(function (err) {
         if (window.console) console.error(err);
         onFail(TEXT.loadFail);
-      })[fn]();
+      });
+    runner[fn].apply(runner, args || []);
   }
 
   function setStatus(text, kind) {
@@ -155,22 +233,30 @@
   function setBusy(on) {
     $('reload').disabled = on;
     $('publish').disabled = on;
+    $('addNew').disabled = on;
+    $('saveBtn').disabled = on;
+    $('deleteBtn').disabled = on;
   }
 
-  function showIssues(issues) {
-    var list = $('issues');
+  // Fills a list (ul) with issues from the server, with their row numbers.
+  function fillIssues(list, box, issues) {
     list.textContent = '';
     issues.forEach(function (it) {
       var li = document.createElement('li');
-      var no = document.createElement('span');
-      no.className = 'row-no';
-      no.textContent = fill(TEXT.rowLabel, { n: it.row }) + ':';
-      li.appendChild(no);
-      li.appendChild(document.createTextNode(' ' + it.message));
+      if (it.row) {
+        var no = document.createElement('span');
+        no.className = 'row-no';
+        no.textContent = fill(TEXT.rowLabel, { n: it.row }) + ':';
+        li.appendChild(no);
+        li.appendChild(document.createTextNode(' '));
+      }
+      li.appendChild(document.createTextNode(it.message));
       list.appendChild(li);
     });
-    $('issuesBox').hidden = !issues.length;
+    box.hidden = !issues.length;
   }
+
+  function showIssues(issues) { fillIssues($('issues'), $('issuesBox'), issues); }
 
   function showDownload(csv, count) {
     if (lastUrl) URL.revokeObjectURL(lastUrl);
@@ -191,6 +277,131 @@
     setStatus(fill(TEXT.ready, { n: count }), 'good');
   }
 
+  // ---- edit form ----
+
+  function buildForm() {
+    var box = $('fields');
+    FIELDS.forEach(function (key) {
+      var wrap = document.createElement('div');
+      wrap.className = 'field';
+      var label = document.createElement('label');
+      label.htmlFor = 'f-' + key;
+      label.textContent = TEXT.fieldLabel[key];
+      wrap.appendChild(label);
+
+      var input;
+      if (key === 'soldOut') {
+        input = document.createElement('select');
+        ['no', 'yes'].forEach(function (v) {
+          var opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          input.appendChild(opt);
+        });
+      } else if (TEXTAREA_ROWS[key]) {
+        input = document.createElement('textarea');
+        input.rows = TEXTAREA_ROWS[key];
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+      }
+      input.id = 'f-' + key;
+      input.name = key;
+      input.setAttribute('spellcheck', 'false');
+      if (LTR_FIELDS[key]) input.setAttribute('dir', 'ltr');
+      if (key === 'id') {
+        input.setAttribute('autocapitalize', 'none');
+      }
+      wrap.appendChild(input);
+
+      if (TEXT.fieldHint[key]) {
+        var hint = document.createElement('p');
+        hint.className = 'fhint';
+        hint.textContent = TEXT.fieldHint[key];
+        wrap.appendChild(hint);
+      }
+      box.appendChild(wrap);
+    });
+  }
+
+  function formValues() {
+    var o = {};
+    FIELDS.forEach(function (k) { o[k] = $('f-' + k).value; });
+    return o;
+  }
+
+  function setFormValues(p) {
+    FIELDS.forEach(function (k) {
+      var v = p[k] === undefined || p[k] === null ? '' : String(p[k]);
+      if (k === 'soldOut') v = v.trim().toLowerCase() === 'yes' ? 'yes' : 'no';
+      $('f-' + k).value = v;
+    });
+  }
+
+  function openEdit(r) {
+    if (r && !r.id) {
+      setStatus(TEXT.noIdEdit, 'bad');
+      return;
+    }
+    editing = true;
+    editId = r ? r.id : '';
+    $('editTitle').textContent = r ? fill(TEXT.editTitle, { name: r.name || r.id }) : TEXT.newTitle;
+    setFormValues(r || { soldOut: 'no' });
+    $('deleteBtn').hidden = !r;
+    fillIssues($('editIssues'), $('editIssuesBox'), []);
+    $('editBox').hidden = false;
+    try { $('editBox').scrollIntoView({ block: 'start' }); } catch (e) { /* older browsers: no scroll */ }
+  }
+
+  function closeEdit() {
+    editing = false;
+    editId = '';
+    $('editBox').hidden = true;
+    fillIssues($('editIssues'), $('editIssuesBox'), []);
+  }
+
+  function save() {
+    setBusy(true);
+    setStatus(TEXT.saving);
+    callServer('saveProduct', [formValues(), editId], function (res) {
+      setBusy(false);
+      if (!res || !res.ok) {
+        fillIssues($('editIssues'), $('editIssuesBox'), (res && res.issues) || []);
+        setStatus(TEXT.saveBlocked, 'bad');
+        return;
+      }
+      closeEdit();
+      load(TEXT.saved);
+    }, function (msg) {
+      setBusy(false);
+      fillIssues($('editIssues'), $('editIssuesBox'), [{ row: null, message: msg }]);
+      setStatus(msg, 'bad');
+    });
+  }
+
+  function remove() {
+    var name = $('f-name').value.trim() || editId;
+    if (!window.confirm(fill(TEXT.confirmDelete, { name: name }))) return;
+    setBusy(true);
+    setStatus(TEXT.deleting);
+    callServer('deleteProduct', [editId], function (res) {
+      setBusy(false);
+      if (!res || !res.ok) {
+        var msg = (res && res.message) || TEXT.deleteFail;
+        fillIssues($('editIssues'), $('editIssuesBox'), [{ row: null, message: msg }]);
+        setStatus(msg, 'bad');
+        return;
+      }
+      closeEdit();
+      load(TEXT.deleted);
+    }, function (msg) {
+      setBusy(false);
+      setStatus(msg, 'bad');
+    });
+  }
+
+  // ---- list and checks ----
+
   function renderList(rows) {
     var box = $('list');
     box.textContent = '';
@@ -198,10 +409,12 @@
     rows.forEach(function (r) {
       if (!r.id && !r.name && !r.price) return; // blank row
       shown++;
-      var item = document.createElement('div');
+      var item = document.createElement('button');
+      item.type = 'button';
       item.className = 'item';
+      item.addEventListener('click', function () { openEdit(r); });
 
-      var top = document.createElement('div');
+      var top = document.createElement('span');
       top.className = 'top';
       var name = document.createElement('span');
       name.className = 'name';
@@ -213,7 +426,7 @@
       top.appendChild(num);
       item.appendChild(top);
 
-      var meta = document.createElement('div');
+      var meta = document.createElement('span');
       meta.className = 'meta';
       meta.textContent = [r.id || TEXT.noId, r.category, r.price].filter(Boolean).join(' · ');
       item.appendChild(meta);
@@ -231,14 +444,17 @@
     $('emptyText').hidden = shown > 0;
   }
 
-  function load() {
+  // done (optional): a message to show after a successful reload (after save or delete).
+  function load(done) {
     setBusy(true);
     setStatus(TEXT.loading);
-    callServer('getProducts', function (res) {
+    callServer('getProducts', [], function (res) {
       setBusy(false);
       renderList(res.rows || []);
       showIssues(res.issues || []);
-      setStatus(res.issues && res.issues.length ? TEXT.blocked : '', res.issues && res.issues.length ? 'bad' : '');
+      var bad = res.issues && res.issues.length;
+      if (bad) setStatus(TEXT.blocked, 'bad');
+      else setStatus(done || '', done ? 'good' : '');
     }, function (msg) {
       setBusy(false);
       setStatus(msg, 'bad');
@@ -249,7 +465,7 @@
     setBusy(true);
     setStatus(TEXT.busy);
     $('downloadBox').hidden = true;
-    callServer('publishCsv', function (res) {
+    callServer('publishCsv', [], function (res) {
       setBusy(false);
       if (!res || !res.ok) {
         showIssues((res && res.issues) || []);
@@ -269,15 +485,24 @@
   $('title').textContent = TEXT.title;
   $('intro').textContent = TEXT.intro;
   $('reload').textContent = TEXT.reload;
+  $('addNew').textContent = TEXT.addNew;
   $('publish').textContent = TEXT.publish;
   $('issuesTitle').textContent = TEXT.issuesTitle;
   $('downloadText').textContent = TEXT.downloadText;
   $('downloadLink').textContent = TEXT.downloadLink;
   $('afterText').textContent = TEXT.after;
   $('listTitle').textContent = fill(TEXT.count, { n: 0 });
+  $('saveBtn').textContent = TEXT.save;
+  $('deleteBtn').textContent = TEXT.del;
+  $('cancelBtn').textContent = TEXT.cancel;
 
-  $('reload').addEventListener('click', load);
+  buildForm();
+  $('reload').addEventListener('click', function () { load(); });
+  $('addNew').addEventListener('click', function () { openEdit(null); });
   $('publish').addEventListener('click', publish);
+  $('editForm').addEventListener('submit', function (e) { e.preventDefault(); save(); });
+  $('deleteBtn').addEventListener('click', remove);
+  $('cancelBtn').addEventListener('click', closeEdit);
   load();
 })();
 </script>

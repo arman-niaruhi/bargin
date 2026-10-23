@@ -27,7 +27,12 @@ var MSG = {
   badPrice: 'قیمت باید فقط عدد باشه: «{value}»',
   badId: 'شناسه باید انگلیسی و بدون فاصله باشه: «{value}»',
   duplicateId: 'شناسه تکراری: «{value}» (سطر {first} هم همینه).',
-  badSoldOut: 'ناموجود (soldOut) باید yes یا no باشه، یا خالی: «{value}»'
+  badSoldOut: 'ناموجود (soldOut) باید yes یا no باشه، یا خالی: «{value}»',
+  notFound: 'این محصول توی شیت پیدا نشد: «{value}». شاید قبلاً پاکش کرده باشی. صفحه رو دوباره بارگذاری کن.',
+  blankItem: 'هیچ اطلاعاتی برای ذخیره داده نشده.',
+  noDeleteId: 'شناسه‌ای برای حذف داده نشده.',
+  manyIds: 'چند سطر با شناسه «{value}» هست. اول توی شیت درستش کن.',
+  sheetProblems: 'اول مشکل‌های شیت رو درست کن، بعد ذخیره کن.'
 };
 
 var PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
@@ -103,6 +108,46 @@ function validateRows(rows) {
   return issues;
 }
 
+// Checks one product before it is saved (pure: no sheet calls).
+// `rows` are the sheet rows ({row, id, ...}). `item` is the product from the form
+// (keys in HEADER). `originalId` is the id the product had before the edit, or ''
+// for a new product. Returns {issues, target, row}: `target` is the sheet row to
+// update (null = append), `row` is the sheet row the product will be written to.
+function planSave(rows, item, originalId) {
+  var clean = {};
+  HEADER.forEach(function (h) { clean[h] = cellText(item[h]); });
+  var from = cellText(originalId);
+
+  var target = null;
+  if (from) {
+    rows.forEach(function (r) {
+      if (target === null && !isBlankRow(r) && cellText(r.id) === from) target = r.row;
+    });
+    if (target === null) {
+      return { issues: [{ row: null, message: fill(MSG.notFound, { value: from }) }], target: null, row: null };
+    }
+  }
+
+  var nextRow = rows.reduce(function (max, r) { return Math.max(max, r.row); }, 1) + 1;
+  var row = target || nextRow;
+  clean.row = row;
+
+  var issues = validateRows([clean]);
+  if (isBlankRow(clean)) issues.push({ row: row, message: MSG.blankItem });
+
+  // Same id on another row is a duplicate (validateRows only sees this one row).
+  if (clean.id) {
+    for (var i = 0; i < rows.length; i++) {
+      var other = rows[i];
+      if (other.row !== target && !isBlankRow(other) && cellText(other.id) === clean.id) {
+        issues.push({ row: row, message: fill(MSG.duplicateId, { value: clean.id, first: other.row }) });
+        break;
+      }
+    }
+  }
+  return { issues: issues, target: target, row: row };
+}
+
 // Builds the CSV text: UTF-8 BOM, the header, then one line per product.
 // Empty soldOut becomes "no". Price is written as typed. `eol` is the line
 // ending for records and for line breaks inside a cell (default CRLF, like data/products.csv).
@@ -142,8 +187,12 @@ function doGet() {
 
 // Reads the first sheet. Returns {rows, issues}. Row 1 is the header; the
 // header can have the columns in any order, but all of them must be there.
+function productSheet() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+}
+
 function readSheetRows() {
-  var values = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getValues();
+  var values = productSheet().getDataRange().getValues();
   var issues = [];
   if (!values.length) return { rows: [], issues: issues };
   var head = values[0].map(function (h) { return cellText(h); });
@@ -177,4 +226,49 @@ function publishCsv() {
   var data = getProducts();
   if (data.issues.length) return { ok: false, issues: data.issues };
   return { ok: true, csv: buildCsv(data.rows, EOL), count: productRows(data.rows).length };
+}
+
+// Called by the page on «ذخیره». `item` has the 11 columns (HEADER keys) as text.
+// `originalId` is the id before the edit ('' or missing for a new product).
+// An existing id is updated in place (the id can be changed too); a new id is appended.
+// Columns that are not in HEADER keep their old value. Returns {ok:true, row, updated}
+// or {ok:false, issues} (issues have row numbers, same as the checks).
+function saveProduct(item, originalId) {
+  assertOwner();
+  var sheet = productSheet();
+  var data = readSheetRows();
+  if (data.issues.length) return { ok: false, issues: data.issues };
+
+  var plan = planSave(data.rows, item || {}, originalId);
+  if (plan.issues.length) return { ok: false, issues: plan.issues };
+
+  var width = sheet.getLastColumn();
+  var head = sheet.getRange(1, 1, 1, width).getValues()[0].map(cellText);
+  var values = plan.target
+    ? sheet.getRange(plan.target, 1, 1, width).getValues()[0]
+    : head.map(function () { return ''; });
+
+  HEADER.forEach(function (h) {
+    var v = cellText(item[h]);
+    if (h === 'soldOut') v = v.toLowerCase() === 'yes' ? 'yes' : 'no';
+    values[head.indexOf(h)] = v;
+  });
+
+  sheet.getRange(plan.row, 1, 1, width).setValues([values]);
+  return { ok: true, row: plan.row, updated: !!plan.target };
+}
+
+// Called by the page on «حذف» (after the owner confirmed). Deletes the sheet row with this id.
+// Returns {ok:true, row} or {ok:false, message}.
+function deleteProduct(id) {
+  assertOwner();
+  var key = cellText(id);
+  if (!key) return { ok: false, message: MSG.noDeleteId };
+  var data = readSheetRows();
+  if (data.issues.length) return { ok: false, message: MSG.sheetProblems };
+  var hits = data.rows.filter(function (r) { return !isBlankRow(r) && cellText(r.id) === key; });
+  if (!hits.length) return { ok: false, message: fill(MSG.notFound, { value: key }) };
+  if (hits.length > 1) return { ok: false, message: fill(MSG.manyIds, { value: key }) };
+  productSheet().deleteRow(hits[0].row);
+  return { ok: true, row: hits[0].row };
 }

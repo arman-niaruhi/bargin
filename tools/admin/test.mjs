@@ -8,7 +8,7 @@ const csvFile = read("data/products.csv");
 
 // Code.gs: pure functions only (no Apps Script calls at load time)
 const gs = {};
-vm.runInNewContext(read("tools/admin/Code.gs") + ";this.buildCsv=buildCsv;this.validateRows=validateRows;this.HEADER=HEADER;this.EOL=EOL;", gs);
+vm.runInNewContext(read("tools/admin/Code.gs") + ";this.buildCsv=buildCsv;this.validateRows=validateRows;this.planSave=planSave;this.HEADER=HEADER;this.EOL=EOL;", gs);
 
 // app.js: the same parser the website and the bot use
 const site = {};
@@ -174,6 +174,46 @@ check("(c) clean file has no issues", issuesOf(base()).length === 0, JSON.string
 {
   const rows = base(); rows[0].short = "  کوتاه  ";
   check("(c) surrounding spaces are trimmed", gs.buildCsv(rows).includes(",کوتاه,") );
+}
+
+// (d) saveProduct checks (planSave is the pure part of saveProduct)
+{
+  const rows = base();
+  const form = (over) => ({ ...rows[0], ...over });
+  delete form.row;
+
+  const dup = gs.planSave(rows, form({ id: rows[3].id, name: "نسخه" }), "");
+  check("(d) add: a duplicate id is refused, no target (append)",
+    dup.issues.length === 1 && /تکراری/.test(dup.issues[0].message) && dup.target === null, JSON.stringify(dup.issues));
+
+  const bad = gs.planSave(rows, form({ id: "new-one", price: "abc" }), "");
+  check("(d) add: a bad price is refused",
+    bad.issues.length === 1 && /قیمت/.test(bad.issues[0].message), JSON.stringify(bad.issues));
+
+  const ok = gs.planSave(rows, form({ id: "new-one", price: "۱۲۰,۰۰۰" }), "");
+  check("(d) add: a valid new id is accepted and appended after the last row",
+    ok.issues.length === 0 && ok.target === null && ok.row === fileRows[fileRows.length - 1].row + 1, JSON.stringify(ok));
+
+  const edit = gs.planSave(rows, form({ name: "سبزی قورمه ویرایش شده", price: "۴۳۰,۰۰۰" }), rows[0].id);
+  check("(d) edit: a valid edit is accepted and updates the same row",
+    edit.issues.length === 0 && edit.target === 2 && edit.row === 2, JSON.stringify(edit));
+
+  const rename = gs.planSave(rows, form({ id: rows[1].id }), rows[0].id);
+  check("(d) edit: renaming an id to another product's id is refused",
+    rename.issues.length === 1 && /تکراری/.test(rename.issues[0].message), JSON.stringify(rename.issues));
+
+  const same = gs.planSave(rows, form({ id: rows[0].id }), rows[0].id);
+  check("(d) edit: keeping the same id is not a duplicate of itself", same.issues.length === 0, JSON.stringify(same.issues));
+
+  const gone = gs.planSave(rows, form({}), "no-such-id");
+  check("(d) edit: an id that is not in the sheet is refused (no append)",
+    gone.issues.length === 1 && gone.target === null && gone.row === null, JSON.stringify(gone.issues));
+
+  const blank = gs.planSave(rows, {}, "");
+  check("(d) an empty form is refused", blank.issues.length > 0, JSON.stringify(blank.issues));
+
+  const soldBad = gs.planSave(rows, form({ soldOut: "maybe" }), rows[0].id);
+  check("(d) edit: a bad soldOut is refused", soldBad.issues.length === 1 && /soldOut/.test(soldBad.issues[0].message));
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");
