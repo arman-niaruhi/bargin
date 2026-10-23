@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/; connect-src 'self' https://script.google.com https://*.googleusercontent.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; base-uri 'none'; form-action 'none'">
   <title>مدیریت برگین</title>
   <meta name="theme-color" content="#ecd1a3">
   <link rel="icon" href="../images/icon.png">
@@ -23,7 +23,11 @@
     .adm .btn[disabled] { opacity: .55; cursor: default; }
     .adm .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
     .adm .btn-danger:hover { background: var(--red); border-color: var(--red); color: #fff; }
-    #gsi-button { display: flex; justify-content: center; min-height: 44px; margin: 16px 0; }
+    .adm-code-form { max-width: 320px; margin: 12px auto; }
+    .adm-code-form label { display: block; font-weight: 700; margin-bottom: 4px; }
+    .adm-code-form input { width: 100%; font-family: inherit; font-size: 1.6rem; letter-spacing: .35em; text-align: center; direction: ltr; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fffaf0; color: var(--text); }
+    .adm-code-form input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(47, 122, 31, .2); }
+    .adm-code-form .hint { display: block; font-weight: 400; font-size: .85rem; color: var(--muted); }
     .adm-status { min-height: 1.6em; font-weight: 700; }
     .adm-status.err { color: var(--red); }
     .adm-status.ok { color: var(--green-dark); }
@@ -57,18 +61,24 @@
       <p id="setup-msg"></p>
     </section>
 
-    <!-- sign in -->
-    <section class="adm-card" id="s-signin" hidden>
-      <p id="signin-msg">برای مدیریت محصولات با حساب گوگل خودت وارد شو.</p>
-      <div id="gsi-button"></div>
-      <p class="adm-status" id="signin-status" role="status"></p>
+    <!-- login: ask for a code -->
+    <section class="adm-card" id="s-login" hidden>
+      <p id="login-msg">برای ورود، یه کد ۶ رقمی به ایمیل مالک برگین می‌فرستیم.</p>
+      <div class="adm-bar"><button type="button" class="btn" id="send">ارسال کد به ایمیل</button></div>
+      <p class="adm-status" id="login-status" role="status"></p>
     </section>
 
-    <!-- wrong account -->
-    <section class="adm-card" id="s-denied" hidden>
-      <p><strong>این حساب اجازه نداره.</strong></p>
-      <p>این صفحه فقط برای مالک برگینه. با حساب درست وارد شو.</p>
-      <div class="adm-bar"><button type="button" class="btn" id="other-account">حساب دیگه</button></div>
+    <!-- login: type the code -->
+    <section class="adm-card" id="s-code" hidden>
+      <form class="adm-code-form" id="code-form" novalidate>
+        <label for="code">کد ۶ رقمی<span class="hint">مثلاً ۱۲۳۴۵۶</span></label>
+        <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" enterkeyhint="done" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <div class="adm-bar">
+          <button type="submit" class="btn" id="verify">ورود</button>
+          <button type="button" class="btn btn-ghost" id="resend" disabled>ارسال دوباره</button>
+        </div>
+      </form>
+      <p class="adm-status" id="code-status" role="status"></p>
     </section>
 
     <!-- admin -->

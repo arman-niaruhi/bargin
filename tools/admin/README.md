@@ -1,67 +1,86 @@
 # Product admin (admin page on the site + Google Sheet + Apps Script)
 
-The admin page is **`/admin/`** on the site (`admin/index.html` + `admin/admin.js`). The owner signs in
-with Google (arman.niaruhi@gmail.com only), edits products there, and can download a CSV backup.
-The Google Sheet is the product data; the site reads its published CSV.
+The admin page is **`/admin/`** on the site (`admin/index.html` + `admin/admin.js`). The owner logs in with a
+**one-time code sent by email** (arman.niaruhi@gmail.com only), edits products there, and can download a CSV
+backup. The Google Sheet is the product data; the site reads its published CSV.
+Owner decision 2026-10-23: email-code login. No Google sign-in, no Google Cloud project, no OAuth client.
 
-How it works: the page gets a Google **ID token** (Google Identity Services) and sends it with every
-request to the Apps Script web app (`doPost` in `tools/admin/Code.gs`). Apps Script checks the token with
-Google, checks it belongs to `OWNER_EMAIL`, and only then runs one of 4 actions (getProducts, saveProduct,
-deleteProduct, publishCsv). Everything else is refused. The token stays in memory only.
+## How it works
+1. The page asks the Apps Script web app (`doPost` in `tools/admin/Code.gs`) for a code (`requestCode`).
+2. The script emails a **6-digit code to `OWNER_EMAIL` only** (never to an address from the request). The code is in
+   the mail subject («کد ورود برگین: 123456») so the phone notification shows it.
+3. The owner types the code (`verifyCode`). Right code = a random **session token** (stored hashed on the server).
+4. Every other action (getProducts, saveProduct, deleteProduct, publishCsv) needs that token. The check is in one
+   place (`handleRequest_`) and again inside each sheet function. No valid session = `NO_SESSION`, nothing is read or written.
 
-Settings (not secret) are in `products.js`: `SHOP.adminClientId` and `SHOP.adminApi`. Empty = the page
-shows «صفحه‌ی مدیریت هنوز راه‌اندازی نشده…».
+Rules in `Code.gs`:
+- Code: 6 digits, only from `Utilities.getUuid()` with rejection sampling; stored hashed (SHA-256 with its challenge id)
+  in CacheService; valid **10 minutes**, **5 tries**, **single use**; constant-time compare; Persian/Arabic digits accepted.
+  A new code cancels the old one.
+- Sending caps (kept in script properties, so a cache reset does not lift them): **60 s** between sends, **5 per hour**,
+  **20 per day**. (MailApp's own limit for a normal account is about 100 mails a day.)
+- Session: **1 hour idle** (each use renews it) and **6 hours absolute**; stored hashed; `logout` deletes it on the server.
+- `LockService` around every read-modify-write (sending, checking a code, save, delete). If the lock cannot be taken the
+  answer is `BUSY` and nothing changes (fail closed).
+- `doGet` returns only `{"ok":true,"service":"bargin-admin"}`. No page, no data. Codes and tokens are never logged.
+- In the browser the session is in `sessionStorage` (stays on reload in the same tab, gone when the tab closes), with a
+  memory fallback. If the session ends while a form is open, the page goes to the login and keeps what was typed.
+
+Settings (not secret) are in `products.js`: `SHOP.adminApi` (the web app `/exec` URL). Empty = the page shows
+«صفحه‌ی مدیریت هنوز راه‌اندازی نشده…».
+
+## Residual risks (accepted)
+- Whoever can read the owner's mailbox can log in (that is the whole point of the email code). Use a strong password and
+  2-step verification on the Gmail account.
+- Someone who knows the web app URL can make the script email a code to the owner (up to 5 per hour / 20 per day). It is only
+  annoying. A guess needs the right 6 digits in 5 tries: about 5 in a million per code, at most 25 guesses an hour.
+- CacheService is not a guaranteed store: Google may drop a code or session early (the owner just logs in again). It can never
+  make a session last longer than 6 hours. The sending caps are in script properties and survive it.
+- The page and the URL are public (`ANYONE_ANONYMOUS`); the protection is the code and session, not a secret URL.
+- Browser extensions or malware on the owner's computer can read the page and the session while it is open.
 
 ## One-time setup
-
-### 1. Google Cloud (OAuth client)
-1. Open <https://console.cloud.google.com/> with arman.niaruhi@gmail.com. Create a project (e.g. `bargin-admin`).
-2. **APIs & Services → OAuth consent screen** (or *Google Auth Platform*): User type **External**, app name
-   «Bargin admin», support and developer email = yours. Scopes: leave the defaults (no extra scopes needed).
-3. **Audience / Test users:** keep **Publishing status = Testing** and add `arman.niaruhi@gmail.com` as a test user.
-   (Testing mode is fine for one person. Do not click "Publish app".)
-4. **Credentials → Create credentials → OAuth client ID → Web application.** Name: `bargin-admin-web`.
-   **Authorized JavaScript origins:** `https://arman-niaruhi.github.io` (and `http://localhost:8000` if you want to test locally).
-   No redirect URIs needed.
-5. Copy the **Client ID** (ends with `.apps.googleusercontent.com`) and send it to the programmer.
-
-### 2. Apps Script
-1. In the Sheet: **Extensions → Apps Script** (project bound to the sheet; the first sheet has the header
-   `id, name, category, price, unit, serves, short, details, recipe, images, soldOut`, formatted as plain text).
-2. Replace `Code.gs` with `tools/admin/Code.gs`, with `ADMIN_CLIENT_ID` at the top set to the Client ID.
-   **Delete the old `admin` HTML file** in the project (it is not used any more).
-3. **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy**, with
-   **Execute as: Me** and **Who has access: Anyone**. ("Anyone" is needed because the browser calls it from the site;
-   the Google ID token check is what keeps everybody but the owner out.) The first time, allow the permissions
-   (Sheets, "connect to an external service" for the token check).
-4. Copy the **Web app URL** (ends with `/exec`) and send it to the programmer.
-
-### 3. The site
-The programmer puts both values in `products.js` (`adminClientId`, `adminApi`) and pushes to `main`.
-Then open <https://arman-niaruhi.github.io/bargin/admin/> and sign in.
+1. Open the Google Sheet (first sheet header: `id, name, category, price, unit, serves, short, details, recipe, images, soldOut`,
+   formatted as plain text) → **Extensions → Apps Script**.
+2. Put `tools/admin/Code.gs` into `Code.gs`. **Delete the old `admin` HTML file** if the project still has one.
+3. **Project Settings → Show "appsscript.json" manifest file**, and paste in `tools/admin/appsscript.json` (web app runs as you,
+   access Anyone, time zone Asia/Tehran, V8, scopes: spreadsheets + send mail).
+4. **Authorize once:** in the editor pick the function **`authorizeOnce`** and press **Run**. Google says "Authorization
+   required" → **Review permissions** → pick arman.niaruhi@gmail.com → "Google hasn't verified this app" → **Advanced** →
+   **Go to <project name> (unsafe)** → **Allow**. (It is your own script; this is normal.) It only reads the sheet name and
+   the mail quota and sends nothing.
+5. **Deploy → New deployment (or Manage deployments → Edit → New version) → Web app:** Execute as **Me**, Who has access
+   **Anyone**. Copy the **Web app URL** (ends with `/exec`) and send it to the programmer.
+6. The programmer puts it in `products.js` as `adminApi` and pushes to `main`. Open
+   <https://arman-niaruhi.github.io/bargin/admin/>, press «ارسال کد به ایمیل», type the code from your email.
 
 ## Each time you change products
-Open `/admin/`, sign in, edit / add / delete. Changes go to the Sheet. The site shows them when the published
-sheet updates (a few minutes). **دانلود فایل CSV** downloads `products.csv` as a backup (replace `data/products.csv`
-by hand if you want the backup updated). After changing `Code.gs`, always deploy a **New version**.
+Open `/admin/`, log in, edit / add / delete. Changes go to the Sheet. The site shows them when the published sheet updates
+(a few minutes). **دانلود فایل CSV** downloads `products.csv` as a backup. After changing `Code.gs`, always deploy a
+**New version** (Manage deployments → pencil → Version: New version).
 
 ## Checks
 `id`, `name`, `category`, `price` not empty; `price` a number (Persian digits and «,» fine); `id` English, no spaces,
 unique; `soldOut` is `yes`, `no` or empty. Blank rows are skipped. Problems are listed with their row numbers.
 
 ## If something goes wrong (recovery)
-- **«این حساب اجازه نداره»**: you signed in with another Google account. Press «حساب دیگه».
-- **«نشستت تموم شد»**: the token lasts about an hour. Sign in again.
-- **Sign-in button missing / «نتونستیم ورود با گوگل…»**: an ad blocker or offline. Turn it off and reload.
-- **Google says "access blocked / app not verified"**: the account is not in Test users (step 1.3), or the origin
-  is missing (step 1.4).
-- **Nothing works after a code change**: Apps Script needs **New version** in Manage deployments; also check
-  `ADMIN_CLIENT_ID` equals `SHOP.adminClientId`.
-- **Locked out / suspect a leak**: in Apps Script **Deploy → Manage deployments → Archive** the deployment (all
-  requests stop at once), or delete the OAuth client in Google Cloud. Then deploy again and send the new URL.
-- **Bad edit in the Sheet**: use the Sheet's **File → Version history**. `data/products.csv` is also a backup.
+- **No email arrives:** look in spam; wait for the 60 s countdown and press «ارسال دوباره». «نتونستیم ایمیل رو بفرستیم» means
+  MailApp failed: run `authorizeOnce` again (permissions) and check the daily mail quota in Apps Script.
+- **«تو این یه ساعت چند بار کد خواستی» / «امروز زیاد کد خواستی»:** the caps. Wait an hour / a day. To reset by hand: Apps Script →
+  Project Settings → Script properties → delete `sendLog`.
+- **«کد منقضی شده» / «چند بار اشتباه زدی»:** press «ارسال دوباره» for a new code.
+- **«نشستت تموم شد»:** 1 hour idle or 6 hours passed. Log in again; an open form keeps what you typed.
+- **«به سرور وصل نشدیم» / the page says not set up:** `adminApi` in `products.js` is empty or wrong, or the deployment is archived.
+- **Nothing works after a code change:** deploy a **New version** in Manage deployments.
+- **Suspect someone else got in / lost the email account:** Apps Script → **Deploy → Manage deployments → Archive** the deployment
+  (all requests stop at once), or change `OWNER_EMAIL` and deploy again. To end every session at once, change the `'ss_'`
+  prefix in `Code.gs` (two places) or wait up to 6 hours. Then deploy again and send the new URL if it changed.
+- **Bad edit in the Sheet:** use the Sheet's **File → Version history**. `data/products.csv` is also a backup.
 
 ## Notes for the programmer
 - Persian texts: `MSG` in `Code.gs` and `TEXT` in `admin/admin.js` (for `bargin-content` to review).
-- `admin/index.html` has a CSP meta tag (Google sign-in and the Apps Script URL allowed). If the Apps Script host changes, update `connect-src`.
-- Tests: `node tools/admin/test.mjs` (checks, token claims, dispatcher: no action runs on a failed verify).
+- `admin/index.html` has a CSP meta tag; `connect-src` allows `script.google.com` and `*.googleusercontent.com` (Apps Script
+  answers through a redirect to `script.googleusercontent.com`). If the host changes, update it.
+- Do not run `clasp` against the live project without the owner's OK.
+- Tests: `node tools/admin/test.mjs` (CSV and checks, plus the login with stubbed CacheService, LockService, MailApp,
+  PropertiesService, Utilities, Session and a fake clock).

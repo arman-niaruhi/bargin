@@ -1,26 +1,39 @@
 // Bargin product admin API (Google Apps Script). Bind this project to the products Google Sheet.
-// The admin page lives on the site (admin/index.html). It signs the owner in with Google
-// (Google Identity Services) and sends the ID token with every request to doPost().
-// doPost() checks the token with Google, checks that it belongs to OWNER_EMAIL, and only
-// then runs one of the allowed actions. Anything else is refused (fail closed).
-// The pure functions (validateRows, buildCsv, checkClaims_, handleRequest_ and the cell
-// helpers) make no Apps Script calls, so tools/admin/test.mjs can run them in Node.
+// Login (owner decision 2026-10-23): a one-time code sent by email. The admin page (admin/index.html)
+// asks for a code (requestCode), the script emails a 6-digit code ONLY to OWNER_EMAIL, the owner types it
+// (verifyCode) and gets a random session token. Every other action needs that token. No Google sign-in,
+// no OAuth client, no ID tokens.
+// Rules: codes and sessions are stored hashed (CacheService), a code lives 10 minutes, allows 5 tries and
+// works once; sends are capped (60 s apart, 5 per hour, 20 per day); a session lasts 1 hour idle and
+// 6 hours at most; the session is checked in ONE place (handleRequest_) before every sheet action;
+// read-modify-write runs under LockService and fails closed. Codes and tokens are never logged.
+// The pure functions (validateRows, buildCsv, handleRequest_ and the cell helpers) make no Apps Script
+// calls at load time, so tools/admin/test.mjs can run them in Node with stubbed services.
 // Style: ES2017 only, like the site (no newer syntax or methods).
 
-// The owner's Google account. Nobody else can open the page or call the functions.
+// The owner's email. The code is sent here and nowhere else (the address is never taken from a request).
 var OWNER_EMAIL = 'arman.niaruhi@gmail.com';
 
-// The OAuth client ID from Google Cloud (ends with .apps.googleusercontent.com). Must be the
-// same as SHOP.adminClientId in products.js. Empty = everything is refused.
-var ADMIN_CLIENT_ID = '';
-
-// The only actions doPost() will run.
-var ACTION_NAMES = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv'];
+// Actions that need no session: ask for a code, send the code, log out.
+var PUBLIC_ACTIONS = ['requestCode', 'verifyCode', 'logout'];
+// Actions that need a valid session (checked once, in handleRequest_).
+var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv'];
 
 // Limits checked before anything else happens.
 var MAX_BODY = 200000;   // characters in the request body
-var MAX_TOKEN = 4096;    // characters in an ID token
-var CACHE_SECONDS = 300; // a checked token is remembered at most this long
+
+// Code and session rules.
+var CODE_LENGTH = 6;
+var CODE_TTL_S = 600;            // a code works for 10 minutes
+var CODE_MAX_TRIES = 5;          // wrong tries per code
+var COOLDOWN_MS = 60 * 1000;     // minimum time between two sends
+var HOUR_MS = 3600 * 1000;
+var DAY_MS = 24 * HOUR_MS;
+var MAX_PER_HOUR = 5;
+var MAX_PER_DAY = 20;
+var SESSION_IDLE_MS = HOUR_MS;       // logged out after 1 hour without use
+var SESSION_MAX_MS = 6 * HOUR_MS;    // and after 6 hours whatever happens (CacheService's own maximum)
+var LOCK_WAIT_MS = 10000;
 
 // The CSV columns, in this order (same as data/products.csv).
 var HEADER = ['id', 'name', 'category', 'price', 'unit', 'serves', 'short', 'details', 'recipe', 'images', 'soldOut'];
@@ -32,8 +45,9 @@ var EOL = '\r\n';
 // TODO: bargin-content to review the wording.
 var MSG = {
   pageTitle: 'مدیریت محصولات برگین',
-  notOwner: 'این حساب اجازه نداره.',
-  useSite: 'صفحه‌ی مدیریت برگین روی خود سایت است: /admin',
+  noSession: 'نشستت تموم شده. دوباره وارد شو.',
+  mailSubject: 'کد ورود برگین: {code}',
+  mailBody: 'این کد ورود به صفحه‌ی مدیریت برگینه. ده دقیقه اعتبار داره و فقط یک بار کار می‌کنه.\nاگه خودت درخواستش نکردی، به این ایمیل کاری نداشته باش.',
   missingColumn: 'ستون «{name}» توی شیت پیدا نشد.',
   missingId: 'شناسه (id) خالیه.',
   missingName: 'اسم (name) خالیه.',
@@ -179,120 +193,251 @@ function buildCsv(rows, eol) {
   return '﻿' + lines.join(eol) + eol;
 }
 
-// ---- Token check and request handling (pure) ----
+// ---- Request handling (pure; services are passed in `deps`) ----
 
-// A Google ID token is three base64url parts joined by dots.
-function tokenShapeOk_(token) {
-  return typeof token === 'string' && token.length > 20 && token.length <= MAX_TOKEN &&
-    /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
-}
-
-// Checks the claims Google returned for a token (pure). `nowSec` is the time in seconds.
-// Returns {ok:true, email, exp} or {ok:false, reason}. Reasons: config, claims, issuer,
-// audience, expired, unverified, email, forbidden.
-function checkClaims_(claims, nowSec, clientId, ownerEmail) {
-  if (!clientId) return { ok: false, reason: 'config' };
-  if (!claims || typeof claims !== 'object') return { ok: false, reason: 'claims' };
-  if (claims.iss !== 'accounts.google.com' && claims.iss !== 'https://accounts.google.com') return { ok: false, reason: 'issuer' };
-  if (claims.aud !== clientId) return { ok: false, reason: 'audience' };
-  var exp = Number(claims.exp);
-  if (!isFinite(exp) || exp <= nowSec) return { ok: false, reason: 'expired' };
-  if (claims.email_verified !== true && claims.email_verified !== 'true') return { ok: false, reason: 'unverified' };
-  if (typeof claims.email !== 'string' || !claims.email) return { ok: false, reason: 'email' };
-  var email = claims.email.trim().toLowerCase();
-  if (email !== String(ownerEmail || '').trim().toLowerCase()) return { ok: false, reason: 'forbidden' };
-  return { ok: true, email: email, exp: exp };
-}
-
-// Reads the request body, checks the token (deps.verify), then runs one allowed action
-// (deps.actions). Returns a plain object: {ok:true, data} or {ok:false, error} where error is
-// bad_request, unknown_action, auth, forbidden or server. No action runs unless the token
-// was verified and belongs to the owner.
+// Reads the request body and runs one allowed action. Returns a plain object: {ok:true, data} or
+// {ok:false, error}. error: bad_request, unknown_action, NO_SESSION, BUSY, server, or a login code from
+// the public actions (COOLDOWN, LIMIT_HOUR, LIMIT_DAY, MAIL_FAIL, BAD_CODE, CODE_EXPIRED, TOO_MANY).
+// deps: {publicActions: {name: fn(data)}, actions: {name: fn(data)}, requireSession: fn(token) -> bool}.
+// THE ONE PLACE where a session is required: no protected action runs unless requireSession says yes.
 function handleRequest_(body, deps) {
   try {
     if (typeof body !== 'string' || !body || body.length > MAX_BODY) return { ok: false, error: 'bad_request' };
     var req;
     try { req = JSON.parse(body); } catch (err) { return { ok: false, error: 'bad_request' }; }
     if (!req || typeof req !== 'object' || Array.isArray(req)) return { ok: false, error: 'bad_request' };
-    if (!tokenShapeOk_(req.token)) return { ok: false, error: 'bad_request' };
-    if (typeof req.action !== 'string' || ACTION_NAMES.indexOf(req.action) < 0) return { ok: false, error: 'unknown_action' };
     if (req.data !== undefined && (req.data === null || typeof req.data !== 'object' || Array.isArray(req.data))) return { ok: false, error: 'bad_request' };
+    if (req.session !== undefined && typeof req.session !== 'string') return { ok: false, error: 'bad_request' };
+    var action = req.action;
+    var data = req.data || {};
 
-    var who = deps.verify(req.token);
-    if (!who || who.ok !== true) return { ok: false, error: who && who.reason === 'forbidden' ? 'forbidden' : 'auth' };
-    // Second guard: the verified email must be the owner's.
-    if (String(who.email || '').trim().toLowerCase() !== String(deps.owner || '').trim().toLowerCase()) return { ok: false, error: 'forbidden' };
-
-    var fn = deps.actions[req.action];
-    if (typeof fn !== 'function') return { ok: false, error: 'unknown_action' };
-    return { ok: true, data: fn(req.data || {}) };
-  } catch (e) {
-    return { ok: false, error: 'server' };
-  }
-}
-
-// ---- Apps Script only below this line ----
-
-// The email of the token that doPost() verified for the current request.
-var verifiedEmail_ = '';
-
-// Second guard inside every action: only the verified owner passes.
-function assertOwner() {
-  if (String(verifiedEmail_ || '').trim().toLowerCase() !== OWNER_EMAIL) throw new Error(MSG.notOwner);
-}
-
-// Checks an ID token with Google (tokeninfo) and the claims with checkClaims_.
-// Good answers are cached (hash of the token as key) for at most CACHE_SECONDS.
-// Returns {ok:true, email} or {ok:false, reason}. Any error = not ok.
-function verifyIdToken_(token) {
-  try {
-    if (!ADMIN_CLIENT_ID) return { ok: false, reason: 'config' };
-    if (!tokenShapeOk_(token)) return { ok: false, reason: 'shape' };
-    var now = Math.floor(Date.now() / 1000);
-    var cache = CacheService.getScriptCache();
-    var key = 'tok_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token));
-    var hit = cache.get(key);
-    if (hit) {
-      var c = JSON.parse(hit);
-      if (c && c.exp > now && String(c.email).toLowerCase() === OWNER_EMAIL) return { ok: true, email: c.email };
+    if (typeof action === 'string' && PUBLIC_ACTIONS.indexOf(action) >= 0) {
+      var pub = deps.publicActions[action];
+      if (typeof pub !== 'function') return { ok: false, error: 'unknown_action' };
+      return pub(data, req.session || '');
     }
-    var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token), { muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) return { ok: false, reason: 'rejected' };
-    var verdict = checkClaims_(JSON.parse(res.getContentText()), now, ADMIN_CLIENT_ID, OWNER_EMAIL);
-    if (!verdict.ok) return verdict;
-    var ttl = Math.min(CACHE_SECONDS, verdict.exp - now);
-    if (ttl > 0) cache.put(key, JSON.stringify({ email: verdict.email, exp: verdict.exp }), ttl);
-    return { ok: true, email: verdict.email };
+    if (typeof action !== 'string' || PROTECTED_ACTIONS.indexOf(action) < 0) return { ok: false, error: 'unknown_action' };
+
+    if (deps.requireSession(req.session || '') !== true) return { ok: false, error: 'NO_SESSION' };
+    var fn = deps.actions[action];
+    if (typeof fn !== 'function') return { ok: false, error: 'unknown_action' };
+    return { ok: true, data: fn(data) };
   } catch (e) {
-    return { ok: false, reason: 'error' };
+    return { ok: false, error: e && e.message === 'BUSY' ? 'BUSY' : 'server' };
   }
 }
 
-// The API: the site's admin page sends POST {token, action, data} as text/plain JSON.
+// ---- Login: codes, sessions, limits (Apps Script services; stubbed in the tests) ----
+
+function nowMs_() { return Date.now(); }
+
+// Bytes (signed, as Utilities gives them) → lowercase hex.
+function toHex_(bytes) {
+  var s = '';
+  for (var i = 0; i < bytes.length; i++) {
+    var b = (bytes[i] + 256) % 256;
+    s += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return s;
+}
+
+function sha256Hex_(text) {
+  return toHex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text));
+}
+
+// Compares two strings without stopping at the first difference.
+function safeEqual_(a, b) {
+  a = String(a); b = String(b);
+  var diff = a.length === b.length ? 0 : 1;
+  var n = Math.max(a.length, b.length);
+  for (var i = 0; i < n; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}
+
+// Random hex from Utilities.getUuid() only. The version and variant characters of a UUID are fixed,
+// so they are skipped. `count` hex characters.
+function randomHex_(count) {
+  var out = '';
+  while (out.length < count) {
+    var u = String(Utilities.getUuid()).replace(/-/g, '');
+    out += u.slice(0, 12) + u.slice(13, 16) + u.slice(17);
+  }
+  return out.slice(0, count);
+}
+
+// A uniform 6-digit code by rejection sampling: 32 random bits, values from the uneven top are thrown away.
+function randomCode_() {
+  var limit = Math.floor(4294967296 / 1000000) * 1000000;
+  for (var i = 0; i < 100; i++) {
+    var v = parseInt(randomHex_(8), 16);
+    if (v < limit) {
+      var s = String(v % 1000000);
+      while (s.length < CODE_LENGTH) s = '0' + s;
+      return s;
+    }
+  }
+  throw new Error('random');
+}
+
+// What the owner typed → 6 ASCII digits, or '' if it is not a code. Persian and Arabic digits are accepted.
+function normalizeCode_(input) {
+  if (typeof input !== 'string' || input.length > 40) return '';
+  var s = toAsciiDigits(input).replace(/[\s‌‏‎٬,\-]/g, '');
+  return /^[0-9]{6}$/.test(s) ? s : '';
+}
+
+// Runs fn while holding the script lock. No lock within LOCK_WAIT_MS = fail closed (throws BUSY).
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_WAIT_MS)) throw new Error('BUSY');
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+function cache_() { return CacheService.getScriptCache(); }
+
+// requestCode: make a code, email it to OWNER_EMAIL only. Caps: 60 s apart, 5 per hour, 20 per day
+// (a log of the send times is kept in script properties, so a cache reset does not lift the caps).
+// A new code cancels the old one. Returns {ok:true, data:{challenge, cooldown, expiresIn}} or {ok:false, error, retryAfter?}.
+function requestCode() {
+  return withLock_(function () {
+    var now = nowMs_();
+    var props = PropertiesService.getScriptProperties();
+    var log = [];
+    try { log = JSON.parse(props.getProperty('sendLog') || '[]'); } catch (err) { log = []; }
+    if (!Array.isArray(log)) log = [];
+    log = log.filter(function (t) { return typeof t === 'number' && now - t < DAY_MS && t <= now + 60000; });
+    var last = log.length ? Math.max.apply(null, log) : 0;
+    if (last && now - last < COOLDOWN_MS) return { ok: false, error: 'COOLDOWN', retryAfter: Math.ceil((COOLDOWN_MS - (now - last)) / 1000) };
+    var inHour = log.filter(function (t) { return now - t < HOUR_MS; });
+    if (inHour.length >= MAX_PER_HOUR) return { ok: false, error: 'LIMIT_HOUR', retryAfter: Math.ceil((HOUR_MS - (now - Math.min.apply(null, inHour))) / 1000) };
+    if (log.length >= MAX_PER_DAY) return { ok: false, error: 'LIMIT_DAY', retryAfter: Math.ceil((DAY_MS - (now - Math.min.apply(null, log))) / 1000) };
+
+    var code = randomCode_();
+    var challenge = randomHex_(32);
+    var c = cache_();
+    var oldKey = c.get('active_ch');
+    if (oldKey) c.remove(oldKey);
+    var key = 'ch_' + sha256Hex_(challenge);
+    c.put(key, JSON.stringify({ h: sha256Hex_(challenge + ':' + code), tries: 0, exp: now + CODE_TTL_S * 1000 }), CODE_TTL_S);
+    c.put('active_ch', key, CODE_TTL_S);
+
+    log.push(now);
+    props.setProperty('sendLog', JSON.stringify(log));   // counted before sending: a failed send still counts
+    try {
+      MailApp.sendEmail(OWNER_EMAIL, MSG.mailSubject.replace('{code}', code), MSG.mailBody);
+    } catch (err) {
+      c.remove(key);
+      c.remove('active_ch');
+      return { ok: false, error: 'MAIL_FAIL' };
+    }
+    return { ok: true, data: { challenge: challenge, cooldown: COOLDOWN_MS / 1000, expiresIn: CODE_TTL_S } };
+  });
+}
+
+// verifyCode: check the typed code for this challenge. Hashed, 5 tries, 10 minutes, single use,
+// constant-time compare. On success a session token is returned (stored hashed).
+function verifyCode(data) {
+  var challenge = data && typeof data.challenge === 'string' ? data.challenge : '';
+  if (!/^[0-9a-f]{32}$/.test(challenge)) return { ok: false, error: 'CODE_EXPIRED' };
+  var code = normalizeCode_(data.code);
+  if (!code) return { ok: false, error: 'BAD_CODE' };
+  return withLock_(function () {
+    var now = nowMs_();
+    var c = cache_();
+    var key = 'ch_' + sha256Hex_(challenge);
+    var raw = c.get(key);
+    var st = null;
+    try { st = raw ? JSON.parse(raw) : null; } catch (err) { st = null; }
+    if (!st || typeof st.h !== 'string' || !(st.exp > now)) { c.remove(key); return { ok: false, error: 'CODE_EXPIRED' }; }
+    if (st.tries >= CODE_MAX_TRIES) { c.remove(key); return { ok: false, error: 'TOO_MANY' }; }
+    st.tries += 1;   // counted before the compare
+    var good = safeEqual_(st.h, sha256Hex_(challenge + ':' + code));
+    if (!good) {
+      if (st.tries >= CODE_MAX_TRIES) { c.remove(key); return { ok: false, error: 'TOO_MANY' }; }
+      c.put(key, JSON.stringify(st), Math.max(1, Math.ceil((st.exp - now) / 1000)));
+      return { ok: false, error: 'BAD_CODE', triesLeft: CODE_MAX_TRIES - st.tries };
+    }
+    c.remove(key);   // single use
+    c.remove('active_ch');
+    var token = randomHex_(64);
+    c.put('ss_' + sha256Hex_(token), JSON.stringify({ c: now, l: now }), SESSION_IDLE_MS / 1000);
+    return { ok: true, data: { session: token, idle: SESSION_IDLE_MS / 1000, max: SESSION_MAX_MS / 1000 } };
+  });
+}
+
+// requireSession_: true only for a live session (under 1 hour idle and under 6 hours old).
+// Each good check renews the idle time (sliding). Anything wrong = false.
+function requireSession_(token) {
+  try {
+    if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) return false;
+    var now = nowMs_();
+    var c = cache_();
+    var key = 'ss_' + sha256Hex_(token);
+    var raw = c.get(key);
+    if (!raw) return false;
+    var s = JSON.parse(raw);
+    if (!s || !(now - s.c < SESSION_MAX_MS) || !(now - s.l < SESSION_IDLE_MS) || now < s.c) { c.remove(key); return false; }
+    s.l = now;
+    var ttl = Math.min(SESSION_IDLE_MS, SESSION_MAX_MS - (now - s.c)) / 1000;
+    c.put(key, JSON.stringify(s), Math.max(1, Math.floor(ttl)));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// logout: forget the session on the server. Always answers ok.
+function logout(data, token) {
+  try {
+    if (typeof token === 'string' && /^[0-9a-f]{64}$/.test(token)) cache_().remove('ss_' + sha256Hex_(token));
+  } catch (e) { /* nothing to do */ }
+  return { ok: true, data: {} };
+}
+
+// Set while doPost runs a protected action; the sheet functions check it again (second guard).
+var sessionGranted_ = false;
+
+function assertSession_() {
+  if (sessionGranted_ !== true) throw new Error(MSG.noSession);
+}
+
+// The API: the admin page sends POST {action, data, session} as text/plain JSON.
 function doPost(e) {
   var body = e && e.postData && typeof e.postData.contents === 'string' ? e.postData.contents : '';
-  verifiedEmail_ = '';
+  sessionGranted_ = false;
   var out = handleRequest_(body, {
-    owner: OWNER_EMAIL,
-    verify: function (token) {
-      var who = verifyIdToken_(token);
-      if (who.ok) verifiedEmail_ = who.email;
-      return who;
+    publicActions: {
+      requestCode: function () { return requestCode(); },
+      verifyCode: function (d) { return verifyCode(d); },
+      logout: function (d, token) { return logout(d, token); }
+    },
+    requireSession: function (token) {
+      sessionGranted_ = requireSession_(token);
+      return sessionGranted_;
     },
     actions: {
       getProducts: function () { return getProducts(); },
-      saveProduct: function (d) { return saveProduct(d.item, d.originalId); },
-      deleteProduct: function (d) { return deleteProduct(d.id); },
+      saveProduct: function (d) { return withLock_(function () { return saveProduct(d.item, d.originalId); }); },
+      deleteProduct: function (d) { return withLock_(function () { return deleteProduct(d.id); }); },
       publishCsv: function () { return publishCsv(); }
     }
   });
-  verifiedEmail_ = '';
+  sessionGranted_ = false;
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
-// Opening the link in a browser: no admin page here any more.
+// Opening the link in a browser: only harmless JSON, no page and no data.
 function doGet() {
-  return ContentService.createTextOutput(MSG.useSite).setMimeType(ContentService.MimeType.TEXT);
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, service: 'bargin-admin' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Run this ONCE in the Apps Script editor (Run → authorizeOnce → Review permissions → Advanced →
+// Go to project → Allow). It only touches the services the web app needs, so Google asks for the
+// permissions now instead of failing on the first request. It sends nothing.
+function authorizeOnce() {
+  SpreadsheetApp.getActiveSpreadsheet().getName();
+  MailApp.getRemainingDailyQuota();
+  return 'OK';
 }
 
 // Reads the first sheet. Returns {rows, issues}. Row 1 is the header; the
@@ -323,7 +468,7 @@ function readSheetRows() {
 
 // Action getProducts: the sheet rows and every issue found.
 function getProducts() {
-  assertOwner();
+  assertSession_();
   var data = readSheetRows();
   if (data.issues.length) return { rows: data.rows, issues: data.issues };
   return { rows: data.rows, issues: validateRows(data.rows) };
@@ -332,7 +477,7 @@ function getProducts() {
 // Called by the page on «ساخت فایل». Blocked when there are issues.
 // Returns {ok:true, csv, count} or {ok:false, issues}.
 function publishCsv() {
-  assertOwner();
+  assertSession_();
   var data = getProducts();
   if (data.issues.length) return { ok: false, issues: data.issues };
   return { ok: true, csv: buildCsv(data.rows, EOL), count: productRows(data.rows).length };
@@ -344,7 +489,7 @@ function publishCsv() {
 // Columns that are not in HEADER keep their old value. Returns {ok:true, row, updated}
 // or {ok:false, issues} (issues have row numbers, same as the checks).
 function saveProduct(item, originalId) {
-  assertOwner();
+  assertSession_();
   var sheet = productSheet();
   var data = readSheetRows();
   if (data.issues.length) return { ok: false, issues: data.issues };
@@ -371,7 +516,7 @@ function saveProduct(item, originalId) {
 // Called by the page on «حذف» (after the owner confirmed). Deletes the sheet row with this id.
 // Returns {ok:true, row} or {ok:false, message}.
 function deleteProduct(id) {
-  assertOwner();
+  assertSession_();
   var key = cellText(id);
   if (!key) return { ok: false, message: MSG.noDeleteId };
   var data = readSheetRows();

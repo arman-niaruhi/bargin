@@ -13,10 +13,9 @@ const SHOP = {
   // Published Google Sheet (products tab) as CSV: the source of all product data.
   // The website reads it live. data/products.csv is only a backup.
   productsUrl: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRl4UhLXduBOizYvVqQgkOk6oOEPTOTvBavPSB77XzpJEnOTOYYeTLU9w_qKDrZ2tMC6VgPLIo3xfLT/pub?output=csv",
-  // Admin page (/admin): Google sign-in client ID (from Google Cloud) and the Apps Script web app URL
-  // (the /exec link). Both empty = the admin page shows "not set up yet". Not secret.
-  adminClientId: "",
-  adminApi: "",
+  // Admin page (/admin): the Apps Script web app URL (the /exec link). Empty = the admin page
+  // shows "not set up yet". Not secret.
+  adminApi: "https://script.google.com/macros/s/AKfycbzY5azMGSGjVMK7MAn5wDcyjX5PlcWVlFVpVdlHYK1IaovqX5-RxcXIt8_rBle0utdj/exec",
 };
 
 // ============================================================

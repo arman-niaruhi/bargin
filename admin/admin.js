@@ -1,16 +1,35 @@
 // Admin page for the Bargin products sheet.
-// Sign-in: Google Identity Services gives an ID token; every request sends it to the
-// Apps Script web app (SHOP.adminApi), which checks it and that it is the owner's account.
-// The token is kept in memory only (never in storage). Sheet data is shown with textContent only.
+// Login: a one-time 6-digit code is emailed to the owner by the Apps Script web app (SHOP.adminApi).
+// The code gives a random session token; the page sends it with every request. The token is kept in
+// sessionStorage (survives a reload in this tab, gone when the tab closes), with a memory fallback.
+// Sheet data is shown with textContent only.
 // Style: ES2017 only, like the rest of the site.
 (function () {
   'use strict';
 
   var TEXT = {
-    notSetUp: 'صفحه‌ی مدیریت هنوز راه‌اندازی نشده. شناسه‌ی گوگل و لینک Apps Script رو توی products.js بذار.',
-    gsiBlocked: 'نتونستیم ورود با گوگل رو بالا بیاریم. شاید یه افزونه (مثل مسدودکننده‌ی تبلیغ) جلوشو گرفته. اون رو خاموش کن و صفحه رو دوباره بارگذاری کن.',
-    expired: 'نشستت تموم شد. دوباره وارد شو.',
-    signinFail: 'ورود انجام نشد. دوباره امتحان کن.',
+    notSetUp: 'صفحه‌ی مدیریت هنوز راه‌اندازی نشده. لینک Apps Script رو توی products.js بذار.',
+    loginIntro: 'برای ورود، یه کد ۶ رقمی به ایمیل مالک برگین می‌فرستیم.',
+    sendCode: 'ارسال کد به ایمیل',
+    sendingCode: 'در حال فرستادن کد…',
+    codeSent: 'کد رو به ایمیلت فرستادیم. ایمیلتو چک کن (پوشه‌ی اسپم رو هم نگاه کن). ده دقیقه اعتبار داره.',
+    codeLabel: 'کد ۶ رقمی',
+    codeHint: 'مثلاً ۱۲۳۴۵۶',
+    login: 'ورود',
+    checking: 'در حال بررسی کد…',
+    resend: 'ارسال دوباره',
+    resendIn: 'ارسال دوباره ({n})',
+    needCode: 'کد ۶ رقمی رو وارد کن.',
+    badCode: 'کد درست نیست. {n} بار دیگه می‌تونی امتحان کنی.',
+    codeExpired: 'کد منقضی شده. یه کد تازه بخواه.',
+    tooMany: 'چند بار اشتباه زدی و این کد باطل شد. یه کد تازه بخواه.',
+    cooldown: 'تازه کد فرستادیم. {n} ثانیه دیگه می‌تونی دوباره بخوای.',
+    limitHour: 'تو این یه ساعت چند بار کد خواستی. یه ساعت دیگه امتحان کن.',
+    limitDay: 'امروز زیاد کد خواستی. فردا دوباره امتحان کن.',
+    mailFail: 'نتونستیم ایمیل رو بفرستیم. چند دقیقه دیگه دوباره امتحان کن.',
+    busy: 'سرور الان مشغوله. چند لحظه بعد دوباره امتحان کن.',
+    expired: 'نشستت تموم شد. دوباره وارد شو. چیزی که نوشته بودی از بین نمی‌ره.',
+    loggedOut: 'از حساب اومدی بیرون.',
     loading: 'در حال خوندن شیت…',
     saving: 'در حال ذخیره…',
     deleting: 'در حال حذف…',
@@ -55,13 +74,17 @@
   var HEADER = ['id', 'name', 'category', 'price', 'unit', 'serves', 'short', 'details', 'recipe', 'images', 'soldOut'];
   var TEXTAREA_ROWS = { serves: 2, short: 2, details: 4, recipe: 7, images: 2 };
   var LTR_FIELDS = { id: true, price: true, images: true, soldOut: true };
-  var GSI_WAIT_MS = 6000;
+  var SESSION_KEY = 'bargin-admin-session';
+  var COOLDOWN_DEFAULT = 60;
 
-  var token = '';          // the ID token: memory only
+  var memSession = '';     // fallback when sessionStorage is not available
+  var challenge = '';      // the id of the code we asked for
+  var resendAt = 0;        // time (ms) when «ارسال دوباره» is allowed
+  var resendTimer = 0;
+  var loaded = false;      // the list was read at least once
   var products = [];       // rows from the sheet
   var editId = '';         // the id of the open product ('' = new)
   var busy = false;
-  var gsiReady = false;
 
   function $(id) { return document.getElementById(id); }
   function fill(t, v) {
@@ -74,8 +97,20 @@
     return String(n).replace(/\d/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.charAt(d); });
   }
 
+  // ---- session (sessionStorage, memory fallback) ----
+  function getSession() {
+    try { var v = window.sessionStorage.getItem(SESSION_KEY); if (v) return v; } catch (e) { /* use memory */ }
+    return memSession;
+  }
+  function setSession(v) {
+    memSession = v || '';
+    try {
+      if (v) window.sessionStorage.setItem(SESSION_KEY, v); else window.sessionStorage.removeItem(SESSION_KEY);
+    } catch (e) { /* memory only */ }
+  }
+
   // ---- screens ----
-  var SCREENS = ['s-setup', 's-signin', 's-denied', 's-app'];
+  var SCREENS = ['s-setup', 's-login', 's-code', 's-app'];
   function show(id) {
     SCREENS.forEach(function (s) { $(s).hidden = s !== id; });
   }
@@ -84,8 +119,8 @@
     el.textContent = text || '';
     el.className = 'adm-status' + (kind ? ' ' + kind : '');
   }
-  function setSigninStatus(text, kind) {
-    var el = $('signin-status');
+  function setLoginStatus(id, text, kind) {
+    var el = $(id);
     el.textContent = text || '';
     el.className = 'adm-status' + (kind ? ' ' + kind : '');
   }
@@ -99,80 +134,172 @@
   }
 
   // ---- API ----
-  // Sends {token, action, data} as text/plain (no CORS preflight). Resolves with the answer's
-  // `data`, or rejects with {code}. Codes: auth, forbidden, network, server, bad_request, unknown_action.
-  function api(action, data) {
-    if (!token) return Promise.reject({ code: 'auth' });
+  // Sends {action, data, session} as text/plain (no CORS preflight). Resolves with the answer's
+  // `data`, or rejects with the whole answer plus {code}. Codes: NO_SESSION, BUSY, network, server,
+  // bad_request, unknown_action and the login codes (COOLDOWN, LIMIT_HOUR, LIMIT_DAY, MAIL_FAIL,
+  // BAD_CODE, CODE_EXPIRED, TOO_MANY).
+  function api(action, data, needSession) {
+    var session = getSession();
+    if (needSession && !session) return Promise.reject({ code: 'NO_SESSION' });
     return fetch(conf('adminApi'), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ token: token, action: action, data: data || {} }),
+      body: JSON.stringify({ action: action, data: data || {}, session: session }),
       redirect: 'follow'
     }).then(function (res) {
       return res.json();
     }, function () {
       throw { code: 'network' };
     }).then(function (json) {
-      if (!json || json.ok !== true) throw { code: (json && json.error) || 'server' };
+      if (!json || json.ok !== true) {
+        var e = { code: (json && json.error) || 'server' };
+        if (json && typeof json.retryAfter === 'number') e.retryAfter = json.retryAfter;
+        if (json && typeof json.triesLeft === 'number') e.triesLeft = json.triesLeft;
+        throw e;
+      }
       return json.data;
     }, function (err) {
       throw err && err.code ? err : { code: 'server' };
     });
   }
 
-  // Handles an API error: back to sign-in or the wrong-account screen, or a message.
+  // Handles an API error: back to login (the form stays as it is) or a message.
   function onApiError(err, fallbackText) {
     var code = err && err.code;
-    if (code === 'forbidden') { dropToken(); show('s-denied'); return; }
-    if (code === 'auth') { dropToken(); show('s-signin'); setSigninStatus(TEXT.expired, 'err'); return; }
-    setStatus(code === 'network' ? TEXT.network : (fallbackText || TEXT.serverFail), 'err');
+    if (code === 'NO_SESSION') { backToLogin(TEXT.expired); return; }
+    if (code === 'network') { setStatus(TEXT.network, 'err'); return; }
+    if (code === 'BUSY') { setStatus(TEXT.busy, 'err'); return; }
+    setStatus(fallbackText || TEXT.serverFail, 'err');
   }
 
-  function dropToken() {
-    token = '';
-    products = [];
-    renderList();
-    showIssues([]);
-    setStatus('');
-    closeForm();
+  // The session ended: show the login again but keep the list and the open form.
+  function backToLogin(message) {
+    setSession('');
     setBusy(false);
+    challenge = '';
+    stopCountdown();
+    $('code').value = '';
+    setLoginStatus('login-status', message || '', message ? 'err' : '');
+    setLoginStatus('code-status', '');
+    show('s-login');
   }
 
-  // ---- sign-in ----
-  function onCredential(resp) {
-    if (!resp || !resp.credential) { show('s-signin'); setSigninStatus(TEXT.signinFail, 'err'); return; }
-    token = resp.credential;
-    show('s-app');
-    setStatus(TEXT.loading);
-    load();
+  // ---- login ----
+  function stopCountdown() {
+    if (resendTimer) { clearInterval(resendTimer); resendTimer = 0; }
   }
 
-  function startSignin() {
-    if (!window.google || !google.accounts || !google.accounts.id) { showSetup(TEXT.gsiBlocked); return; }
-    if (!gsiReady) {
-      google.accounts.id.initialize({ client_id: conf('adminClientId'), callback: onCredential, auto_select: false });
-      google.accounts.id.renderButton($('gsi-button'), { theme: 'outline', size: 'large', text: 'signin_with', locale: 'fa' });
-      gsiReady = true;
+  function tickResend() {
+    var left = Math.ceil((resendAt - Date.now()) / 1000);
+    var btn = $('resend');
+    if (left > 0) {
+      btn.disabled = true;
+      btn.textContent = fill(TEXT.resendIn, { n: toFa(left) });
+    } else {
+      stopCountdown();
+      btn.disabled = false;
+      btn.textContent = TEXT.resend;
     }
-    show('s-signin');
   }
 
-  function waitForGsi() {
-    var waited = 0;
-    (function tick() {
-      if (window.google && google.accounts && google.accounts.id) { startSignin(); return; }
-      if (window.__gsiFailed || waited >= GSI_WAIT_MS) { showSetup(TEXT.gsiBlocked); return; }
-      waited += 100;
-      setTimeout(tick, 100);
-    })();
+  function startCountdown(seconds) {
+    resendAt = Date.now() + seconds * 1000;
+    stopCountdown();
+    tickResend();
+    resendTimer = setInterval(tickResend, 500);
   }
 
+  function codeError(err) {
+    switch (err && err.code) {
+      case 'COOLDOWN': return fill(TEXT.cooldown, { n: toFa(err.retryAfter || COOLDOWN_DEFAULT) });
+      case 'LIMIT_HOUR': return TEXT.limitHour;
+      case 'LIMIT_DAY': return TEXT.limitDay;
+      case 'MAIL_FAIL': return TEXT.mailFail;
+      case 'BAD_CODE': return err.triesLeft !== undefined ? fill(TEXT.badCode, { n: toFa(err.triesLeft) }) : TEXT.needCode;
+      case 'CODE_EXPIRED': return TEXT.codeExpired;
+      case 'TOO_MANY': return TEXT.tooMany;
+      case 'BUSY': return TEXT.busy;
+      case 'network': return TEXT.network;
+      default: return TEXT.serverFail;
+    }
+  }
+
+  // Asks the server to email a code. `fromCodeScreen` = the «ارسال دوباره» button.
+  function sendCode(fromCodeScreen) {
+    if (busy) return;
+    var statusId = fromCodeScreen ? 'code-status' : 'login-status';
+    busy = true;
+    $('send').disabled = true;
+    setLoginStatus(statusId, TEXT.sendingCode);
+    api('requestCode', {}, false).then(function (d) {
+      busy = false;
+      $('send').disabled = false;
+      challenge = String(d && d.challenge || '');
+      $('code').value = '';
+      show('s-code');
+      setLoginStatus('code-status', TEXT.codeSent, 'ok');
+      setLoginStatus('login-status', '');
+      startCountdown(d && typeof d.cooldown === 'number' ? d.cooldown : COOLDOWN_DEFAULT);
+      $('code').focus();
+    }, function (err) {
+      busy = false;
+      $('send').disabled = false;
+      setLoginStatus(statusId, codeError(err), 'err');
+      if (err && err.code === 'COOLDOWN' && fromCodeScreen) startCountdown(err.retryAfter || COOLDOWN_DEFAULT);
+    });
+  }
+
+  function onLoggedIn() {
+    show('s-app');
+    if (!loaded) { setStatus(TEXT.loading); load(); } else { setStatus(''); }
+  }
+
+  function verify(ev) {
+    ev.preventDefault();
+    if (busy) return;
+    var code = $('code').value.replace(/[\s\u200c\u200f\u200e]/g, '');
+    if (!code) { setLoginStatus('code-status', TEXT.needCode, 'err'); return; }
+    busy = true;
+    $('verify').disabled = true;
+    setLoginStatus('code-status', TEXT.checking);
+    api('verifyCode', { challenge: challenge, code: code }, false).then(function (d) {
+      busy = false;
+      $('verify').disabled = false;
+      if (!d || typeof d.session !== 'string' || !d.session) { setLoginStatus('code-status', TEXT.serverFail, 'err'); return; }
+      setSession(d.session);
+      challenge = '';
+      stopCountdown();
+      $('code').value = '';
+      setLoginStatus('code-status', '');
+      onLoggedIn();
+    }, function (err) {
+      busy = false;
+      $('verify').disabled = false;
+      setLoginStatus('code-status', codeError(err), 'err');
+      if (err && (err.code === 'CODE_EXPIRED' || err.code === 'TOO_MANY')) { challenge = ''; }
+      $('code').select();
+    });
+  }
+
+  // Logout goes through the server (the session is deleted there), then everything is cleared.
   function logout() {
-    dropToken();
-    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ }
-    setStatus('');
-    setSigninStatus('');
-    show('s-signin');
+    var done = function () {
+      setSession('');
+      challenge = '';
+      loaded = false;
+      products = [];
+      renderList();
+      showIssues([]);
+      closeForm();
+      setStatus('');
+      setBusy(false);
+      $('code').value = '';
+      stopCountdown();
+      setLoginStatus('code-status', '');
+      setLoginStatus('login-status', TEXT.loggedOut, 'ok');
+      show('s-login');
+    };
+    api('logout', {}, false).then(done, done);
   }
 
   // ---- list ----
@@ -231,8 +358,9 @@
   function load(keepMessage) {
     setBusy(true);
     if (!keepMessage) setStatus(TEXT.loading);
-    return api('getProducts').then(function (d) {
+    return api('getProducts', {}, true).then(function (d) {
       products = (d && d.rows) || [];
+      loaded = true;
       renderList();
       showIssues((d && d.issues) || []);
       if (!keepMessage) setStatus('');
@@ -301,7 +429,7 @@
     setBusy(true);
     setStatus(TEXT.saving);
     showIssues([]);
-    api('saveProduct', { item: collect(), originalId: editId }).then(function (r) {
+    api('saveProduct', { item: collect(), originalId: editId }, true).then(function (r) {
       if (r && r.ok) {
         closeForm();
         setStatus(TEXT.saved, 'ok');
@@ -326,7 +454,7 @@
     if (busy) return;
     setBusy(true);
     setStatus(TEXT.deleting);
-    api('deleteProduct', { id: editId }).then(function (r) {
+    api('deleteProduct', { id: editId }, true).then(function (r) {
       if (r && r.ok) {
         closeForm();
         setStatus(TEXT.deleted, 'ok');
@@ -346,7 +474,7 @@
     if (busy) return;
     setBusy(true);
     setStatus(TEXT.working);
-    api('publishCsv').then(function (r) {
+    api('publishCsv', {}, true).then(function (r) {
       setBusy(false);
       if (!r || !r.ok) {
         setStatus(TEXT.csvBlocked, 'err');
@@ -377,21 +505,17 @@
     $('add-new').addEventListener('click', function () { openForm(null); });
     $('download').addEventListener('click', download);
     $('logout').addEventListener('click', logout);
-    $('other-account').addEventListener('click', logout);
+    $('send').addEventListener('click', function () { sendCode(false); });
+    $('resend').addEventListener('click', function () { sendCode(true); });
+    $('code-form').addEventListener('submit', verify);
     $('form').addEventListener('submit', save);
     $('cancel').addEventListener('click', closeForm);
     $('delete').addEventListener('click', askDelete);
     $('confirm-no').addEventListener('click', function () { $('confirm').hidden = true; });
     $('confirm-yes').addEventListener('click', doDelete);
 
-    if (!conf('adminClientId') || !conf('adminApi')) { showSetup(TEXT.notSetUp); return; }
-    // Google's sign-in script is added here so a block (ad blocker, offline) is noticed.
-    var gs = document.createElement('script');
-    gs.src = 'https://accounts.google.com/gsi/client';
-    gs.async = true;
-    gs.addEventListener('error', function () { window.__gsiFailed = true; });
-    document.head.appendChild(gs);
-    waitForGsi();
+    if (!conf('adminApi')) { showSetup(TEXT.notSetUp); return; }
+    if (getSession()) { onLoggedIn(); } else { show('s-login'); }
   }
 
   init();
