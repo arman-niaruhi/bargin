@@ -11,7 +11,7 @@ const SHOP = {
   whatsapp: "989117139108", // شماره واتساپ با کد کشور، فقط عدد
   telegram: "",         // username without @
   instagram: "Bargiiin", // آیدی اینستاگرام بدون @
-  adminUrl: "",          // Apps Script web app URL for the admin page (/admin redirects here); empty = not set yet
+  adminUrl: "https://script.google.com/macros/s/AKfycbzY5azMGSGjVMK7MAn5wDcyjX5PlcWVlFVpVdlHYK1IaovqX5-RxcXIt8_rBle0utdj/exec", // Apps Script web app URL for the admin page (/admin redirects here); empty = not set yet
 };
 
 // ============================================================
