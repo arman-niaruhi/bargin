@@ -9,13 +9,15 @@ const SHOP = {
   email: "",           // not used
   phone: "09117139108",  // شماره تماس
   whatsapp: "989117139108", // شماره واتساپ با کد کشور، فقط عدد
-  telegram: "",         // username without @
   instagram: "Bargiiin", // آیدی اینستاگرام بدون @
+  // Published Google Sheet (products tab) as CSV: the source of all product data.
+  // The website reads it live. data/products.csv is only a backup.
+  productsUrl: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRl4UhLXduBOizYvVqQgkOk6oOEPTOTvBavPSB77XzpJEnOTOYYeTLU9w_qKDrZ2tMC6VgPLIo3xfLT/pub?output=csv",
   adminUrl: "https://script.google.com/macros/s/AKfycbzY5azMGSGjVMK7MAn5wDcyjX5PlcWVlFVpVdlHYK1IaovqX5-RxcXIt8_rBle0utdj/exec", // Apps Script web app URL for the admin page (/admin redirects here); empty = not set yet
 };
 
 // ============================================================
 //  محصولات و دسته‌بندی‌ها — PRODUCTS & CATEGORIES
-//  are in products.csv and categories.csv (open them in Excel / LibreOffice,
-//  save as "CSV UTF-8"). The website and the Telegram bot both read them.
+//  come from the published Google Sheet in SHOP.productsUrl (no categories file).
+//  The website reads it. data/products.csv is a backup.
 // ============================================================

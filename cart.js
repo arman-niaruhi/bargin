@@ -1,7 +1,7 @@
 // ============================================================
 //  سبد خرید — CART
 //  Stores only {id: qty} in localStorage ("bargin-cart"). Name, price and stock
-//  always come fresh from data/products.csv (PRODUCTS in app.js). The order is
+//  always come fresh from the products sheet (PRODUCTS in app.js). The order is
 //  sent as one WhatsApp message. Needs products.js and app.js loaded first.
 //  ES2017 only (old phones).
 // ============================================================

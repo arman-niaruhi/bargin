@@ -1,5 +1,6 @@
-// Products come from data/products.csv. Categories are the category names used
-// there, in the order they first appear (id = name, so links are ?cat=<name>).
+// Products come from the published Google Sheet (SHOP.productsUrl in products.js).
+// Categories are the category names used there, in the order they first appear
+// (id = name, so links are ?cat=<name>).
 let PRODUCTS = [];
 let CATEGORIES = [];
 
@@ -35,7 +36,7 @@ function parseCSV(text) {
     });
 }
 
-// one products.csv row → the product object the pages use
+// one sheet/CSV row → the product object the pages use
 function productFromRow(r) {
   const digits = String(r.price).replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/\D/g, "");
   return {
@@ -58,26 +59,28 @@ function categoriesOf(products) {
   return [...new Set(products.map((p) => p.category).filter(Boolean))].map((name) => ({ id: name, name }));
 }
 
-// true when data/products.csv could not be loaded (offline, blocked, error)
+// true when the products could not be loaded (no URL, offline, blocked, error, no products)
 let LOAD_FAILED = false;
 
+// Loads the products from the published Google Sheet (SHOP.productsUrl, products.js).
+// No silent fallback: if it fails, LOAD_FAILED is set and the pages show LOAD_FAILED_TEXT.
 async function loadData() {
-  const get = (f, opts) => fetch(f, opts).then((r) => {
-    if (!r.ok) throw new Error(f);
-    return r.text();
-  });
   try {
-    let text;
-    try {
-      text = await get("data/products.csv", { cache: "no-cache" });
-    } catch (e) {
-      // retry once with the default cache (some old browsers reject the option)
-      text = await get("data/products.csv");
-    }
-    PRODUCTS = parseCSV(text).filter((r) => r.id && r.name).map(productFromRow);
+    if (!SHOP.productsUrl) throw new Error("SHOP.productsUrl is empty");
+    // a new value every minute, so the browser never shows a stale copy for long
+    const sep = SHOP.productsUrl.indexOf("?") < 0 ? "?" : "&";
+    const url = SHOP.productsUrl + sep + "_=" + Math.floor(Date.now() / 60000);
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    const products = parseCSV(text).filter((r) => r.id && r.name).map(productFromRow);
+    if (!products.length) throw new Error("no products in the sheet");
+    PRODUCTS = products;
     CATEGORIES = categoriesOf(PRODUCTS);
     LOAD_FAILED = false;
   } catch (e) {
+    PRODUCTS = [];
+    CATEGORIES = [];
     LOAD_FAILED = true;
     console.error("could not load products", e);
   }
@@ -102,7 +105,6 @@ const ICONS = {
   whatsapp: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg>',
   instagram: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 8.2a3.2 3.2 0 1 1 0-6.4 3.2 3.2 0 0 1 0 6.4ZM17.3 5.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4ZM12 2c-2.7 0-3 0-4.1.1C4.3 2.2 2.3 4.2 2.1 7.9 2 9 2 9.3 2 12s0 3 .1 4.1c.2 3.6 2.2 5.6 5.8 5.8 1.1.1 1.4.1 4.1.1s3 0 4.1-.1c3.6-.2 5.6-2.2 5.8-5.8.1-1.1.1-1.4.1-4.1s0-3-.1-4.1c-.2-3.6-2.2-5.6-5.8-5.8C15 2 14.7 2 12 2Zm0 1.8c2.7 0 3 0 4 .1 2.7.1 4 1.4 4.1 4.1.1 1 .1 1.3.1 4s0 3-.1 4c-.1 2.7-1.4 4-4.1 4.1-1 .1-1.3.1-4 .1s-3 0-4-.1c-2.7-.1-4-1.4-4.1-4.1-.1-1-.1-1.3-.1-4s0-3 .1-4C4 5.3 5.3 4 8 3.9c1-.1 1.3-.1 4-.1Z"/></svg>',
   phone: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2Z"/></svg>',
-  telegram: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.9 4.6 18.7 19.4c-.2 1-.9 1.3-1.7.8l-4.8-3.5-2.3 2.2c-.3.3-.5.5-1 .5l.3-4.9 8.9-8c.4-.3-.1-.5-.6-.2l-11 6.9-4.7-1.5c-1-.3-1-1 .2-1.5L20.6 3.4c.8-.3 1.6.2 1.3 1.2Z"/></svg>',
 };
 
 // general WhatsApp message (footer, empty cart). With items in the cart, cart.js
@@ -120,9 +122,6 @@ function contactLinks() {
   const links = [];
   if (SHOP.whatsapp) {
     links.push(`<a class="btn wa-order" href="${esc(orderUrl())}" target="_blank" rel="noopener">${ICONS.whatsapp}سفارش در واتساپ<span class="wa-count"></span></a>`);
-  }
-  if (SHOP.telegram) {
-    links.push(`<a class="btn" href="https://t.me/${esc(SHOP.telegram)}" target="_blank" rel="noopener">${ICONS.telegram}تلگرام</a>`);
   }
   if (SHOP.phone) {
     links.push(`<a class="btn" href="tel:${esc(SHOP.phone)}">${ICONS.phone}تماس: <span dir="ltr">${esc(String(SHOP.phone).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]))}</span></a>`);
@@ -218,7 +217,7 @@ function noResultsHTML(action) {
     `<button type="button" class="btn btn-ghost" data-action="${action}">${label}</button></div>`;
 }
 
-// shown instead of products when data/products.csv could not be loaded
+// shown instead of products when the Google Sheet could not be loaded
 function loadFailedHTML() {
   return `<div class="no-results"><p>${LOAD_FAILED_TEXT}</p>` +
     `<button type="button" class="btn btn-ghost" data-action="reload">دوباره امتحان کن</button></div>`;
