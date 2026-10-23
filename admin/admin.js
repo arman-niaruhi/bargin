@@ -54,6 +54,11 @@
     serverFail: 'یه مشکلی پیش اومد. دوباره امتحان کن.',
     csvReady: 'فایل CSV آماده شد ({n} محصول).',
     csvBlocked: 'فایل ساخته نشد. اول مشکل‌ها رو درست کن.',
+    newCategory: 'دسته‌بندی جدید…',
+    newUnit: 'واحد جدید…',
+    noUnit: 'بدون واحد',
+    newCategoryHint: 'اسم دسته‌بندی جدید رو بنویس',
+    newUnitHint: 'واحد جدید رو بنویس، مثلاً ۲۵۰ گرم',
     noIdEdit: 'این ردیف شناسه نداره. اول توی شیت شناسه بذار، بعد بارگذاری دوباره رو بزن.',
     fieldLabel: {
       id: 'شناسه (id)', name: 'اسم (name)', category: 'دسته‌بندی (category)', price: 'قیمت (price)',
@@ -74,6 +79,8 @@
   var HEADER = ['id', 'name', 'category', 'price', 'unit', 'serves', 'short', 'details', 'recipe', 'images', 'soldOut'];
   var TEXTAREA_ROWS = { serves: 2, short: 2, details: 4, recipe: 7, images: 2 };
   var LTR_FIELDS = { id: true, price: true, images: true, soldOut: true };
+  var CHOICE_FIELDS = { category: true, unit: true };
+  var NEW_VALUE = '__new__';   // value of the «new…» option (never a real category or unit)
   var SESSION_KEY = 'bargin-admin-session';
   var COOLDOWN_DEFAULT = 60;
 
@@ -385,6 +392,32 @@
         hint.textContent = TEXT.fieldHint[h];
         label.appendChild(hint);
       }
+      if (CHOICE_FIELDS[h] || h === 'soldOut') {
+        var sel = document.createElement('select');
+        sel.id = 'f-' + h;
+        if (h === 'soldOut') {
+          [['no', 'no'], ['yes', 'yes']].forEach(function (o) {
+            var op = document.createElement('option');
+            op.value = o[0]; op.textContent = o[1]; sel.appendChild(op);
+          });
+          sel.className = 'ltr';
+        } else {
+          sel.addEventListener('change', function () { syncChoice(h); });
+        }
+        box.appendChild(label);
+        box.appendChild(sel);
+        if (CHOICE_FIELDS[h]) {
+          var extra = document.createElement('input');
+          extra.type = 'text';
+          extra.id = 'f-' + h + '-new';
+          extra.autocomplete = 'off';
+          extra.hidden = true;
+          extra.setAttribute('aria-label', h === 'category' ? TEXT.newCategoryHint : TEXT.newUnitHint);
+          extra.placeholder = h === 'category' ? TEXT.newCategoryHint : TEXT.newUnitHint;
+          box.appendChild(extra);
+        }
+        return;
+      }
       var input = TEXTAREA_ROWS[h] ? document.createElement('textarea') : document.createElement('input');
       if (TEXTAREA_ROWS[h]) input.rows = TEXTAREA_ROWS[h]; else input.type = 'text';
       input.id = 'f-' + h;
@@ -395,11 +428,48 @@
     });
   }
 
+  function syncChoice(h) {
+    var isNew = $('f-' + h).value === NEW_VALUE;
+    $('f-' + h + '-new').hidden = !isNew;
+    if (isNew) $('f-' + h + '-new').focus();
+  }
+
+  // Fill a category/unit dropdown from the loaded products (order of first appearance).
+  function fillChoice(h, current) {
+    var sel = $('f-' + h);
+    var seen = {}, list = [];
+    products.forEach(function (r) {
+      var v = String(r[h] || '').trim();
+      if (v && !seen[v]) { seen[v] = true; list.push(v); }
+    });
+    current = String(current || '').trim();
+    if (current && !seen[current]) list.push(current);
+    sel.textContent = '';
+    function add(value, text) {
+      var op = document.createElement('option');
+      op.value = value;
+      op.textContent = text;
+      sel.appendChild(op);
+    }
+    if (h === 'unit') add('', TEXT.noUnit);
+    list.forEach(function (v) { add(v, v); });
+    add(NEW_VALUE, h === 'category' ? TEXT.newCategory : TEXT.newUnit);
+    sel.value = current;
+    if (sel.value !== current) sel.value = h === 'unit' ? '' : (list[0] !== undefined ? list[0] : NEW_VALUE);
+    $('f-' + h + '-new').value = '';
+    syncChoice(h);
+  }
+
   function openForm(row) {
     editId = row ? String(row.id || '') : '';
     if (row && !editId) { setStatus(TEXT.noIdEdit, 'err'); return; }
-    HEADER.forEach(function (h) { $('f-' + h).value = row ? String(row[h] || '') : ''; });
+    HEADER.forEach(function (h) {
+      if (CHOICE_FIELDS[h]) { fillChoice(h, row ? row[h] : ''); return; }
+      $('f-' + h).value = row ? String(row[h] || '') : '';
+    });
     if (!row) $('f-soldOut').value = 'no';
+    else if (String(row.soldOut || '').toLowerCase() === 'yes') $('f-soldOut').value = 'yes';
+    else $('f-soldOut').value = 'no';
     $('form-title').textContent = row ? fill(TEXT.editTitle, { name: row.name || row.id }) : TEXT.newTitle;
     $('delete').hidden = !row;
     $('confirm').hidden = true;
@@ -419,7 +489,11 @@
 
   function collect() {
     var item = {};
-    HEADER.forEach(function (h) { item[h] = $('f-' + h).value; });
+    HEADER.forEach(function (h) {
+      var v = $('f-' + h).value;
+      if (CHOICE_FIELDS[h] && v === NEW_VALUE) v = $('f-' + h + '-new').value;
+      item[h] = CHOICE_FIELDS[h] ? String(v).trim() : v;
+    });
     return item;
   }
 

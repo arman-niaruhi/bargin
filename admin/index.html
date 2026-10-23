@@ -45,8 +45,11 @@
     .adm-form { text-align: right; }
     .adm-form label { display: block; font-weight: 700; margin: 12px 0 4px; }
     .adm-form .hint { display: block; font-weight: 400; font-size: .85rem; color: var(--muted); }
-    .adm-form input, .adm-form textarea { width: 100%; font-family: inherit; font-size: 1rem; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fffaf0; color: var(--text); }
-    .adm-form input:focus, .adm-form textarea:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(47, 122, 31, .2); }
+    .adm-form input, .adm-form textarea, .adm-form select { width: 100%; font-family: inherit; font-size: 1rem; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fffaf0; color: var(--text); }
+    .adm-form select { min-height: 44px; }
+    .adm-form input[hidden] { display: none; }
+    .adm-form select + input { margin-top: 8px; }
+    .adm-form input:focus, .adm-form textarea:focus, .adm-form select:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(47, 122, 31, .2); }
     .adm-form .ltr { direction: ltr; text-align: left; }
     .adm-confirm { background: #fbe9e4; border: 1px dashed var(--red); border-radius: 12px; padding: 12px; margin-top: 12px; }
   </style>
