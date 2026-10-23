@@ -5,8 +5,6 @@
 سفارش: واتساپ یا سایت 👇
 arman-niaruhi.github.io/bargin
 
-Profile picture: telegram/profile.jpg
-
 ---
 
 ## Post 1: intro (1 image)
