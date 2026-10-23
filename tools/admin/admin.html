@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>مدیریت محصولات برگین</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #ecd1a3; --card: #f8ecd5; --green: #2f7a1f; --green-d: #1f5714;
+    --brown: #4a2c1a; --red: #c8321e; --line: #d9b98a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper); color: var(--brown);
+    font-family: "Vazirmatn", Tahoma, Arial, sans-serif; font-size: 16px; line-height: 1.7;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 1.5rem; margin: 0 0 6px; text-align: center; }
+  h2 { font-size: 1.1rem; margin: 22px 0 10px; }
+  .intro { text-align: center; margin: 0 0 16px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .btn {
+    min-height: 44px; min-width: 44px; padding: 8px 18px; border-radius: 999px;
+    border: 2px solid var(--green-d); background: var(--green); color: #fff;
+    font: inherit; font-weight: 700; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .btn.ghost { background: var(--card); color: var(--green-d); }
+  .btn:disabled { opacity: .55; cursor: wait; }
+  .btn:focus-visible { outline: 3px solid var(--brown); outline-offset: 2px; }
+  .status { text-align: center; min-height: 1.7em; margin: 14px 0 0; font-weight: 700; }
+  .status.bad { color: var(--red); }
+  .status.good { color: var(--green-d); }
+  .panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 16px; margin-top: 14px;
+  }
+  .panel.issues { border: 2px dashed var(--red); }
+  .panel ul { margin: 6px 0 0; padding-right: 20px; }
+  .panel li { margin: 4px 0; }
+  .row-no { font-weight: 700; color: var(--red); margin-left: 6px; }
+  .download { text-align: center; }
+  .hint { font-size: .92rem; margin: 10px 0 0; }
+  .list { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  @media (min-width: 680px) { .list { grid-template-columns: 1fr 1fr; } }
+  .item {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  }
+  .item .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .item .name { font-weight: 700; overflow-wrap: anywhere; }
+  .item .meta { font-size: .9rem; overflow-wrap: anywhere; }
+  .item .num { font-size: .8rem; color: var(--green-d); white-space: nowrap; }
+  .tag { display: inline-block; padding: 0 10px; border-radius: 999px; font-size: .85rem; }
+  .tag.in { background: #dfeed6; color: var(--green-d); }
+  .tag.out { background: var(--red); color: #fff; }
+  .empty { text-align: center; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1 id="title"></h1>
+  <p class="intro" id="intro"></p>
+
+  <div class="bar">
+    <button id="reload" class="btn ghost" type="button"></button>
+    <button id="publish" class="btn" type="button"></button>
+  </div>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="issuesBox" class="panel issues" hidden>
+    <h2 id="issuesTitle" style="margin-top:0"></h2>
+    <ul id="issues"></ul>
+  </section>
+
+  <section id="downloadBox" class="panel download" hidden>
+    <p id="downloadText" style="margin:0"></p>
+    <p style="margin:10px 0 0"><a id="downloadLink" class="btn" download="products.csv" href="#"></a></p>
+    <p id="afterText" class="hint"></p>
+  </section>
+
+  <h2 id="listTitle"></h2>
+  <div id="list" class="list"></div>
+  <p id="emptyText" class="empty" hidden></p>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  // Every text on this page, in one place.
+  // TODO: bargin-content to review the Persian wording.
+  var TEXT = {
+    title: 'مدیریت محصولات برگین',
+    intro: 'محصول‌ها رو توی شیت عوض کن. بعد «ساخت فایل» رو بزن. اگه مشکلی باشه، همه‌ش پایین لیست می‌شه.',
+    reload: 'بارگذاری دوباره',
+    publish: 'ساخت فایل products.csv',
+    loading: 'در حال خوندن شیت…',
+    busy: 'یه لحظه صبر کن…',
+    count: 'تعداد محصول: {n}',
+    empty: 'هنوز محصولی توی شیت نیست.',
+    issuesTitle: 'این موارد باید درست بشن تا فایل ساخته بشه:',
+    blocked: 'فایل ساخته نشد. اول مشکل‌ها رو درست کن.',
+    ready: 'فایل آماده‌ست ({n} محصول).',
+    downloadText: 'فایل products.csv آماده‌ست.',
+    downloadLink: 'دانلود products.csv',
+    after: 'فایل رو دانلود کن و جای data/products.csv توی پوشه‌ی سایت بذار (فایل قبلی رو عوض کن). بعدش بهم خبر بده تا ثبتش کنیم.',
+    rowLabel: 'سطر {n}',
+    listTitle: 'لیست محصول‌ها',
+    noId: '(بدون شناسه)',
+    inStock: 'موجود',
+    soldOut: 'ناموجود',
+    loadFail: 'نتونستیم شیت رو بخونیم. دوباره امتحان کن.',
+    publishFail: 'ساخت فایل انجام نشد. دوباره امتحان کن.',
+    noGoogle: 'این صفحه باید از داخل Apps Script باز بشه.'
+  };
+
+  function fill(template, vars) {
+    return template.replace(/\{(\w+)\}/g, function (m, k) {
+      return vars[k] !== undefined ? String(vars[k]) : m;
+    });
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  var lastUrl = null;
+
+  // Calls a server function through google.script.run (the only server link).
+  function callServer(fn, onOk, onFail) {
+    if (!window.google || !google.script || !google.script.run) {
+      onFail(TEXT.noGoogle);
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(onOk)
+      .withFailureHandler(function (err) {
+        if (window.console) console.error(err);
+        onFail(TEXT.loadFail);
+      })[fn]();
+  }
+
+  function setStatus(text, kind) {
+    var el = $('status');
+    el.textContent = text || '';
+    el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  function setBusy(on) {
+    $('reload').disabled = on;
+    $('publish').disabled = on;
+  }
+
+  function showIssues(issues) {
+    var list = $('issues');
+    list.textContent = '';
+    issues.forEach(function (it) {
+      var li = document.createElement('li');
+      var no = document.createElement('span');
+      no.className = 'row-no';
+      no.textContent = fill(TEXT.rowLabel, { n: it.row }) + ':';
+      li.appendChild(no);
+      li.appendChild(document.createTextNode(' ' + it.message));
+      list.appendChild(li);
+    });
+    $('issuesBox').hidden = !issues.length;
+  }
+
+  function showDownload(csv, count) {
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    lastUrl = URL.createObjectURL(blob);
+    var link = $('downloadLink');
+    link.href = lastUrl;
+    $('downloadBox').hidden = false;
+    // Start the download by itself; the link is the fallback.
+    try {
+      var a = document.createElement('a');
+      a.href = lastUrl;
+      a.download = 'products.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) { /* the visible link still works */ }
+    setStatus(fill(TEXT.ready, { n: count }), 'good');
+  }
+
+  function renderList(rows) {
+    var box = $('list');
+    box.textContent = '';
+    var shown = 0;
+    rows.forEach(function (r) {
+      if (!r.id && !r.name && !r.price) return; // blank row
+      shown++;
+      var item = document.createElement('div');
+      item.className = 'item';
+
+      var top = document.createElement('div');
+      top.className = 'top';
+      var name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = r.name || r.id || TEXT.noId;
+      var num = document.createElement('span');
+      num.className = 'num';
+      num.textContent = fill(TEXT.rowLabel, { n: r.row });
+      top.appendChild(name);
+      top.appendChild(num);
+      item.appendChild(top);
+
+      var meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = [r.id || TEXT.noId, r.category, r.price].filter(Boolean).join(' · ');
+      item.appendChild(meta);
+
+      var tag = document.createElement('span');
+      var out = String(r.soldOut || '').trim().toLowerCase() === 'yes';
+      tag.className = 'tag ' + (out ? 'out' : 'in');
+      tag.textContent = out ? TEXT.soldOut : TEXT.inStock;
+      item.appendChild(tag);
+
+      box.appendChild(item);
+    });
+    $('listTitle').textContent = fill(TEXT.count, { n: shown });
+    $('emptyText').textContent = TEXT.empty;
+    $('emptyText').hidden = shown > 0;
+  }
+
+  function load() {
+    setBusy(true);
+    setStatus(TEXT.loading);
+    callServer('getProducts', function (res) {
+      setBusy(false);
+      renderList(res.rows || []);
+      showIssues(res.issues || []);
+      setStatus(res.issues && res.issues.length ? TEXT.blocked : '', res.issues && res.issues.length ? 'bad' : '');
+    }, function (msg) {
+      setBusy(false);
+      setStatus(msg, 'bad');
+    });
+  }
+
+  function publish() {
+    setBusy(true);
+    setStatus(TEXT.busy);
+    $('downloadBox').hidden = true;
+    callServer('publishCsv', function (res) {
+      setBusy(false);
+      if (!res || !res.ok) {
+        showIssues((res && res.issues) || []);
+        setStatus(TEXT.blocked, 'bad');
+        return;
+      }
+      showIssues([]);
+      showDownload(res.csv, res.count);
+    }, function (msg) {
+      setBusy(false);
+      setStatus(TEXT.publishFail, 'bad');
+    });
+  }
+
+  // Static texts
+  document.title = TEXT.title;
+  $('title').textContent = TEXT.title;
+  $('intro').textContent = TEXT.intro;
+  $('reload').textContent = TEXT.reload;
+  $('publish').textContent = TEXT.publish;
+  $('issuesTitle').textContent = TEXT.issuesTitle;
+  $('downloadText').textContent = TEXT.downloadText;
+  $('downloadLink').textContent = TEXT.downloadLink;
+  $('afterText').textContent = TEXT.after;
+  $('listTitle').textContent = fill(TEXT.count, { n: 0 });
+
+  $('reload').addEventListener('click', load);
+  $('publish').addEventListener('click', publish);
+  load();
+})();
+</script>
+</body>
+</html>

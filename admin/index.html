@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>مدیریت برگین</title>
+  <meta name="theme-color" content="#ecd1a3">
+  <link rel="icon" href="../images/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap">
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    .admin-box {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      padding: 24px 16px;
+      text-align: center;
+    }
+    .admin-box p { margin: 0; }
+    .admin-box .btn[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <main class="admin-box">
+    <p id="admin-msg">در حال انتقال به صفحه مدیریت…</p>
+    <a class="btn" id="admin-go" href="#">باز کردن صفحه مدیریت</a>
+  </main>
+
+  <script src="../products.js"></script>
+  <script>
+    (function () {
+      var msg = document.getElementById('admin-msg');
+      var go = document.getElementById('admin-go');
+      var url = (typeof SHOP !== 'undefined' && SHOP && SHOP.adminUrl) ? String(SHOP.adminUrl) : '';
+      if (!url) {
+        msg.textContent = 'لینک صفحه مدیریت هنوز تنظیم نشده.';
+        go.hidden = true;
+        return;
+      }
+      go.href = url;
+      window.location.replace(url);
+    })();
+  </script>
+</body>
+</html>
