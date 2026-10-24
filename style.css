@@ -45,12 +45,13 @@ img { display: block; max-width: 100%; }
 
 /* Hero */
 .hero { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; padding: 28px var(--gutter) 8px; }
-/* Home page story: seven owner images (story-1..7, 1080x1440, text is inside the images).
-   Whole image always visible (frame matches the image ratio, object-fit contain), never cropped.
-   Under 768px: tall 3:4 images (story-N), full width, edge to edge (cancels the hero's gutter).
-   768px and up: wide 16:9 images (story-N-wide, picked by <picture>), as wide as the product grid
-   (.container content box: --page-max minus two --gutter), but capped so the smaller logo plus the
-   whole story fit in one window height (then a little narrower than the grid, centred; owner OK). */
+/* Home page story: eight owner images (story-1..8, 1080x1440, text is inside the images;
+   made by tools/packaging/make_story.py). The whole image is always visible, never cropped.
+   Under 768px: the tall 3:4 image, full width, edge to edge (cancels the hero's gutter).
+   768px and up: a transparent 16:9 frame as wide as the product grid (.container content box:
+   --page-max minus two --gutter), capped so the smaller logo plus the whole story fit in one window
+   height. The same tall image sits centred in it as a card (rounded, soft shadow); the page's own
+   background shows on both sides, and the buttons sit there. */
 .story {
   position: relative; overflow: hidden; isolation: isolate;
   width: 100vw; max-height: 100vh; margin: 18px calc(50% - 50vw) 0; aspect-ratio: 3 / 4;
@@ -63,8 +64,7 @@ img { display: block; max-width: 100%; }
     width: min(100%, calc(var(--page-max) - 2 * var(--gutter)),
                calc((100vh - 68px - var(--logo-w-desk) * 1.6694) * 16 / 9));
     max-height: none; margin: 22px auto 0; aspect-ratio: 16 / 9;
-    border: 1px solid var(--line); border-radius: var(--radius);
-    box-shadow: 0 12px 28px rgba(74, 44, 26, .2);
+    overflow: visible; background: transparent; box-shadow: none;
   }
 }
 .story-slide {
@@ -73,22 +73,24 @@ img { display: block; max-width: 100%; }
 .story-slide.is-active { opacity: 1; }
 .story-slide picture, .story-slide img { display: block; width: 100%; height: 100%; }
 .story-slide img { object-fit: contain; object-position: center; }
-/* Position bars: slides already seen and the current one are filled (no timer, no animation) */
-.story-bars {
-  position: absolute; top: 12px; left: 12px; right: 12px; z-index: 4;
-  display: flex; gap: 6px; pointer-events: none;
+@media (min-width: 768px) {
+  /* image = 3/4 of the frame height wide (42.2% of the frame), centred; 28.9% page background each side */
+  .story, .story-slide, .story-slide picture {
+    background: none; box-shadow: none; border: 0; border-radius: 0; padding: 0;
+  }
+  .story-slide { display: flex; justify-content: center; }
+  .story-slide picture { display: contents; }
+  .story-slide img {
+    width: auto; height: 100%; max-width: 100%; aspect-ratio: 3 / 4;
+    border-radius: var(--radius);
+    box-shadow: 0 12px 28px rgba(74, 44, 26, .22), 0 2px 6px rgba(74, 44, 26, .12);
+  }
 }
-.story-bars span {
-  flex: 1; height: 4px; border-radius: 4px;
-  background: rgba(248, 236, 213, .45); transition: background-color .3s ease;
-}
-.story-bars span.done { background: var(--surface); }
 .story:focus { outline: none; }
 .story:focus-visible { outline: 3px solid var(--green-dark); outline-offset: 3px; }
 /* Text pills: left = previous («قبلی», hidden on slide 1), right = next (teaser text per slide).
    The text inside the images is only in the top band of the drawing, so the pills sit over the image:
-   bottom corners on phones; on 768px+ in the middle of the blurred side bands of the wide images
-   (each band is 555/1920 = 28.9% of the width; a pill fits inside its band and wraps if needed). */
+   bottom corners on phones; on 768px+ vertically centred on the page background beside the image. */
 .story-btn {
   position: absolute; bottom: 12px; z-index: 5;
   display: inline-flex; align-items: center; gap: 6px;
@@ -106,16 +108,20 @@ img { display: block; max-width: 100%; }
 .story-btn-prev { left: 10px; max-width: calc(36% - 12px); }
 .story-btn-next { right: 10px; }
 @media (min-width: 768px) {
+  /* Each pill starts 16px from the image edge and grows outward on the page background (one line
+     when there is room; it wraps only when the space up to the window edge is too small).
+     21.1% = half the image width (42.2% of the frame); 40px = gap + scrollbar safety. */
   .story-btn {
-    bottom: auto; top: 50%; min-height: 48px; max-width: calc(28.9% - 22px); padding: 10px 14px;
+    bottom: auto; top: 50%; min-height: 48px; padding: 10px 16px;
+    width: max-content; max-width: calc(50vw - 21.1% - 40px);
     font-size: .95rem; line-height: 1.5; text-align: center; transform: translateY(-50%);
   }
   .story-btn:hover { transform: translateY(calc(-50% - 1px)); }
-  .story-btn-prev { left: 16px; max-width: calc(28.9% - 22px); }
-  .story-btn-next { right: 16px; }
+  .story-btn-prev { left: auto; right: calc(71.1% + 16px); max-width: calc(50vw - 21.1% - 40px); }
+  .story-btn-next { right: auto; left: calc(71.1% + 16px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .story-slide, .story-bars span, .story-btn { transition: none; }
+  .story-slide, .story-btn { transition: none; }
   .story-btn:hover { transform: none; }
   @media (min-width: 768px) { .story-btn:hover { transform: translateY(-50%); } }
 }
