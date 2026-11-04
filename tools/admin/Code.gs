@@ -11,6 +11,12 @@
 // read-modify-write runs under LockService and fails closed. Codes and tokens are never logged.
 // The pure functions (validateRows, buildCsv, handleRequest_ and the cell helpers) make no Apps Script
 // calls at load time, so tools/admin/test.mjs can run them in Node with stubbed services.
+// Customer activity log (owner approved 2026-11-04): the public action logEvent writes anonymous events
+// from log.js (view, search, category, cart_add/dec/remove/clear, cart_open, whatsapp, instagram, phone,
+// no_results, load_error) to the «log» tab (made by setupLog,
+// always the LAST tab, so the products stay the first sheet). Whitelisted fields only, formula-escaped,
+// rate-limited in CacheService, at most LOG_MAX_ROWS rows (when full, new events are dropped; nothing is
+// ever deleted automatically). It never needs a session and never reads the products.
 // Style: ES2017 only, like the site (no newer syntax or methods).
 
 // The people who may log in (owner decision 2026-10-23). All of them get FULL admin access.
@@ -20,8 +26,8 @@ var ALLOWED_EMAILS = ['arman.niaruhi@gmail.com', 'zeinabkia023@gmail.com'];
 var MAX_EMAIL_LENGTH = 254;
 var FAKE_SEND_DELAY_MS = 700;    // an unknown address waits about as long as a real mail send takes
 
-// Actions that need no session: ask for a code, send the code, log out.
-var PUBLIC_ACTIONS = ['requestCode', 'verifyCode', 'logout'];
+// Actions that need no session: ask for a code, send the code, log out, write customer activity.
+var PUBLIC_ACTIONS = ['requestCode', 'verifyCode', 'logout', 'logEvent'];
 // Actions that need a valid session (checked once, in handleRequest_).
 var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv'];
 
@@ -231,6 +237,133 @@ function handleRequest_(body, deps) {
   } catch (e) {
     return { ok: false, error: e && e.message === 'BUSY' ? 'BUSY' : 'server' };
   }
+}
+
+// ---- Customer activity log (log.js → «log» tab) ----
+
+var LOG_SHEET = 'log';
+var LOG_HEADER = ['time', 'session', 'event', 'page', 'product', 'category', 'search', 'qty', 'from', 'device', 'source', 'reason'];
+var LOG_MAX_ROWS = 50000;        // owner 2026-11-04: keep every row; when full, new events are dropped
+var LOG_MAX_BODY = 8000;         // characters in one logEvent request
+var LOG_MAX_BATCH = 20;          // events in one request
+var LOG_LOCK_MS = 1500;          // wait for the lock this long, then drop the batch (never blocks the admin)
+var LOG_PER_SID_HOUR = 300;      // events per visitor id per hour
+var LOG_PER_MINUTE = 600;        // events per minute, all visitors together
+var LOG_PER_DAY = 20000;         // events per day, all visitors together
+var LOG_TYPES = ['view', 'search', 'category', 'cart_add', 'cart_dec', 'cart_remove', 'cart_clear', 'cart_open',
+  'whatsapp', 'instagram', 'phone', 'no_results', 'load_error'];
+var LOG_SEARCH_TYPES = ['search', 'view', 'no_results'];   // the only events that keep a search word
+var LOG_REASON = /^(http-[0-9]{3}|network|no-products|no-url)$/;   // load_error reasons
+var LOG_PAGES = ['home', 'product'];
+var LOG_FROM = ['card', 'product', 'bar', 'drawer', 'footer', 'fab'];
+var LOG_DEVICES = ['phone', 'computer'];
+
+// Text for a log cell: no control characters, single spaces, at most `max` characters, and never read as a
+// formula by Sheets (a leading = + - @ gets an apostrophe in front, which Sheets does not show).
+function logText_(v, max) {
+  if (typeof v !== 'string') return '';
+  var s = v.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+
+// One event from log.js → a row (LOG_HEADER order without the time), or null if it is not allowed.
+// Only whitelisted types and fields; everything else is dropped.
+function logRow_(ev, sid) {
+  if (!ev || typeof ev !== 'object' || Array.isArray(ev)) return null;
+  if (LOG_TYPES.indexOf(ev.type) < 0) return null;
+  var page = LOG_PAGES.indexOf(ev.page) >= 0 ? ev.page : '';
+  var id = typeof ev.id === 'string' && /^[A-Za-z0-9_\-]{1,40}$/.test(ev.id) ? ev.id : '';
+  var qty = typeof ev.qty === 'number' && isFinite(ev.qty) ? Math.max(0, Math.min(999, Math.floor(ev.qty))) : '';
+  var from = LOG_FROM.indexOf(ev.from) >= 0 ? ev.from : '';
+  var dev = LOG_DEVICES.indexOf(ev.dev) >= 0 ? ev.dev : '';
+  var src = typeof ev.src === 'string' && /^[a-z0-9.\-]{1,60}$/.test(ev.src) ? ev.src : '';
+  var q = LOG_SEARCH_TYPES.indexOf(ev.type) >= 0 ? logText_(ev.q, 40) : '';
+  if ((ev.type === 'search' || ev.type === 'no_results') && !q) return null;
+  var why = ev.type === 'load_error' && typeof ev.why === 'string' && LOG_REASON.test(ev.why) ? ev.why : '';
+  return [sid, ev.type, page, id, logText_(ev.cat, 40), q, qty, from, dev, src, why];
+}
+
+// Pure part of logEvent: the request data → the rows to write ([] = nothing). Checks the visitor id and
+// the batch size; bad events are skipped one by one.
+function logRows_(data) {
+  if (!data || typeof data !== 'object') return [];
+  var sid = typeof data.sid === 'string' && /^[0-9a-z]{16}$/.test(data.sid) ? data.sid : '';
+  if (!sid || !Array.isArray(data.events) || !data.events.length || data.events.length > LOG_MAX_BATCH) return [];
+  var rows = [];
+  data.events.forEach(function (ev) {
+    var r = logRow_(ev, sid);
+    if (r) rows.push(r);
+  });
+  return rows;
+}
+
+// Rate limits (CacheService counters; approximate on purpose, no lock): per visitor id per hour, all visitors
+// per minute and per day. Returns how many of `n` events may be written now (0 = drop the batch).
+function logAllowance_(sid, n) {
+  var c = cache_();
+  var now = nowMs_();
+  var keys = [
+    { k: 'lg_s_' + sid, max: LOG_PER_SID_HOUR, ttl: 3600 },
+    { k: 'lg_m_' + Math.floor(now / 60000), max: LOG_PER_MINUTE, ttl: 120 },
+    { k: 'lg_d_' + Math.floor(now / DAY_MS), max: LOG_PER_DAY, ttl: 21600 }
+  ];
+  var allow = n;
+  keys.forEach(function (o) {
+    o.used = parseInt(c.get(o.k) || '0', 10) || 0;
+    allow = Math.min(allow, Math.max(0, o.max - o.used));
+  });
+  if (allow > 0) keys.forEach(function (o) { c.put(o.k, String(o.used + allow), o.ttl); });
+  return allow;
+}
+
+// logEvent: data = {sid, events:[{type, page, id?, cat?, q?, qty?, from?, dev?, src?, why?}]}. Always answers
+// {ok:true, data:{}} (it never tells a visitor whether something was written). Writes nothing when: the
+// request is bad, the rate limits are hit, the «log» tab is missing, the tab already has LOG_MAX_ROWS
+// rows (the 50,000 cap: new events are dropped, old rows are kept), or the lock is busy for 1.5 s.
+function logEvent(data, body) {
+  var done = { ok: true, data: {} };
+  try {
+    if (typeof body === 'string' && body.length > LOG_MAX_BODY) return done;
+    var rows = logRows_(data);
+    if (!rows.length) return done;
+    var c = cache_();
+    if (c.get('lg_full') === '1') return done;
+    var allow = logAllowance_(rows[0][0], rows.length);
+    if (!allow) return done;
+    rows = rows.slice(0, allow);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOG_SHEET);
+    if (!sheet) return done;
+    var time = Utilities.formatDate(new Date(nowMs_()), 'Asia/Tehran', 'yyyy-MM-dd HH:mm:ss');
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(LOG_LOCK_MS)) return done;
+    try {
+      var last = sheet.getLastRow();          // row 1 is the header
+      var room = LOG_MAX_ROWS - Math.max(0, last - 1);
+      if (room <= 0) { c.put('lg_full', '1', 600); return done; }
+      rows = rows.slice(0, room).map(function (r) { return [time].concat(r); });
+      var need = last + rows.length - sheet.getMaxRows();
+      if (need > 0) sheet.insertRowsAfter(sheet.getMaxRows(), Math.max(need, 500));   // grow in steps of 500
+      sheet.getRange(last + 1, 1, rows.length, LOG_HEADER.length).setValues(rows);
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (e) { /* the log is best effort; never an error for the visitor */ }
+  return done;
+}
+
+// Run this ONCE in the Apps Script editor after pasting Code.gs: makes the «log» tab (or fixes its header),
+// as the LAST tab, so the products stay the first sheet. Plain-text cells, bold frozen header. Safe to run again.
+function setupLog() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(LOG_SHEET);
+  if (!sheet) sheet = ss.insertSheet(LOG_SHEET, ss.getSheets().length);
+  sheet.getRange(1, 1, 1, LOG_HEADER.length).setValues([LOG_HEADER]).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, sheet.getMaxRows(), LOG_HEADER.length).setNumberFormat('@');
+  ss.setActiveSheet(sheet);
+  ss.moveActiveSheet(ss.getNumSheets());
+  ss.setActiveSheet(ss.getSheets()[0]);
+  return 'OK: «' + LOG_SHEET + '» is tab ' + ss.getNumSheets() + ' of ' + ss.getNumSheets() + '; products tab is «' + ss.getSheets()[0].getName() + '»';
 }
 
 // ---- Login: codes, sessions, limits (Apps Script services; stubbed in the tests) ----
@@ -463,7 +596,8 @@ function doPost(e) {
     publicActions: {
       requestCode: function (d) { return requestCode(d); },
       verifyCode: function (d) { return verifyCode(d); },
-      logout: function (d, token) { return logout(d, token); }
+      logout: function (d, token) { return logout(d, token); },
+      logEvent: function (d) { return logEvent(d, body); }
     },
     requireSession: function (token) {
       return requireSession_(token);

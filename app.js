@@ -91,6 +91,8 @@ async function loadData() {
     CATEGORIES = [];
     LOAD_FAILED = true;
     console.error("could not load products", e);
+    const m = String((e && e.message) || "");
+    track("load_error", { why: /^HTTP \d{3}$/.test(m) ? "http-" + m.slice(5) : /no products/.test(m) ? "no-products" : /productsUrl/.test(m) ? "no-url" : "network" });
   }
 }
 
@@ -156,6 +158,23 @@ function renderShell() {
         `<div class="contact">${links}</div>`
       : "") +
     `<p>&copy; ${year} ${esc(SHOP.name)}</p>`;
+  // log the footer links: «سفارش در واتساپ» (qty = items in the cart, see a.wa-order in cart.js),
+  // «تماس» and «اینستاگرام»
+  document.getElementById("footer").addEventListener("click", (e) => {
+    const a = e.target.closest("a[href]");
+    if (!a) return;
+    const href = a.getAttribute("href");
+    if (a.classList.contains("wa-order")) {
+      const n = typeof cartRows === "function" ? cartRows().reduce((s, r) => s + (r.p.soldOut ? 0 : r.qty), 0) : 0;
+      track("whatsapp", { from: "footer", qty: n });
+    } else if (/^tel:/.test(href)) track("phone", { from: "footer" });
+    else if (/instagram\.com/.test(href)) track("instagram", { from: "footer" });
+  });
+}
+
+// activity log (log.js, SHOP.logApi): does nothing when log.js isn't loaded; never throws
+function track(type, data) {
+  try { if (typeof logEvent === "function") logEvent(type, data); } catch (e) { /* never break the shop */ }
 }
 
 function categoryOf(p) {
@@ -253,6 +272,9 @@ function renderHome() {
     else if (list.length) grid.innerHTML = list.map(cardHTML).join("");
     else if (!normalize(state.q)) grid.innerHTML = `<p class="empty">فعلاً محصولی اینجا نیست.</p>`;
     else grid.innerHTML = noResultsHTML(found.length ? "all" : "clear");
+    // «چیزی پیدا نکردیم» shown: log the word once typing pauses (an empty q cancels it)
+    const none = !LOAD_FAILED && !list.length && normalize(state.q);
+    track("no_results", { q: none ? state.q : "" });
     if (filters) {
       filters.querySelectorAll(".chip").forEach((b) => {
         const on = b.dataset.cat === state.cat;
@@ -281,6 +303,7 @@ function renderHome() {
       if (!b) return;
       state.cat = b.dataset.cat;
       update();
+      track("category", { cat: state.cat || "همه" });
     });
   } else if (filters) {
     filters.hidden = true;
@@ -292,6 +315,7 @@ function renderHome() {
       if (state.q === search.value) return;
       state.q = search.value;
       update();
+      track("search", { q: state.q });
     };
     // "search" = the × / Enter in some browsers, "change" = older phone keyboards
     ["input", "search", "change"].forEach((ev) => search.addEventListener(ev, onSearch));
@@ -324,6 +348,7 @@ function renderHome() {
   });
 
   show();
+  track("view", { cat: state.cat, q: state.q });
 }
 
 // recipe text from the CSV: first line = dish name (or «طرز تهیه: …» for things that
@@ -366,6 +391,7 @@ function renderProduct() {
     return;
   }
   document.title = `${p.name} | ${SHOP.name}`;
+  track("view", { id: p.id, cat: p.category });
 
   const cat = categoryOf(p);
   const specs = Object.entries(p.specs || {});

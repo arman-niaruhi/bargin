@@ -95,10 +95,51 @@ unique; `soldOut` is `yes`, `no` or empty. Blank rows are skipped. Problems are 
   prefix in `Code.gs` (two places) or wait up to 6 hours. Then deploy again and send the new URL if it changed.
 - **Bad edit in the Sheet:** use the Sheet's **File → Version history**. `data/products.csv` is also a backup.
 
+## Customer activity log («log» tab, owner approved 2026-11-04)
+The shop pages load `log.js`, which sends a few anonymous events to the same Apps Script web app (`SHOP.logApi` in
+`products.js`, the same URL as `adminApi`; action `logEvent`, no login needed). The script writes them to the tab
+**`log`**, which `setupLog` puts as the **last** tab (the products must stay the first tab).
+- Events:
+  - `view`: home or product page.
+  - `search`: the word, at most 40 characters, after typing stops for 1.5 s.
+  - `no_results`: the «چیزی پیدا نکردیم» card was shown, with the word (also after a 1.5 s pause).
+  - `category`: a category button.
+  - `cart_add` (add or «+», new qty), `cart_dec` («−», new qty), `cart_remove` (bin, or «−» down to 0; qty = how many
+    were removed), `cart_clear` («آره، خالیش کن»; qty = items that were in the cart), `cart_open`.
+  - `whatsapp` (drawer or footer button; qty = items), `instagram` and `phone` (footer links). These three are sent at
+    once, because the visitor is leaving.
+  - `load_error`: the products sheet could not be loaded; `reason` is `http-<status>`, `network`, `no-products` or `no-url`.
+- Columns: `time` (Tehran), `session` (random id per browser tab, not a person), `event`, `page`, `product`, `category`,
+  `search`, `qty`, `from` (card / product / bar / drawer / footer / fab), `device` (phone / computer), `source` (the site
+  the visitor came from, host only, e.g. `instagram.com`; owner kept it 2026-11-04), `reason` (only for `load_error`).
+- Never logged: names, phone numbers, cart contents beyond the product id, IP, cookies. Nothing is sent on localhost,
+  `file:`, from bots / headless browsers / link previews, or when the browser asks for Do Not Track or Global Privacy Control.
+- Limits: at most 20 events per request, 300 per visitor an hour, 600 a minute and 20,000 a day for everyone. The tab keeps
+  **every row**; when it has **50,000 rows** new events are silently dropped (nothing is deleted automatically). To make
+  room: download or copy the old rows somewhere, then delete them by hand (keep row 1, the header).
+- Cells that start with `= + - @` get an apostrophe, so Sheets never runs them as formulas.
+- Test locally: `python3 -m http.server 8000`, open `http://localhost:8000/?logdebug=1`; the batches are printed in the
+  browser console (`[bargin-log] …`) instead of being sent. `?logdebug=1` does nothing on the live site.
+
+### Owner's checklist (once, after the code is pushed)
+1. **Google Sheet → File → Share → Publish to web.** Under "Link", the first box must say the **products tab only**
+   (not "Entire document"), format "Comma-separated values (.csv)". Under "Published content and settings" also pick
+   the products tab only. If it says "Entire document", change it to the products tab and press **Republish**. (Otherwise
+   the log could be read by anyone.)
+2. **Extensions → Apps Script.** Open `Code.gs`, select everything, delete it, and paste the new `tools/admin/Code.gs`.
+   Press **Save** (the disk icon).
+3. In the function box at the top pick **`setupLog`** and press **Run**. If Google asks for permission, allow it as in
+   "Authorize once" above. The log at the bottom says `OK: «log» is tab N of N…`. Check the Sheet: a new tab **log** is
+   the last tab, the products tab is still the first one.
+4. **Deploy → Manage deployments →** the pencil (Edit) on the current web app **→ Version: New version → Deploy.**
+   Keep "Execute as: Me" and "Who has access: Anyone". The URL stays the same, so nothing else changes.
+5. Open the live site on your phone, look at a product, add it to the cart. After a few seconds new rows appear in the
+   **log** tab. (Your own visits are logged too, unless your browser sends Do Not Track.)
+
 ## Notes for the programmer
 - Persian texts: `MSG` in `Code.gs` and `TEXT` in `admin/admin.js` (for `bargin-content` to review).
 - `admin/index.html` has a CSP meta tag; `connect-src` allows `script.google.com` and `*.googleusercontent.com` (Apps Script
   answers through a redirect to `script.googleusercontent.com`). If the host changes, update it.
 - Do not run `clasp` against the live project without the owner's OK.
 - Tests: `node tools/admin/test.mjs` (CSV and checks, plus the login with stubbed CacheService, LockService, MailApp,
-  PropertiesService, Utilities, Session and a fake clock).
+  PropertiesService, Utilities, Session and a fake clock, plus the activity log: `logEvent`, `setupLog` and `log.js`).

@@ -34,7 +34,7 @@ const stubs = {
 };
 const gs = { ...stubs };
 vm.createContext(gs);
-vm.runInContext(read("tools/admin/Code.gs") + ";this.buildCsv=buildCsv;this.validateRows=validateRows;this.planSave=planSave;this.HEADER=HEADER;this.EOL=EOL;this.handleRequest_=handleRequest_;this.ALLOWED_EMAILS=ALLOWED_EMAILS;", gs);
+vm.runInContext(read("tools/admin/Code.gs") + ";this.buildCsv=buildCsv;this.validateRows=validateRows;this.planSave=planSave;this.HEADER=HEADER;this.EOL=EOL;this.handleRequest_=handleRequest_;this.ALLOWED_EMAILS=ALLOWED_EMAILS;this.LOG_HEADER=LOG_HEADER;this.LOG_MAX_ROWS=LOG_MAX_ROWS;this.setupLog=setupLog;", gs);
 gs.nowMs_ = () => clock.t;   // the fake clock (Code.gs calls nowMs_ through the global)
 
 // app.js: the same parser the website and the bot use
@@ -93,40 +93,56 @@ check("(a) publishCsv passes EOL to buildCsv (Publish path)", /buildCsv\(data\.r
 check("(a) output starts with UTF-8 BOM", crlfOut.charCodeAt(0) === 0xfeff && lfOut.charCodeAt(0) === 0xfeff);
 check("(a) header order is id,name,category,price,unit,serves,short,details,recipe,images,soldOut",
   lfOut.replace(/^\ufeff/, "").split("\n")[0] === "id,name,category,price,unit,serves,short,details,recipe,images,soldOut");
-// Exact byte differences between the CRLF build and data/products.csv.
-// Finds each differing run (with a short look-ahead to resync) and counts its bytes.
-function byteHunks(a, b) {
-  const hunks = [];
-  let i = 0, j = 0;
-  const W = 20, K = 6;
-  while (i < a.length || j < b.length) {
-    if (a[i] === b[j]) { i++; j++; continue; }
-    let best = null;
-    for (let k = 0; k <= K && !best; k++) {
-      for (let m = 0; m <= K && !best; m++) {
-        if (a.slice(i + k, i + k + W) === b.slice(j + m, j + m + W) && (i + k < a.length || j + m < b.length)) best = [k, m];
-      }
-    }
-    if (!best) best = [a.length - i, b.length - j];
-    const [k, m] = best;
-    hunks.push({ file: a.slice(i, i + k), build: b.slice(j, j + m), at: i });
-    i += k; j += m;
+// data/products.csv vs what buildCsv would write for the same rows, read record by record and
+// field by field (quoting style may differ, e.g. Google quotes a lone «،»; that is not a difference).
+// Rules taken from buildCsv: UTF-8 BOM first, header row = HEADER, 11 fields in every record,
+// one line ending for the whole file (the committed file uses LF, also inside cells), a final line end.
+function csvRecords(text) {
+  text = text.replace(/^﻿/, "");
+  const records = [];
+  let rec = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; }
+      else f += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { rec.push(f); f = ""; }
+    else if (c === "\r" && text[i + 1] === "\n") { rec.push(f); records.push(rec); rec = []; f = ""; i++; }
+    else if (c === "\n") { rec.push(f); records.push(rec); rec = []; f = ""; }
+    else f += c;
   }
-  return hunks;
+  if (f || rec.length) { rec.push(f); records.push(rec); }
+  return records;
 }
-const hunks = byteHunks(csvFile, crlfOut);
-const diffBytes = hunks.reduce((n, h) => n + Buffer.byteLength(h.file, "utf8") + Buffer.byteLength(h.build, "utf8"), 0);
-console.log(`      info: byte size file ${Buffer.byteLength(csvFile)}, CRLF build ${Buffer.byteLength(crlfOut)}`);
-for (const h of hunks) {
-  console.log(`      info: difference at character ${h.at}: file has ${JSON.stringify(h.file) || "nothing"}, CRLF build has ${JSON.stringify(h.build) || "nothing"}`);
+const fileRecs = csvRecords(csvFile), buildRecs = csvRecords(lfOut);
+check("(a) data/products.csv starts with the UTF-8 BOM", csvFile.charCodeAt(0) === 0xfeff);
+check("(a) data/products.csv header is exactly HEADER",
+  JSON.stringify(fileRecs[0]) === JSON.stringify(Array.from(gs.HEADER)), JSON.stringify(fileRecs[0]));
+{
+  const bad = fileRecs.map((r, i) => [i + 1, r.length]).filter(([, n]) => n !== gs.HEADER.length);
+  check(`(a) every record in data/products.csv has ${gs.HEADER.length} fields`, bad.length === 0, JSON.stringify(bad));
 }
-console.log(`      info: exact byte-difference count (file vs CRLF build): ${diffBytes}`);
-// Known differences: the 2 quote marks around the «،» field (not needed) and the bare LF (CRLF written).
-const knownOk = hunks.length === 3
-  && hunks.filter((h) => h.file === '"' && h.build === "").length === 2
-  && hunks.filter((h) => h.file === "" && h.build === "\r").length === 1;
-check("(a) the only byte differences are the 2 quotes of the «،» field and the bare LF (CR added)",
-  knownOk && diffBytes === 3, `${hunks.length} runs, ${diffBytes} bytes`);
+check("(a) data/products.csv uses LF only (no CR anywhere, LF inside cells too)", !csvFile.includes("\r"));
+check("(a) data/products.csv ends with a line end", csvFile.endsWith("\n"));
+{
+  const diffs = [];
+  const n = Math.max(fileRecs.length, buildRecs.length);
+  for (let i = 0; i < n; i++) {
+    const a = fileRecs[i], b = buildRecs[i];
+    if (!a || !b) { diffs.push(`record ${i + 1}: only in ${a ? "file" : "build"}`); continue; }
+    gs.HEADER.forEach((h, k) => {
+      if (a[k] !== b[k]) diffs.push(`record ${i + 1} (${a[0] || b[0]}) ${h}: file ${JSON.stringify(a[k])} vs build ${JSON.stringify(b[k])}`);
+    });
+  }
+  check(`(a) data/products.csv and the buildCsv output agree record by record, field by field (${fileRecs.length} records)`,
+    diffs.length === 0, diffs.slice(0, 10).join("\n      "));
+}
+{
+  // CRLF build: the same records, every line end (also inside cells) written as CRLF.
+  const crlfRecs = csvRecords(crlfOut).map((r) => r.map((v) => v.replace(/\r\n/g, "\n")));
+  check("(a) CRLF build gives the same records as the LF build", JSON.stringify(crlfRecs) === JSON.stringify(buildRecs));
+}
 
 // (b) generated CSV through app.js parseCSV / productFromRow / categoriesOf
 const toProducts = (text) => site.parseCSV(text).filter((r) => r.id && r.name).map(site.productFromRow);
@@ -477,7 +493,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(j) malformed requests give bad_request and touch nothing", bad.every((b) => post(b).error === "bad_request") && sheetLog.touched === 0);
   const names = ["evil", "constructor", "__proto__", "toString", "", 5, null, "authorizeOnce", "readSheet"];
   check("(j) unknown actions are refused", names.every((a) => post({ action: a }).error === "unknown_action") && sheetLog.touched === 0);
-  check("(j) the action lists are exactly the expected ones", vm.runInContext("PUBLIC_ACTIONS.join()", gs) === "requestCode,verifyCode,logout" && vm.runInContext("PROTECTED_ACTIONS.join()", gs) === "getProducts,saveProduct,deleteProduct,publishCsv");
+  check("(j) the action lists are exactly the expected ones", vm.runInContext("PUBLIC_ACTIONS.join()", gs) === "requestCode,verifyCode,logout,logEvent" && vm.runInContext("PROTECTED_ACTIONS.join()", gs) === "getProducts,saveProduct,deleteProduct,publishCsv");
   const g = JSON.parse(gs.doGet().s);
   check("(j) doGet returns only harmless JSON", g.ok === true && Object.keys(g).join() === "ok,service");
   const throwing = gs.handleRequest_(JSON.stringify({ action: "getProducts", session: "s" }), { requireSession: () => true, publicActions: {}, actions: { getProducts: () => { throw new Error("sheet down"); } } });
@@ -635,6 +651,281 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(k) a session without an email (old format) is refused", post({ action: "getProducts", session: s2 }).error === "NO_SESSION");
   const src = read("tools/admin/Code.gs");
   check("(k) no OWNER_EMAIL is left in Code.gs and the list is lowercase", !/OWNER_EMAIL/.test(src) && ALLOWED.every((e) => e === e.toLowerCase()));
+}
+
+// ---- (l) customer activity log: logEvent + setupLog (owner approved 2026-11-04) ----
+{
+  // a fake spreadsheet with the products tab first and (optionally) the «log» tab
+  const mkSheet = (name, rows) => ({
+    name, rows, maxRows: 1000, frozen: 0, formats: [], inserted: 0,
+    getName() { return this.name; },
+    getLastRow() { return this.rows.length; },
+    getMaxRows() { return this.maxRows; },
+    insertRowsAfter(after, n) { this.maxRows += n; this.inserted += n; },
+    setFrozenRows(n) { this.frozen = n; },
+    getRange(r, c, nr, nc) {
+      const sh = this;
+      if (r + nr - 1 > sh.maxRows) throw new Error("outside the sheet");
+      const rng = {
+        setValues(v) { v.forEach((row, i) => { sh.rows[r - 1 + i] = row.slice(); }); world.logWrites++; return rng; },
+        setFontWeight() { return rng; },
+        setNumberFormat(f) { sh.formats.push([r, nr, f]); return rng; }
+      };
+      return rng;
+    }
+  });
+  let book;
+  const mkBook = (withLog, logFirst) => {
+    const products = mkSheet("products", [["id"]]);
+    const sheets = [products];
+    if (withLog) { const l = mkSheet("log", [gs.LOG_HEADER.slice()]); if (logFirst) sheets.unshift(l); else sheets.push(l); }
+    book = {
+      sheets, active: null, productsTouched: 0,
+      getSheets() { return this.sheets.slice(); },
+      getNumSheets() { return this.sheets.length; },
+      getSheetByName(n) { return this.sheets.find((x) => x.name === n) || null; },
+      insertSheet(n, i) { const sh = mkSheet(n, []); this.sheets.splice(i, 0, sh); return sh; },
+      setActiveSheet(sh) { this.active = sh; return sh; },
+      moveActiveSheet(pos) { const i = this.sheets.indexOf(this.active); this.sheets.splice(i, 1); this.sheets.splice(pos - 1, 0, this.active); },
+      getName: () => "x"
+    };
+    return book;
+  };
+  const oldSS = gs.SpreadsheetApp;
+  gs.SpreadsheetApp = { getActiveSpreadsheet: () => book };
+  gs.Utilities.formatDate = (d, tz, f) => { world.tz = tz; return new Date(d.getTime() + 3.5 * 3600000).toISOString().slice(0, 19).replace("T", " "); };
+  const lockCalls = [];
+  gs.LockService = { getScriptLock: () => ({ tryLock: (ms) => { lockCalls.push(ms); return !world.lockBusy; }, releaseLock() {} }) };
+  const logSheet = () => book.getSheetByName("log");
+  const SID = "abcdefghij012345";
+  const ev = (o) => Object.assign({ type: "view", page: "home", dev: "phone" }, o);
+  const logPost = (events, sid = SID, extra = {}) => post(Object.assign({ action: "logEvent", data: { sid, events } }, extra));
+  const fresh = (withLog = true) => { reset(); world.logWrites = 0; mkBook(withLog); };
+
+  fresh();
+  const r1 = logPost([ev({ src: "instagram.com" }), ev({ type: "search", q: "  سبزی   قورمه " }), ev({ type: "category", cat: "رب‌ها" }),
+    ev({ type: "cart_add", page: "product", id: "sabzi-ghormeh", qty: 2, from: "product" }), ev({ type: "cart_open", qty: 2, from: "fab" }),
+    ev({ type: "whatsapp", qty: 2, from: "drawer", dev: "computer" })]);
+  const rows = logSheet().rows;
+  check("(l) logEvent needs no session and always answers {ok:true, data:{}}", JSON.stringify(r1) === '{"ok":true,"data":{}}', JSON.stringify(r1));
+  check("(l) the 6 allowed events are written in one write, after the header", rows.length === 7 && world.logWrites === 1 && rows[0].join() === gs.LOG_HEADER.join());
+  check("(l) a row has time (Asia/Tehran), session, event, page, product, category, search, qty, from, device, source, reason",
+    /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(rows[1][0]) && world.tz === "Asia/Tehran" &&
+    JSON.stringify(rows[1].slice(1)) === JSON.stringify([SID, "view", "home", "", "", "", "", "", "phone", "instagram.com", ""]) &&
+    JSON.stringify(rows[4].slice(1)) === JSON.stringify([SID, "cart_add", "product", "sabzi-ghormeh", "", "", 2, "product", "phone", "", ""]), JSON.stringify(rows.slice(1, 5)));
+  check("(l) search text is trimmed to single spaces", rows[2][6] === "سبزی قورمه", rows[2][6]);
+  check("(l) the lock is tried for 1.5 s only", lockCalls.length === 1 && lockCalls[0] === 1500, JSON.stringify(lockCalls));
+  check("(l) the products tab is never written by logEvent", book.getSheets()[0].rows.length === 1);
+
+  fresh();
+  logPost([ev({ type: "hack" }), ev({ type: "view", page: "admin", id: "x y", from: "evil", dev: "tv", src: "a b", qty: "5" }), "x", null, [1], ev({ type: "search", q: "" })]);
+  const r2 = logSheet().rows;
+  check("(l) unknown types, non-objects and empty searches are dropped; bad fields are emptied",
+    r2.length === 2 && JSON.stringify(r2[1].slice(1)) === JSON.stringify([SID, "view", "", "", "", "", "", "", "", "", ""]), JSON.stringify(r2));
+
+  // the events added on 2026-11-04 (owner: the rest of the approved plan)
+  fresh();
+  logPost([ev({ type: "instagram", from: "footer" }), ev({ type: "phone", from: "footer" }),
+    ev({ type: "cart_dec", page: "product", id: "rob-anar", qty: 1, from: "product" }), ev({ type: "cart_remove", id: "rob-anar", qty: 2, from: "drawer" }),
+    ev({ type: "cart_clear", qty: 3, from: "drawer" }), ev({ type: "no_results", q: "پیتزا" }), ev({ type: "no_results", q: "" }),
+    ev({ type: "load_error", why: "http-500" }), ev({ type: "load_error", why: "network" }), ev({ type: "load_error", why: "<b>x</b>" }),
+    ev({ type: "category", cat: "c", why: "network" }), ev({ type: "cart_clear", q: "kept?" })]);
+  const r5 = logSheet().rows.slice(1).map((r) => r.slice(2));
+  const want = [
+    ["instagram", "home", "", "", "", "", "footer", "phone", "", ""],
+    ["phone", "home", "", "", "", "", "footer", "phone", "", ""],
+    ["cart_dec", "product", "rob-anar", "", "", 1, "product", "phone", "", ""],
+    ["cart_remove", "home", "rob-anar", "", "", 2, "drawer", "phone", "", ""],
+    ["cart_clear", "home", "", "", "", 3, "drawer", "phone", "", ""],
+    ["no_results", "home", "", "", "پیتزا", "", "", "phone", "", ""],
+    ["load_error", "home", "", "", "", "", "", "phone", "", "http-500"],
+    ["load_error", "home", "", "", "", "", "", "phone", "", "network"],
+    ["load_error", "home", "", "", "", "", "", "phone", "", ""],
+    ["category", "home", "", "c", "", "", "", "phone", "", ""],
+    ["cart_clear", "home", "", "", "", "", "", "phone", "", ""]
+  ];
+  check("(l) new events instagram, phone, cart_dec, cart_remove, cart_clear, no_results, load_error are written",
+    JSON.stringify(r5) === JSON.stringify(want), JSON.stringify(r5));
+  check("(l) an empty no_results is dropped; reason only for load_error and only from the list; search word only for search/view/no_results", r5.length === 11);
+  check("(l) LOG_HEADER ends with reason (12 columns)", gs.LOG_HEADER.length === 12 && gs.LOG_HEADER[11] === "reason");
+
+  fresh();
+  logPost([ev({ type: "search", q: "=HYPERLINK(\"http://x\",\"y\")" }), ev({ type: "category", cat: "+1" }), ev({ type: "category", cat: "-2" }),
+    ev({ type: "category", cat: "@SUM(A1)" }), ev({ type: "search", q: "a\u0000b\nc\u2028d" }), ev({ type: "search", q: "ب".repeat(80) })]);
+  const r3 = logSheet().rows;
+  check("(l) formula injection: = + - @ at the start get an apostrophe",
+    r3[1][6].startsWith("'=") && r3[2][5] === "'+1" && r3[3][5] === "'-2" && r3[4][5] === "'@SUM(A1)", JSON.stringify(r3.slice(1, 5).map((r) => [r[5], r[6]])));
+  check("(l) control characters become spaces; search text is cut to 40 characters", r3[5][6] === "a b c d" && r3[6][6].length === 40, JSON.stringify([r3[5][6], r3[6][6].length]));
+
+  fresh();
+  ["", "short", "ABCDEFGHIJ012345", "abcdefghij0123456", 5].forEach((sid) => logPost([ev()], sid));
+  check("(l) a bad visitor id writes nothing", logSheet().rows.length === 1);
+  logPost(Array.from({ length: 21 }, () => ev()));
+  check("(l) more than 20 events in one request writes nothing", logSheet().rows.length === 1);
+  logPost([ev({ type: "search", q: "x".repeat(30) })].concat(Array.from({ length: 19 }, () => ev({ type: "search", q: "y".repeat(39) + "\u0000".repeat(400) }))));
+  check("(l) a request body over 8000 characters writes nothing", logSheet().rows.length === 1);
+  logPost([]); post({ action: "logEvent" }); post({ action: "logEvent", data: { sid: SID, events: "x" } });
+  check("(l) empty or malformed requests write nothing and still answer ok", logSheet().rows.length === 1 && post({ action: "logEvent" }).ok === true);
+
+  fresh(false);
+  check("(l) no «log» tab yet (setupLog not run): ok, nothing written", logPost([ev()]).ok === true && world.logWrites === 0);
+
+  fresh();
+  world.lockBusy = true;
+  check("(l) lock busy: the batch is dropped silently (ok, nothing written)", logPost([ev()]).ok === true && logSheet().rows.length === 1);
+  world.lockBusy = false;
+
+  // the 50,000-row cap: keep every row, drop new events once full
+  fresh();
+  const ls = logSheet();
+  ls.maxRows = 50001;
+  for (let i = 1; i <= 49998; i++) ls.rows.push(["old"]);
+  logPost(Array.from({ length: 5 }, () => ev()));
+  check("(l) cap: with room for 2 rows only 2 of 5 events are written (50,000 rows)", ls.rows.length === 50001 && ls.rows[1][0] === "old", String(ls.rows.length));
+  logPost([ev()]);
+  check("(l) cap reached: new events are dropped, no row is deleted or changed", ls.rows.length === 50001 && ls.rows[1][0] === "old" && world.cache.get("lg_full"));
+  const writesBefore = world.logWrites;
+  logPost([ev()]);
+  check("(l) once full, the next requests do not even touch the sheet (cached flag)", world.logWrites === writesBefore);
+  check("(l) LOG_MAX_ROWS is 50000", gs.LOG_MAX_ROWS === 50000);
+
+  fresh();
+  logSheet().maxRows = 3;
+  logPost([ev(), ev(), ev(), ev()]);
+  check("(l) the tab grows (insertRowsAfter) before writing past its last row", logSheet().rows.length === 5 && logSheet().inserted >= 2, String(logSheet().maxRows));
+
+  // rate limits
+  fresh();
+  for (let i = 0; i < 16; i++) logPost(Array.from({ length: 20 }, () => ev()));
+  check("(l) one visitor id: at most 300 events an hour", logSheet().rows.length === 301, String(logSheet().rows.length - 1));
+  clock.t += 3601 * 1000;
+  logPost([ev()]);
+  check("(l) an hour later the same visitor can log again", logSheet().rows.length === 302);
+  fresh();
+  const sids = Array.from({ length: 40 }, (_, i) => ("v" + i).padEnd(16, "0"));
+  sids.forEach((s) => logPost(Array.from({ length: 20 }, () => ev()), s));
+  check("(l) all visitors together: at most 600 events a minute", logSheet().rows.length === 601, String(logSheet().rows.length - 1));
+
+  // logEvent cannot reach any admin action, and admin actions still need a session
+  fresh();
+  sheetLog.touched = 0;
+  check("(l) protected actions still say NO_SESSION (logEvent opened nothing else)", post({ action: "getProducts" }).error === "NO_SESSION" && sheetLog.touched === 0);
+  check("(l) doGet is unchanged", gs.doGet().s === JSON.stringify({ ok: true, service: "bargin-admin" }));
+
+  // setupLog: «log» is the LAST tab, products stay first
+  fresh(false);
+  const msg = gs.setupLog();
+  check("(l) setupLog makes the «log» tab as the last tab with the header, frozen, plain text",
+    book.getSheets().map((x) => x.name).join() === "products,log" && logSheet().rows[0].join() === gs.LOG_HEADER.join() && logSheet().frozen === 1 && logSheet().formats.some((f) => f[2] === "@"), msg);
+  mkBook(true, true);
+  gs.setupLog();
+  check("(l) setupLog moves an existing «log» tab from first to last (products first again)", book.getSheets().map((x) => x.name).join() === "products,log");
+  gs.setupLog();
+  check("(l) setupLog can run again safely", book.getSheets().length === 2 && logSheet().rows.length === 1);
+
+  gs.SpreadsheetApp = oldSS;
+  gs.LockService = stubs.LockService;
+}
+
+// ---- (m) log.js in the browser (stubbed window) ----
+{
+  const logSrc = read("log.js");
+  function runLog({ host = "arman-niaruhi.github.io", protocol = "https:", search = "", path = "/bargin/", nav = {}, win = {}, shop = { logApi: "https://script.google.com/x/exec" }, referrer = "" } = {}) {
+    const out = { beacons: [], fetches: [], logs: [], timers: [] };
+    const listeners = {};
+    const doc = { referrer, visibilityState: "visible", addEventListener: (t, f) => { (listeners["doc:" + t] = listeners["doc:" + t] || []).push(f); } };
+    const navigator = Object.assign({ userAgent: "Mozilla/5.0 (iPhone) Safari", sendBeacon: (u, b) => { out.beacons.push(b); return true; } }, nav);
+    const ctx = {
+      SHOP: shop, navigator, document: doc, console: { log: (s) => out.logs.push(s) },
+      location: { hostname: host, protocol, search, pathname: path },
+      sessionStorage: { _: {}, getItem(k) { return this._[k] || null; }, setItem(k, v) { this._[k] = v; } },
+      crypto: nodeCrypto.webcrypto, URL, Uint8Array, Math, JSON, String, Number,
+      matchMedia: () => ({ matches: true }),
+      fetch: (u, o) => { out.fetches.push(o); return Promise.resolve(); },
+      setTimeout: (f) => { out.timers.push(f); return out.timers.length; }, clearTimeout() {},
+      addEventListener: (t, f) => { (listeners["win:" + t] = listeners["win:" + t] || []).push(f); }
+    };
+    Object.assign(ctx, win);
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    vm.runInContext(logSrc, ctx);
+    out.ctx = ctx; out.doc = doc; out.listeners = listeners;
+    out.events = () => [].concat(...out.beacons.concat(out.fetches.map((o) => o.body), out.logs.map((s) => s.replace("[bargin-log] ", ""))).map((b) => JSON.parse(b).data.events));
+    return out;
+  }
+  const live = runLog({ referrer: "https://l.instagram.com/foo?bar" });
+  live.ctx.logEvent("view", {});
+  live.ctx.logEvent("category", { cat: "رب‌ها" });
+  live.ctx.logEvent("hack", { x: 1 });
+  live.ctx.logEvent("cart_add", { id: "rob-anar", qty: 1, from: "card", secret: "no" });
+  check("(m) events wait in a batch (no request yet)", live.fetches.length === 0 && live.beacons.length === 0);
+  live.ctx.logEvent("whatsapp", { from: "footer", qty: 1 });
+  const evs = live.events();
+  check("(m) a WhatsApp click sends the batch at once, as text/plain fetch without cookies",
+    live.fetches.length === 1 && live.fetches[0].mode === "no-cors" && live.fetches[0].credentials === "omit" && live.fetches[0].keepalive === true &&
+    /text\/plain/.test(live.fetches[0].headers["Content-Type"]) && JSON.parse(live.fetches[0].body).action === "logEvent");
+  check("(m) only whitelisted types and fields; page, device and referrer host added",
+    evs.map((e) => e.type).join() === "view,category,cart_add,whatsapp" && !("secret" in evs[2]) && evs[0].src === "instagram.com" && evs[0].page === "home" && evs[0].dev === "phone", JSON.stringify(evs));
+  check("(m) the visitor id is 16 random [0-9a-z] characters, kept for the tab", /^[0-9a-z]{16}$/.test(JSON.parse(live.fetches[0].body).data.sid) && live.ctx.sessionStorage._["bargin-log-sid"] === JSON.parse(live.fetches[0].body).data.sid);
+  live.ctx.logEvent("search", { q: "سب" }); live.ctx.logEvent("search", { q: "سبزی" });
+  check("(m) search is debounced (nothing queued while typing)", live.fetches.length === 1);
+  live.doc.visibilityState = "hidden";
+  live.listeners["win:pagehide"].forEach((f) => f());
+  check("(m) leaving the page sends the last search word with sendBeacon", live.beacons.length === 1 && JSON.parse(live.beacons[0]).data.events.map((e) => e.q).join() === "سبزی");
+  const leave = runLog();
+  leave.ctx.logEvent("view", {});
+  leave.ctx.logEvent("instagram", { from: "footer" });
+  check("(m) an Instagram click sends at once", leave.fetches.length === 1 && leave.events().map((e) => e.type).join() === "view,instagram");
+  leave.ctx.logEvent("phone", { from: "footer" });
+  check("(m) a phone click sends at once", leave.fetches.length === 2 && leave.events()[2].type === "phone");
+  const nr = runLog();
+  nr.ctx.logEvent("no_results", { q: "پیتز" }); nr.ctx.logEvent("no_results", { q: "" });
+  nr.ctx.logEvent("cart_dec", { id: "a", qty: 1 }); nr.ctx.logEvent("cart_remove", { id: "a", qty: 1 }); nr.ctx.logEvent("cart_clear", { qty: 4 });
+  nr.ctx.logEvent("load_error", { why: "http-404" });
+  nr.ctx.logFlush();
+  const nrE = nr.events();
+  check("(m) results showing again cancel a waiting no_results; cart_dec/remove/clear and load_error (with why) are sent",
+    nrE.map((e) => e.type).join() === "cart_dec,cart_remove,cart_clear,load_error" && nrE[3].why === "http-404" && nrE[2].qty === 4, JSON.stringify(nrE));
+  const nr2 = runLog();
+  nr2.ctx.logEvent("no_results", { q: "پیتزا" + "ا".repeat(60) }); nr2.ctx.logFlush();
+  check("(m) a no_results word is sent after the pause, cut to 40 characters", nr2.events().length === 1 && nr2.events()[0].type === "no_results" && nr2.events()[0].q.length === 40);
+  const long = runLog();
+  long.ctx.logEvent("search", { q: "  " + "ق".repeat(60) + " " }); long.ctx.logFlush();
+  check("(m) search words are cut to 40 characters", long.events()[0].q.length === 40);
+  const many = runLog();
+  for (let i = 0; i < 100; i++) many.ctx.logEvent("category", { cat: "c" + i });
+  check("(m) at most 60 events per page load, sent in batches of 10", many.events().length === 60 && many.fetches.length === 6);
+  const blockedCases = {
+    "localhost": runLog({ host: "localhost" }), "127.0.0.1": runLog({ host: "127.0.0.1" }), "file:": runLog({ protocol: "file:", host: "" }),
+    "webdriver": runLog({ nav: { webdriver: true } }), "bot UA": runLog({ nav: { userAgent: "Googlebot/2.1" } }), "headless UA": runLog({ nav: { userAgent: "HeadlessChrome/120" } }),
+    "WhatsApp preview": runLog({ nav: { userAgent: "WhatsApp/2.23" } }), "DNT": runLog({ nav: { doNotTrack: "1" } }), "GPC": runLog({ nav: { globalPrivacyControl: true } }),
+    "no logApi": runLog({ shop: { logApi: "" } })
+  };
+  Object.keys(blockedCases).forEach((k) => {
+    const o = blockedCases[k];
+    o.ctx.logEvent("view", {}); o.ctx.logEvent("whatsapp", {}); o.ctx.logFlush();
+    check("(m) nothing is sent: " + k, o.fetches.length === 0 && o.beacons.length === 0 && o.logs.length === 0);
+  });
+  const dbg = runLog({ host: "localhost", search: "?logdebug=1", nav: { webdriver: true } });
+  dbg.ctx.logEvent("view", {}); dbg.ctx.logFlush();
+  check("(m) localhost + ?logdebug=1: the batch is printed to console.log, never sent", dbg.logs.length === 1 && dbg.fetches.length === 0 && dbg.beacons.length === 0 && dbg.events()[0].type === "view");
+  const notLocal = runLog({ search: "?logdebug=1" });
+  notLocal.ctx.logEvent("view", {}); notLocal.ctx.logFlush();
+  check("(m) ?logdebug=1 does nothing on the live site (normal sending, no console output)", notLocal.logs.length === 0 && notLocal.fetches.length === 1);
+  let threw = false;
+  try { const bad = runLog({ win: { matchMedia: () => { throw new Error("x"); } }, nav: { sendBeacon: () => { throw new Error("y"); } } }); bad.ctx.logEvent("view", null); bad.ctx.logEvent("whatsapp", { qty: "abc" }); } catch (e) { threw = true; }
+  check("(m) logEvent never throws", !threw);
+  // ES2017 only in the site scripts
+  const newer = /\?\.|\?\?|Object\.fromEntries|replaceAll|\.at\(|\.flat\(|flatMap|matchAll|structuredClone|\/[gimsy]*u[gimsy]*[,;)\s]/;
+  ["log.js", "app.js", "cart.js", "products.js"].forEach((f) => {
+    const code = read(f).replace(/\/\/[^\n]*/g, "");
+    check("(m) no syntax or methods newer than ES2017 in " + f, !newer.test(code), (code.match(newer) || [""])[0]);
+  });
+  const shopCtx = {}; vm.runInNewContext(read("products.js") + ";this.SHOP=SHOP;", shopCtx);
+  check("(m) SHOP.logApi is the same Apps Script web app as SHOP.adminApi", shopCtx.SHOP.logApi && shopCtx.SHOP.logApi === shopCtx.SHOP.adminApi);
+  check("(m) deploy.yml copies log.js", /cp -r[^\n]*\blog\.js\b/.test(read(".github/workflows/deploy.yml")));
+  check("(m) index.html and product.html load log.js after products.js and before app.js",
+    ["index.html", "product.html"].every((f) => /products\.js"><\/script>\s*<script src="log\.js"><\/script>\s*<script src="app\.js">/.test(read(f))));
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");

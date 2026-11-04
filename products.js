@@ -16,6 +16,9 @@ const SHOP = {
   // Admin page (/admin): the Apps Script web app URL (the /exec link). Empty = the admin page
   // shows "not set up yet". Not secret.
   adminApi: "https://script.google.com/macros/s/AKfycbzY5azMGSGjVMK7MAn5wDcyjX5PlcWVlFVpVdlHYK1IaovqX5-RxcXIt8_rBle0utdj/exec",
+  // Customer activity log (log.js → «log» tab): the same Apps Script web app as adminApi.
+  // Empty = nothing is logged. Not secret.
+  logApi: "https://script.google.com/macros/s/AKfycbzY5azMGSGjVMK7MAn5wDcyjX5PlcWVlFVpVdlHYK1IaovqX5-RxcXIt8_rBle0utdj/exec",
 };
 
 // ============================================================

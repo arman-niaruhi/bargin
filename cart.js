@@ -355,13 +355,27 @@ function initCart() {
       else if (action === "dec") cartChange(id, q - 1);
       else if (action === "remove") cartChange(id, 0);
       cartRefresh();
-      cartRefocus(box.classList.contains("cart-row") ? "row" : box.classList.contains("order-bar") ? "bar" : "ctl", id, action);
+      const scope = box.classList.contains("cart-row") ? "row" : box.classList.contains("order-bar") ? "bar" : "ctl";
+      cartRefocus(scope, id, action);
       if (action === "add") cartToast(CART_TEXT.toast);
+      const from = scope === "row" ? "drawer" : scope === "bar" ? "bar" : box.closest(".card") ? "card" : "product";
+      const now = cartQty(id);
+      if (action === "add" || action === "inc") track("cart_add", { id, qty: now, from });
+      else if (action === "dec" && now) track("cart_dec", { id, qty: now, from });
+      else if (action === "dec" || action === "remove") track("cart_remove", { id, qty: q, from });   // qty = how many were removed
       return;
     }
-    if (ev.target.closest(".cart-fab, .order-bar-cart")) cartOpen();
+    const opener = ev.target.closest(".cart-fab, .order-bar-cart");
+    if (opener) {
+      cartOpen();
+      track("cart_open", { qty: cartCount(), from: opener.classList.contains("cart-fab") ? "fab" : "bar" });
+    }
   });
 
+  // log the drawer's «ارسال سفارش در واتساپ» (qty = in-stock items sent)
+  e.send.addEventListener("click", () => {
+    track("whatsapp", { from: "drawer", qty: cartRows().reduce((s, r) => s + (r.p.soldOut ? 0 : r.qty), 0) });
+  });
   e.backdrop.addEventListener("click", cartClose);
   e.close.addEventListener("click", cartClose);
   e.clear.addEventListener("click", () => {
@@ -375,6 +389,7 @@ function initCart() {
     e.clear.focus();
   });
   e.confirm.querySelector(".cart-confirm-yes").addEventListener("click", () => {
+    track("cart_clear", { qty: cartCount(), from: "drawer" });
     cartSet({});
     cartRefresh();
     (e.empty.querySelector("a") || e.close).focus();
