@@ -36,6 +36,14 @@ function parseCSV(text) {
     });
 }
 
+// shown when a product row has no images (empty «images» cell)
+const PLACEHOLDER_IMG = "images/placeholder.svg";
+
+// the product's first image (card, product page, cart), or the placeholder
+function firstImage(p) {
+  return (p.images && p.images[0]) || PLACEHOLDER_IMG;
+}
+
 // one sheet/CSV row → the product object the pages use
 function productFromRow(r) {
   const digits = String(r.price).replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/\D/g, "");
@@ -50,7 +58,7 @@ function productFromRow(r) {
     short: r.short,
     details: r.details,
     specs: {},  // owner removed the «واحد فروش» row
-    images: r.images.split("|").map((s) => s.trim()).filter(Boolean),
+    images: String(r.images || "").split("|").map((s) => s.trim()).filter(Boolean),
     soldOut: /^(yes|true|1|بله|آره)$/i.test(r.soldOut),
   };
 }
@@ -195,7 +203,7 @@ function cardHTML(p, i) {
   return `
     <div class="card${p.soldOut ? " sold-out" : ""}" style="--i:${i}">
       <div class="card-img">
-        <img src="${esc(p.images[0])}" alt="${esc(p.name)}" loading="lazy">
+        <img src="${esc(firstImage(p))}" alt="${esc(p.name)}" loading="lazy">
         ${p.soldOut ? '<span class="badge">ناموجود</span>' : ""}
       </div>
       <div class="card-body">
@@ -371,7 +379,7 @@ function renderProduct() {
   box.innerHTML = `
     <div class="detail">
       <div class="gallery">
-        <div class="main-img${p.soldOut ? " sold-out" : ""}"><img id="main-img" src="${esc(p.images[0])}" alt="${esc(p.name)}"></div>
+        <div class="main-img${p.soldOut ? " sold-out" : ""}"><img id="main-img" src="${esc(firstImage(p))}" alt="${esc(p.name)}"></div>
         ${thumbs}
         ${(p.credits || []).length ? `<p class="credits">عکس: ${p.credits.map((c) =>
           `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.by)}</a> (${esc(c.license)})`).join("، ")}</p>` : ""}

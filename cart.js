@@ -210,7 +210,7 @@ function cartRowHTML(r) {
   const p = r.p;
   const line = p.price * r.qty;
   return `<li class="cart-row${p.soldOut ? " is-sold-out" : ""}" data-id="${esc(p.id)}">` +
-    `<img class="cart-thumb" src="${esc(p.images[0] || "")}" alt="" loading="lazy">` +
+    `<img class="cart-thumb" src="${esc(firstImage(p))}" alt="" loading="lazy">` +
     `<div class="cart-row-info">` +
       `<a class="cart-row-name" href="product.html?id=${encodeURIComponent(p.id)}">${esc(p.name)}</a>` +
       (line && !p.soldOut ? `<span class="cart-row-price">${faNum(line)} ${esc(SHOP.currency)}</span>` : "") +
