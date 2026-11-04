@@ -173,12 +173,91 @@ def carrot_slices(seed):
     return "".join(out)
 
 
+def tomato(cx, cy, r):
+    calyx = "".join(leaf(0, -r * 0.86, r * 0.42, a, "#2f6b1d", 0.3) for a in range(0, 360, 72))
+    return (f'<g transform="translate({cx},{cy})">'
+            f'<ellipse cx="4" cy="{r*0.92:.0f}" rx="{r*0.95:.0f}" ry="{r*0.18:.0f}" fill="#5a3a1c" opacity=".35" filter="url(#soft)"/>'
+            f'<ellipse rx="{r*1.08:.0f}" ry="{r:.0f}" fill="#d4321f"/>'
+            f'<ellipse rx="{r*1.08:.0f}" ry="{r:.0f}" fill="url(#pomshade)" opacity=".55"/>'
+            f'<path d="M{-r*0.5:.0f},{-r*0.7:.0f} Q0,{-r*0.2:.0f} {r*0.5:.0f},{-r*0.7:.0f}" stroke="#a3161b" stroke-width="2" fill="none" opacity=".5"/>'
+            f'{calyx}<circle cy="{-r*0.86:.0f}" r="{r*0.08:.0f}" fill="#1f4d14"/>'
+            f'<ellipse cx="{-r*0.4:.0f}" cy="{-r*0.3:.0f}" rx="{r*0.2:.0f}" ry="{r*0.1:.0f}" fill="#fff" opacity=".35" transform="rotate(-35 {-r*0.4:.0f} {-r*0.3:.0f})"/></g>')
+
+
+def eggplant(x, y, angle, length):
+    w = length * 0.3
+    cap = "".join(leaf(length * 0.02, 0, w * 0.9, a, "#3f6b22", 0.4) for a in (60, 90, 120))
+    return (f'<g transform="translate({x},{y}) rotate({angle})">'
+            f'<ellipse cx="{length*0.5:.0f}" cy="{w*0.9:.0f}" rx="{length*0.55:.0f}" ry="{w*0.3:.0f}" fill="#5a3a1c" opacity=".3" filter="url(#soft)"/>'
+            f'<path d="M0,{-w*0.45:.0f} Q{length*0.4:.0f},{-w*0.6:.0f} {length*0.75:.0f},{-w:.0f} Q{length*1.05:.0f},{-w:.0f} {length*1.05:.0f},0 '
+            f'Q{length*1.05:.0f},{w:.0f} {length*0.75:.0f},{w:.0f} Q{length*0.4:.0f},{w*0.6:.0f} 0,{w*0.45:.0f}Z" fill="#3b1240"/>'
+            f'<path d="M{length*0.15:.0f},{-w*0.3:.0f} Q{length*0.5:.0f},{-w*0.55:.0f} {length*0.85:.0f},{-w*0.7:.0f}" stroke="#fff" stroke-opacity=".25" stroke-width="6" fill="none" stroke-linecap="round"/>'
+            f'<path d="M0,{-w*0.5:.0f} Q{length*0.12:.0f},0 0,{w*0.5:.0f} Q{-w*0.2:.0f},0 0,{-w*0.5:.0f}Z" fill="#3f6b22"/>'
+            f'{cap}<path d="M0,0 L{-w*0.6:.0f},-4" stroke="#4f7a2a" stroke-width="7" stroke-linecap="round"/></g>')
+
+
+def apple(cx, cy, r, color="#c8321e", shade="#8a1914"):
+    return (f'<g transform="translate({cx},{cy})">'
+            f'<ellipse cx="4" cy="{r*0.92:.0f}" rx="{r*0.95:.0f}" ry="{r*0.18:.0f}" fill="#5a3a1c" opacity=".35" filter="url(#soft)"/>'
+            f'<path d="M0,{-r*0.7:.0f} C{r*0.6:.0f},{-r*1.1:.0f} {r*1.15:.0f},{-r*0.6:.0f} {r*1.0:.0f},{r*0.1:.0f} C{r*0.9:.0f},{r*0.8:.0f} {r*0.4:.0f},{r:.0f} 0,{r*0.85:.0f} '
+            f'C{-r*0.4:.0f},{r:.0f} {-r*0.9:.0f},{r*0.8:.0f} {-r:.0f},{r*0.1:.0f} C{-r*1.15:.0f},{-r*0.6:.0f} {-r*0.6:.0f},{-r*1.1:.0f} 0,{-r*0.7:.0f}Z" fill="{color}"/>'
+            f'<path d="M{r*0.2:.0f},{-r*0.75:.0f} C{r*0.8:.0f},{-r*0.9:.0f} {r*1.0:.0f},{-r*0.2:.0f} {r*0.8:.0f},{r*0.5:.0f} C{r*0.5:.0f},{r*0.9:.0f} {r*0.2:.0f},{r*0.8:.0f} {r*0.2:.0f},{r*0.8:.0f}Z" fill="{shade}" opacity=".35"/>'
+            f'<path d="M0,{-r*0.7:.0f} Q{r*0.05:.0f},{-r*1.0:.0f} {r*0.15:.0f},{-r*1.15:.0f}" stroke="#4a2c1a" stroke-width="{max(3, r*0.08):.0f}" fill="none" stroke-linecap="round"/>'
+            f'{leaf(r*0.12, -r*1.0, r*0.55, 55, "#3f8a2a", 0.4)}'
+            f'<ellipse cx="{-r*0.45:.0f}" cy="{-r*0.25:.0f}" rx="{r*0.2:.0f}" ry="{r*0.1:.0f}" fill="#fff" opacity=".32" transform="rotate(-40 {-r*0.45:.0f} {-r*0.25:.0f})"/></g>')
+
+
+def apple_slices(seed):
+    """Half-apple wedges lying on the table: red skin edge, cream flesh, brown seeds."""
+    out = []
+    for x, y, a in ((628, 640, -18), (672, 668, 22), (616, 700, 6)):
+        out.append(f'<g transform="translate({x},{y}) rotate({a})">'
+                   f'<ellipse cx="2" cy="20" rx="34" ry="6" fill="#5a3a1c" opacity=".3" filter="url(#soft)"/>'
+                   f'<path d="M-34,0 A34,26 0 0 0 34,0 Z" fill="#c8321e"/>'
+                   f'<path d="M-29,0 A29,21 0 0 0 29,0 Z" fill="#f6e3b0"/>'
+                   f'<path d="M-29,0 L29,0" stroke="#e9cf8e" stroke-width="3"/>'
+                   f'<path d="M-9,1 Q0,14 9,1" stroke="#e2c27a" stroke-width="2" fill="none"/>'
+                   f'<ellipse cx="-4" cy="6" rx="2.6" ry="4.2" fill="#4a2c1a" transform="rotate(-15 -4 6)"/>'
+                   f'<ellipse cx="4" cy="6" rx="2.6" ry="4.2" fill="#4a2c1a" transform="rotate(15 4 6)"/></g>')
+    return "".join(out)
+
+
+def quince(cx, cy, r, angle=0):
+    """Round, lumpy quince: wide body with bumps, short neck, fuzzy stem with a leaf."""
+    fuzz = "".join(f'<circle cx="{r*dx:.0f}" cy="{r*dy:.0f}" r="{r*0.05:.1f}" fill="#fff" opacity=".18"/>'
+                   for dx, dy in ((-0.5, -0.4), (-0.2, -0.55), (0.3, -0.45), (-0.6, 0.1), (0.1, -0.2), (-0.3, 0.3)))
+    return (f'<g transform="translate({cx},{cy}) rotate({angle})">'
+            f'<ellipse cx="4" cy="{r*0.9:.0f}" rx="{r:.0f}" ry="{r*0.18:.0f}" fill="#5a3a1c" opacity=".35" filter="url(#soft)"/>'
+            f'<path d="M{-r*0.18:.0f},{-r*0.82:.0f} C{-r*0.1:.0f},{-r*0.95:.0f} {r*0.12:.0f},{-r*0.95:.0f} {r*0.2:.0f},{-r*0.82:.0f} '
+            f'C{r*0.55:.0f},{-r*0.85:.0f} {r*0.95:.0f},{-r*0.6:.0f} {r*0.98:.0f},{-r*0.15:.0f} '
+            f'C{r*1.12:.0f},{r*0.05:.0f} {r*1.05:.0f},{r*0.55:.0f} {r*0.7:.0f},{r*0.78:.0f} '
+            f'C{r*0.45:.0f},{r*0.95:.0f} {r*0.15:.0f},{r*0.82:.0f} 0,{r*0.88:.0f} '
+            f'C{-r*0.25:.0f},{r*0.95:.0f} {-r*0.6:.0f},{r*0.92:.0f} {-r*0.82:.0f},{r*0.6:.0f} '
+            f'C{-r*1.08:.0f},{r*0.3:.0f} {-r*1.05:.0f},{-r*0.15:.0f} {-r*0.9:.0f},{-r*0.38:.0f} '
+            f'C{-r*0.75:.0f},{-r*0.7:.0f} {-r*0.45:.0f},{-r*0.85:.0f} {-r*0.18:.0f},{-r*0.82:.0f}Z" fill="#e5b82c"/>'
+            f'<path d="M{r*0.35:.0f},{-r*0.75:.0f} C{r*0.8:.0f},{-r*0.5:.0f} {r*1.05:.0f},{r*0.1:.0f} {r*0.75:.0f},{r*0.72:.0f} '
+            f'C{r*0.5:.0f},{r*0.88:.0f} {r*0.3:.0f},{r*0.8:.0f} {r*0.3:.0f},{r*0.8:.0f} C{r*0.6:.0f},{r*0.3:.0f} {r*0.6:.0f},{-r*0.3:.0f} {r*0.35:.0f},{-r*0.75:.0f}Z" fill="#a87a12" opacity=".3"/>'
+            f'<path d="M{-r*0.35:.0f},{-r*0.6:.0f} Q{-r*0.1:.0f},{-r*0.2:.0f} {-r*0.05:.0f},{r*0.5:.0f}" stroke="#b88a18" stroke-width="2" fill="none" opacity=".45"/>'
+            f'<path d="M{r*0.45:.0f},{-r*0.55:.0f} Q{r*0.4:.0f},0 {r*0.3:.0f},{r*0.6:.0f}" stroke="#b88a18" stroke-width="2" fill="none" opacity=".35"/>'
+            f'<ellipse cx="0" cy="{-r*0.84:.0f}" rx="{r*0.2:.0f}" ry="{r*0.07:.0f}" fill="#a87a12" opacity=".6"/>'
+            f'<path d="M0,{-r*0.86:.0f} Q{r*0.02:.0f},{-r*0.98:.0f} {r*0.06:.0f},{-r*1.04:.0f}" stroke="#5a3a1c" stroke-width="{max(4, r*0.1):.0f}" fill="none" stroke-linecap="round"/>'
+            f'<path d="M0,{-r*0.86:.0f} Q{r*0.02:.0f},{-r*0.98:.0f} {r*0.06:.0f},{-r*1.04:.0f}" stroke="#d8c8a8" stroke-width="{max(1.5, r*0.03):.1f}" stroke-dasharray="1 2" fill="none" opacity=".7"/>'
+            f'{leaf(r*0.06, -r*1.0, r*0.62, -62, "#5e8a2a", 0.42)}'
+            f'{fuzz}'
+            f'<ellipse cx="{-r*0.4:.0f}" cy="{-r*0.3:.0f}" rx="{r*0.24:.0f}" ry="{r*0.13:.0f}" fill="#fff" opacity=".3" transform="rotate(-45 {-r*0.4:.0f} {-r*0.3:.0f})"/></g>')
+
+
 JAR_POMEGRANATE = ("#3a0709", "#6d1016", "#5a0c12", "#2c0507")
 JAR_CARROT = ("#8a3a06", "#d9661a", "#c4560f", "#6e2d04")
 # دلال: green salt pastes
 JAR_DALAL_MAST = ("#4f6a2c", "#8fae5c", "#7a9a4a", "#3e5822")
 JAR_DALAL_KAHOO = ("#2f6a1a", "#5fa83a", "#4c922c", "#245614")
 JAR_DALAL_NAZKHATOON = ("#3a3d18", "#6b7330", "#5a6226", "#2c2f10")
+JAR_TOMATO = ("#6e1206", "#c8321e", "#b02a14", "#560d04")
+JAR_TORSHI = ("#3e3a12", "#7d7a2c", "#6a6622", "#2e2b0c")
+JAR_BADEMJAN = ("#2e2010", "#6b5230", "#5a4426", "#22180b")
+JAR_APPLE = ("#7a3e06", "#d08a22", "#bb7414", "#5e2e04")
+JAR_QUINCE = ("#5a0e0c", "#b23a22", "#9a2e1a", "#440a08")
 
 
 def jar(glass=JAR_POMEGRANATE, decor="pomegranate"):
@@ -199,6 +278,14 @@ def jar(glass=JAR_POMEGRANATE, decor="pomegranate"):
                      + herb_fill(600, 640, 700, 690, GREENS_FRESH, 25, n=18, size=(12, 20)))
     elif decor == "carrot":
         decor_svg = carrot(140, 655, -14, 125, 4) + carrot(160, 700, -4, 115, 5) + carrot_slices(6)
+    elif decor == "tomato":
+        decor_svg = tomato(160, 645, 50) + tomato(655, 660, 40) + tomato(610, 702, 28)
+    elif decor == "eggplant":
+        decor_svg = eggplant(125, 665, -12, 140) + eggplant(592, 690, -8, 100)
+    elif decor == "apple":
+        decor_svg = apple(160, 640, 56) + apple_slices(8)
+    elif decor == "quince":
+        decor_svg = quince(158, 640, 58, -8) + quince(660, 668, 40, 14)
     else:
         decor_svg = pomegranate(165, 615, 62, 1) + "<g>" + "".join(seeds) + "</g>"
     return f"""
@@ -236,17 +323,18 @@ def jar(glass=JAR_POMEGRANATE, decor="pomegranate"):
 
 def jar_labels(name="رب انار شمالی", name_color="#8a1914", weight="۱ کیلوگرم", name_size=30, sub=None):
     sub_html = f'\n  <div class="sub" style="font-size:14px;margin-top:-2px">{sub}</div>' if sub else ""
+    weight_html = (f'\n  <span class="weight" style="font-size:14px;padding:1px 14px;margin-top:2px">{weight}</span>'
+                   if weight else "")
     return f"""
 <div class="label" style="left:255px;top:356px;width:290px">
   <img src="logo-oval.png" style="width:188px">
-  <div class="name" style="font-size:{name_size}px;margin-top:0;color:{name_color}">{name}</div>{sub_html}
-  <span class="weight" style="font-size:14px;padding:1px 14px;margin-top:2px">{weight}</span>
+  <div class="name" style="font-size:{name_size}px;margin-top:0;color:{name_color}">{name}</div>{sub_html}{weight_html}
 </div>"""
 
 
 files = {
     "sabzi-ghormeh": page(pouch(11, GREENS_DARK, "#1f5714"),
-                          pouch_labels("سبزی قورمه", "سبزی تازه خانگی", "۴۰۰ گرم")),
+                          pouch_labels("سبزی قورمه", "سبزی تازه خانگی", "۵۰۰ گرم")),
     "sabzi-morgh-torsh": page(pouch(23, GREENS_FRESH, "#4f7d1f"),
                               pouch_labels("سبزی مرغ ترش", "سبزی تازه خانگی", "۴۰۰ گرم")),
     "sabzi-koko": page(pouch(61, GREENS_FRESH, "#2f7a1f"),
@@ -271,7 +359,17 @@ files = {
     "anar-doon": page(pouch(79, ["#8a1914", "#a3221c", "#6d1016", "#b8322a", "#5a0c12", "#c4453a"], "#8a1914"),
                       pouch_labels("انار دون", "انار دون خشک خانگی", "۵۰۰ گرم")),
     "moraba-havij": page(jar(JAR_CARROT, "carrot"),
-                         jar_labels("مربای هویج", "#b34a0a", "نیم کیلو")),
+                         jar_labels("مربای هویج", "#b34a0a", None, 30, "مربای خانگی")),
+    "moraba-sib": page(jar(JAR_APPLE, "apple"),
+                       jar_labels("مربای سیب", "#9a4a0a", None, 30, "مربای خانگی")),
+    "moraba-beh": page(jar(JAR_QUINCE, "quince"),
+                       jar_labels("مربای به", "#8a1914", None, 30, "مربای خانگی")),
+    "pure-gojeh": page(jar(JAR_TOMATO, "tomato"),
+                       jar_labels("پوره گوجه", "#a3161b", "۵۰۰ گرم", 30, "پوره خانگی")),
+    "torshi-makhloot": page(jar(JAR_TORSHI, "herbs"),
+                            jar_labels("ترشی مخلوط", "#1f5714", None, 30, "ترشی خانگی")),
+    "bademjan-kababi": page(jar(JAR_BADEMJAN, "eggplant"),
+                            jar_labels("بادمجان کبابی", "#4a2c1a", "۱ کیلو", 28)),
     "dalal-mast": page(jar(JAR_DALAL_MAST, "herbs"),
                        jar_labels("دلال ماست", "#1f5714", "۳۵۰ گرم", 26, "دلال خانگی")),
     "dalal-kahoo": page(jar(JAR_DALAL_KAHOO, "herbs"),
