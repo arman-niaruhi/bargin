@@ -108,6 +108,9 @@
     lBadQty: 'تعداد یا مقدار باید یه عدد بزرگ‌تر از صفر باشه (حداکثر دو رقم اعشار).',
     lBadPrice: 'قیمت هر واحد باید یه عدد بزرگ‌تر از صفر باشه (حداکثر سه رقم اعشار).',
     lTooBig: 'قیمت خیلی بزرگه. یه بار دیگه چکش کن.',
+    lOther: 'سایر',
+    lNeedOtherName: 'اسم محصول رو بنویس.',
+    lLongOtherName: 'اسم محصول خیلی بلنده (حداکثر ۶۰ حرف).',
     months: ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'],
     types: { buy: 'خرید', sell: 'فروش' },
     qtyUnits: { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', piece: 'عدد' },
@@ -140,6 +143,14 @@
   var lEditId = '';        // the id of the open ledger row ('' = new)
   var lEditRow = null;     // the open ledger row (for its stored product name)
   var LEDGER_YEAR_MIN = 1395;
+  // «سایر»: a ledger-only item with a typed name (not a shop product). Same reserved id as LEDGER_OTHER_ID in
+  // Code.gs; it has non-ASCII letters, so no shop product can have it.
+  var LEDGER_OTHER_ID = '*سایر*';
+  var LEDGER_OTHER_MAX = 60;
+  // Same cleaning as ledgerText_ in Code.gs: no control characters or line breaks, single spaces, trimmed.
+  function cleanLedgerText(v) {
+    return String(v || '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
 
   // ---- shared with admin/admin.js (begin): keep both copies identical (tools/admin/test.mjs checks it) ----
   // Persian (Jalali) calendar, after the jalaali-js algorithm (breaks table, valid for years 1178-3177).
@@ -806,8 +817,13 @@
     top.appendChild(el('span', 'tag' + (e.type ? ' t-' + e.type : ''), TEXT.types[e.type] || e.typeText || ''));
     li.appendChild(top);
 
-    var prod = el('div', 'l-prod', e.productName || e.productId || '');
-    var now = productById(e.productId);
+    var isOther = e.productId === LEDGER_OTHER_ID;
+    var prod = el('div', 'l-prod', e.productName || (isOther ? TEXT.lOther : e.productId) || '');
+    var now = isOther ? null : productById(e.productId);
+    if (isOther) {
+      prod.appendChild(document.createTextNode(' '));
+      prod.appendChild(el('span', 'tag t-other', TEXT.lOther));
+    }
     if (now && now.name && String(now.name).trim() !== e.productName) {
       prod.appendChild(document.createTextNode(' '));
       prod.appendChild(el('small', '', fill(TEXT.lNowNamed, { name: String(now.name).trim() })));
@@ -894,12 +910,20 @@
     var seen = {};
     products.forEach(function (r) {
       var id = String(r.id || '').trim(), name = String(r.name || '').trim();
-      if (!id || !name || seen[id]) return;
+      if (!id || !name || seen[id] || id === LEDGER_OTHER_ID) return;
       seen[id] = true;
       addOption(sel, id, name);
     });
-    if (keepId && !seen[keepId]) addOption(sel, keepId, fill(TEXT.lGone, { name: keepName || keepId }));
+    if (keepId && !seen[keepId] && keepId !== LEDGER_OTHER_ID) addOption(sel, keepId, fill(TEXT.lGone, { name: keepName || keepId }));
+    addOption(sel, LEDGER_OTHER_ID, TEXT.lOther);
     sel.value = keepId || '';
+    $('l-other-name').value = keepId === LEDGER_OTHER_ID ? keepName || '' : '';
+    syncOther();
+  }
+
+  // The «اسم محصول» box is shown only while «سایر» is selected.
+  function syncOther() {
+    $('l-other-wrap').hidden = $('l-product').value !== LEDGER_OTHER_ID;
   }
 
   function syncPills() {
@@ -958,6 +982,7 @@
       date: $('l-year').value + '-' + pad2(parseInt($('l-month').value, 10)) + '-' + pad2(parseInt($('l-day').value, 10)),
       type: type,
       productId: $('l-product').value,
+      productName: $('l-product').value === LEDGER_OTHER_ID ? cleanLedgerText($('l-other-name').value) : '',
       qty: $('l-qty').value,
       qtyUnit: $('l-qty-unit').value,
       price: $('l-price').value,
@@ -974,6 +999,10 @@
     if (!ledgerDate_(entry.date)) add(TEXT.lNeedDate);
     if (!entry.type) add(TEXT.lNeedType);
     if (!entry.productId) add(TEXT.lNeedProduct);
+    else if (entry.productId === LEDGER_OTHER_ID) {
+      if (!entry.productName) add(TEXT.lNeedOtherName);
+      else if (entry.productName.length > LEDGER_OTHER_MAX) add(TEXT.lLongOtherName);
+    }
     var m = ledgerMath_(entry.qty, entry.price, entry.priceUnit);
     if (m.qty === null) add(TEXT.lBadQty);
     if (m.tooBig) add(TEXT.lTooBig);
@@ -1039,6 +1068,10 @@
     $('l-cancel').addEventListener('click', function () { closeLedgerForm(); showIssues([]); setStatus(''); });
     $('l-year').addEventListener('change', rebuildDays);
     $('l-month').addEventListener('change', rebuildDays);
+    $('l-product').addEventListener('change', function () {
+      syncOther();
+      if (this.value === LEDGER_OTHER_ID) $('l-other-name').focus();
+    });
     ['l-type-buy', 'l-type-sell'].forEach(function (id) { $(id).addEventListener('change', syncPills); });
     ['l-qty', 'l-price'].forEach(function (id) { $(id).addEventListener('input', updatePreview); });
     ['l-qty-unit', 'l-price-unit'].forEach(function (id) { $(id).addEventListener('change', updatePreview); });

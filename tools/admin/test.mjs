@@ -898,6 +898,35 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     gs.planLedgerRow_(good({ party: 5 }), prods, ctx).row === null);
   const many = gs.planLedgerRow_({}, prods, ctx);
   check("(n) plan: an empty entry lists every missing field", ["date", "type", "productId", "qty", "qtyUnit", "priceUnit"].every((f) => many.issues.some((i) => i.field === f)), many.issues.map((i) => i.field).join());
+  // «سایر»: a ledger-only item with a typed name (reserved productId)
+  const OTHER = gs.LEDGER_OTHER_ID;
+  const oth = (o) => good(Object.assign({ productId: OTHER }, o));
+  const o1 = gs.planLedgerRow_(oth({ productName: "  برنج \n  طارم\u0007 " }), prods, ctx);
+  check("(n) «سایر»: the typed name is saved (cleaned: single spaces, no control characters, trimmed)",
+    o1.issues.length === 0 && o1.row[4] === OTHER && o1.row[5] === "برنج طارم", JSON.stringify(o1));
+  const o2 = [oth({}), oth({ productName: "" }), oth({ productName: "   \n " }), oth({ productName: 5 })].map((e) => gs.planLedgerRow_(e, prods, ctx));
+  check("(n) «سایر»: without a name it is refused with «اسم محصول رو بنویس.»",
+    o2.every((p) => p.row === null && p.issues.length === 1 && p.issues[0].field === "productName" && p.issues[0].message === gs.MSG.needOtherName), JSON.stringify(o2.map((p) => p.issues)));
+  const o3 = gs.planLedgerRow_(oth({ productName: "ب".repeat(61) }), prods, ctx);
+  check("(n) «سایر»: 61 characters are refused, 60 are fine",
+    o3.row === null && o3.issues[0].field === "productName" && o3.issues[0].message === gs.MSG.longOtherName &&
+    gs.planLedgerRow_(oth({ productName: "ب".repeat(60) }), prods, ctx).row[5] === "ب".repeat(60));
+  const o4 = ["=HYPERLINK(\"http://x\")", "+1", "-2", "@a"].map((n) => gs.planLedgerRow_(oth({ productName: n }), prods, ctx).row[5]);
+  check("(n) «سایر»: a name starting with = + - @ gets an apostrophe (formula escaping)", o4.every((v) => v.startsWith("'")), JSON.stringify(o4));
+  const o5 = gs.planLedgerRow_(good({ productName: "شیشه خالی" }), prods, Object.assign({ keep: { productId: "sabzi-ghormeh", productName: "x" } }, ctx));
+  const o6 = gs.planLedgerRow_(good({ productId: "rob-anar", productName: "سبزی قورمه" }), prods, ctx);
+  check("(n) «سایر»: a normal product id still takes its name from the Sheet even when the page sends productName",
+    o5.row[5] === ghormeh && o6.row[5] === prods.find((r) => r.id === "rob-anar").name && !JSON.stringify(o5.row).includes("شیشه خالی"));
+  const fakeOther = prods.map((r) => ({ ...r })).concat([{ ...prods[0], row: 99, id: OTHER, name: "جعلی" }]);
+  check("(n) «سایر»: the reserved id can never be a shop product (validateRows refuses it; a sheet row with it is never used)",
+    /[^\x00-\x7F]/.test(OTHER) && OTHER.trim() === OTHER &&
+    gs.validateRows([{ ...prods[0], row: 2, id: OTHER }]).some((i) => i.message.includes("شناسه")) &&
+    !prods.some((r) => r.id === OTHER) &&
+    gs.planLedgerRow_(oth({ productName: "برنج" }), fakeOther, ctx).row[5] === "برنج" &&
+    gs.planLedgerRow_(oth({}), fakeOther, ctx).row === null &&
+    gs.planLedgerRow_(oth({}), prods, Object.assign({ keep: { productId: OTHER, productName: "برنج" } }, ctx)).row === null);
+  check("(n) «سایر»: admin/admin.js uses the same reserved id and max length as Code.gs",
+    adminSrc.includes("var LEDGER_OTHER_ID = '" + OTHER + "';") && adminSrc.includes("var LEDGER_OTHER_MAX = " + gs.LEDGER_OTHER_MAX + ";") && gs.LEDGER_OTHER_MAX === 60);
   check("(n) findLedgerRow_: exactly one match → its sheet row; none / several → error",
     gs.findLedgerRow_(["La", "Lb", "Lc"], "Lb").row === 3 && gs.findLedgerRow_(["La"], "Lz").error === "none" && gs.findLedgerRow_(["La", "Lb", "La"], "La").error === "many");
 

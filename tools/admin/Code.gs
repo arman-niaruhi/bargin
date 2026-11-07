@@ -93,6 +93,8 @@ var MSG = {
   badPriceUnit: 'واحد قیمت رو انتخاب کن: هزار تومان یا میلیون تومان.',
   priceTooBig: 'قیمت خیلی بزرگه. یه بار دیگه چکش کن.',
   longParty: 'اسم خیلی بلنده (حداکثر ۶۰ حرف).',
+  needOtherName: 'اسم محصول رو بنویس.',
+  longOtherName: 'اسم محصول خیلی بلنده (حداکثر ۶۰ حرف).',
   longNote: 'توضیحات خیلی بلنده (حداکثر ۳۰۰ حرف).',
   ledgerNotFound: 'این مورد پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
   ledgerMany: 'چند سطر با همین شناسه هست. اول توی شیت درستش کن.',
@@ -767,6 +769,11 @@ var LEDGER_QTY_UNITS = { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', p
 var LEDGER_PRICE_UNITS = { thousand: 'هزار تومان', million: 'میلیون تومان' };
 var LEDGER_ID = /^L[0-9a-f]{32}$/;
 var LEDGER_PARTY_MAX = 60;
+// «سایر» (owner approved 2026-11-07): a ledger-only item that is not a shop product (e.g. «برنج», «شیشه خالی»),
+// with a typed name. Its productId is this reserved value: it has non-ASCII letters, which validateRows never
+// allows in a shop id, so it can never be a real product (and saveLedgerRow refuses while the sheet has issues).
+var LEDGER_OTHER_ID = '*سایر*';
+var LEDGER_OTHER_MAX = 60;
 var LEDGER_NOTE_MAX = 300;
 var LEDGER_MAX_ROWS = 20000;     // rows in the tab; when full, new rows are refused (nothing is deleted)
 var LEDGER_MAX_RETURN = 2000;    // newest rows sent to the page
@@ -887,7 +894,8 @@ function ledgerKeyOf_(map, label) {
 // `input` = {date, type, productId, qty, qtyUnit, price, priceUnit, party, note} as typed.
 // `products` = the products tab rows ({id, name, ...}). `ctx` = {id, created, by, keep}: `keep` is the stored
 // {productId, productName} of the row being edited, so an old row whose product was deleted can still be edited
-// as long as its product is left unchanged. The product name always comes from the products tab, never from the page.
+// as long as its product is left unchanged. The product name always comes from the products tab, never from the page,
+// except for the reserved LEDGER_OTHER_ID («سایر»), whose name is input.productName (required, max 60, cleaned).
 // Returns {issues: [{field, message}], row: [LEDGER_HEADER order]}; row is null when there are issues.
 function planLedgerRow_(input, products, ctx) {
   var issues = [];
@@ -903,7 +911,12 @@ function planLedgerRow_(input, products, ctx) {
   var pid = typeof input.productId === 'string' ? input.productId.trim() : '';
   var pname = '';
   if (!pid) add('productId', MSG.badProduct);
-  else {
+  else if (pid === LEDGER_OTHER_ID) {
+    var other = typeof input.productName === 'string' ? ledgerText_(input.productName, LEDGER_OTHER_MAX) : '';
+    if (other === null) add('productName', MSG.longOtherName);
+    else if (!other) add('productName', MSG.needOtherName);
+    else pname = other;
+  } else {
     for (var i = 0; i < products.length; i++) {
       var r = products[i];
       if (!isBlankRow(r) && cellText(r.id) === pid) { pname = cellText(r.name) || pid; break; }
