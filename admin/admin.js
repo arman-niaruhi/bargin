@@ -89,7 +89,7 @@
     lPickProduct: 'یه محصول انتخاب کن',
     lGone: '{name} (دیگه توی لیست محصولات نیست)',
     lNowNamed: '(الان: {name})',
-    lSum: '{qty} {unit} × {price} تومان = {total} تومان',
+    lSum: '{qty} {unit}{pack} × {price} تومان = {total} تومان',
     lTyped: 'قیمت هر واحد: {amount} {unit}',
     lParty: 'طرف حساب: {name}',
     lDelete: 'حذف',
@@ -144,6 +144,10 @@
     oQtyUnit: 'واحد',
     oPrice: 'قیمت هر واحد',
     oPriceUnit: 'تومان',
+    oPack: 'وزن هر بسته',   // TODO: bargin-content to review the wording
+    oPackHint: 'اختیاری، مثلاً ۵۰۰ گرم',
+    lLongPack: 'وزن هر بسته حداکثر ۲۰ حرف.',
+    lOldServer3: 'برای ثبت وزن هر بسته، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، نسخه‌ی جدید).',
     oOtherName: 'اسم محصول',
     oOtherRemove: 'حذف این مورد',
     oNeedLines: 'حداقل یه محصول با تعداد بنویس.',
@@ -182,6 +186,7 @@
   var ledgerLoaded = false;
   var ledgerFilter = 'all';
   var lEdit = { orderId: null, rowId: '' };   // the open order form: an order number, or an old single row's id
+  var ledgerPack = false;     // the server knows the pack size (an older Apps Script would silently drop it)
   var ledgerOrders = false;   // the server knows orders (an old Apps Script does not send `orders`)
   var LEDGER_MAX_LINES = 50;  // lines in one order (same as Code.gs)
   var oModels = [];        // the product lines of the open order form
@@ -190,11 +195,25 @@
   // «سایر»: a ledger-only item with a typed name (not a shop product). Same reserved id as LEDGER_OTHER_ID in
   // Code.gs; it has non-ASCII letters, so no shop product can have it.
   var LEDGER_OTHER_ID = '*سایر*';
+  var LEDGER_PACK_MAX = 20;
   var LEDGER_OTHER_MAX = 60;
   var customers = [];      // the «مشتری‌ها» list [{id, firstName, lastName}], from getLedger
   var NEW_CUSTOMER = '__newcust__';   // value of the «+ مشتری جدید» option (never a customer id)
   var customersReady = false;         // the server sent the customers list (an old Apps Script does not)
   // Same cleaning as ledgerText_ in Code.gs: no control characters or line breaks, single spaces, trimmed.
+  // packSizeOf (begin): the shop unit «۵۰۰ گرم» / «۴۰۰گرم» / «۱ کیلو» → «۵۰۰ گرم» / «۴۰۰ گرم» / «۱ کیلو» (Persian
+  // digits, one space); '' for «ظرف», a plain «کیلو», empty or anything else.
+  function packSizeOf(unit) {
+    var t = String(unit === undefined || unit === null ? '' : unit)
+      .replace(/[۰-۹]/g, function (d) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); })
+      .replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); })
+      .replace(/[\s\u200c]/g, '');
+    var mt = /^([0-9]+(?:\.[0-9]+)?)(گرم|کیلوگرم|کیلو)$/.exec(t);
+    if (!mt || !(parseFloat(mt[1]) > 0)) return '';
+    return mt[1].replace(/[0-9]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.charAt(d); }) + ' ' + (mt[2] === 'گرم' ? 'گرم' : 'کیلو');
+  }
+  // packSizeOf (end)
+
   function cleanLedgerText(v) {
     return String(v || '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
   }
@@ -850,11 +869,13 @@
       customers = r.customers || [];
       customersReady = Array.isArray(r.customers) && !r.customersMessage;
       ledgerOrders = r.orders === true;
+      ledgerPack = r.packSize === true;
       ledgerLoaded = true;
       renderLedger();
       if (r.customersMessage) setStatus(r.customersMessage, 'err');
       else if (!Array.isArray(r.customers)) setStatus(TEXT.lOldServer, 'err');
       else if (!ledgerOrders) setStatus(TEXT.lOldServer2, 'err');
+      else if (!ledgerPack) setStatus(TEXT.lOldServer3, 'err');
       else if (!keepMessage) setStatus('');
     }, function (err) {
       setBusy(false);
@@ -919,12 +940,18 @@
     yes.addEventListener('click', onDelete);
   }
 
+  // « (۵۰۰ گرم)» after the quantity unit, or '' when the line has no pack size.
+  function packPart(p) {
+    var t = cleanLedgerText(p);
+    return t ? ' (' + t + ')' : '';
+  }
+
   // The line «۲ بسته × ۴۵۰,۰۰۰ تومان = ۹۰۰,۰۰۰ تومان» of one row, or null when the row has no numbers.
   function sumLine(e) {
     if (e.qty === null || e.priceToman === null || e.rowToman === null) return null;
     var sum = el('div', 'l-sum');
     sum.appendChild(el('bdi', '', fill(TEXT.lSum, {
-      qty: decFa(e.qty), unit: TEXT.qtyUnits[e.qtyUnit] || e.qtyUnitText || '',
+      qty: decFa(e.qty), unit: TEXT.qtyUnits[e.qtyUnit] || e.qtyUnitText || '', pack: packPart(e.packSize),
       price: groupFa(e.priceToman), total: groupFa(e.rowToman)
     })));
     return sum;
@@ -1137,7 +1164,7 @@
 
   function newModel(o) {
     var m = { other: false, group: '', id: '', productId: '', name: '', category: '', shop: null, shopUnit: '', defKind: 'pack',
-      qty: '', qtyUnit: 'pack', price: '', priceUnit: 'thousand', stored: false, priceTouched: false, qtyUnitTouched: false, gone: false, els: {} };
+      qty: '', qtyUnit: 'pack', pack: '', packTouched: false, price: '', priceUnit: 'thousand', stored: false, priceTouched: false, qtyUnitTouched: false, gone: false, els: {} };
     for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) m[k] = o[k];
     return m;
   }
@@ -1199,6 +1226,17 @@
     ctl.appendChild(cellWrap(TEXT.oQtyUnit, qu, qu.id));
     ctl.appendChild(cellWrap(TEXT.oPrice, pr, pr.id));
     ctl.appendChild(cellWrap(TEXT.oPriceUnit, pu, pu.id));
+    var pk = el('input', 'o-pack-in');
+    pk.type = 'text';
+    pk.maxLength = LEDGER_PACK_MAX;
+    pk.autocomplete = 'off';
+    pk.id = 'o-i' + (++lineSeq);
+    pk.value = m.pack;
+    pk.placeholder = TEXT.oPackHint;
+    pk.setAttribute('aria-label', (m.other ? TEXT.lOther : m.name) + ' — ' + TEXT.oPack);
+    var pkCell = cellWrap(TEXT.oPack, pk, pk.id);
+    pkCell.className += ' o-pack';
+    ctl.appendChild(pkCell);
     box.appendChild(ctl);
     var sum = el('div', 'o-sum');
     box.appendChild(sum);
@@ -1206,7 +1244,8 @@
     qu.addEventListener('change', function () { m.qtyUnit = qu.value; m.qtyUnitTouched = true; refreshOrder(); });
     pr.addEventListener('input', function () { m.price = pr.value; m.priceTouched = true; refreshOrder(); });
     pu.addEventListener('change', function () { m.priceUnit = pu.value; m.priceTouched = true; refreshOrder(); });
-    m.els = { box: box, qty: q, qtyUnit: qu, price: pr, priceUnit: pu, sum: sum, name: m.els.name };
+    pk.addEventListener('input', function () { m.pack = pk.value; m.packTouched = true; refreshOrder(); });
+    m.els = { box: box, qty: q, qtyUnit: qu, pack: pk, price: pr, priceUnit: pu, sum: sum, name: m.els.name };
     if (m.other) {
       var rm = el('button', 'btn btn-danger o-rm', TEXT.oOtherRemove);
       rm.type = 'button';
@@ -1227,6 +1266,7 @@
     oModels.forEach(function (m) {
       if (m.stored) return;
       if (!m.qtyUnitTouched) { m.qtyUnit = m.defKind; m.els.qtyUnit.value = m.qtyUnit; }
+      if (!m.packTouched) { m.pack = type === 'sell' ? packSizeOf(m.shopUnit) : ''; m.els.pack.value = m.pack; }
       if (m.priceTouched) return;
       if (type === 'sell' && m.shop) { m.price = m.shop.price; m.priceUnit = m.shop.unit; }
       else { m.price = ''; m.priceUnit = 'thousand'; }
@@ -1253,7 +1293,7 @@
         if (!m.other) counts[m.group] = (counts[m.group] || 0) + 1;
       }
       m.els.sum.textContent = on && math.rowToman !== null ? fill(TEXT.lSum, {
-        qty: decFa(math.qtyText), unit: TEXT.qtyUnits[m.qtyUnit] || '', price: groupFa(math.unitToman), total: groupFa(math.rowToman)
+        qty: decFa(math.qtyText), unit: TEXT.qtyUnits[m.qtyUnit] || '', pack: packPart(m.pack), price: groupFa(math.unitToman), total: groupFa(math.rowToman)
       }) : '';
     });
     var groups = $('o-groups').querySelectorAll('.o-cat');
@@ -1292,9 +1332,9 @@
   }
 
   function addOtherLine(stored) {
-    var m = newModel({ other: true, productId: LEDGER_OTHER_ID, stored: !!stored, priceTouched: true, qtyUnitTouched: true });
+    var m = newModel({ other: true, productId: LEDGER_OTHER_ID, stored: !!stored, priceTouched: true, qtyUnitTouched: true, packTouched: true });
     if (stored) {
-      m.id = stored.id; m.name = stored.productName || '';
+      m.id = stored.id; m.name = stored.productName || ''; m.pack = stored.packSize || '';
       m.qty = stored.qty !== null ? decFa(stored.qty) : '';
       m.qtyUnit = stored.qtyUnit || 'pack';
       m.price = stored.priceAmount ? decFa(stored.priceAmount) : '';
@@ -1335,7 +1375,8 @@
         oModels.push(m);
         extras.push(m);
       }
-      m.id = e.id; m.stored = true; m.priceTouched = true; m.qtyUnitTouched = true;
+      m.id = e.id; m.stored = true; m.priceTouched = true; m.qtyUnitTouched = true; m.packTouched = true;
+      m.pack = e.packSize || '';
       m.qty = e.qty !== null ? decFa(e.qty) : '';
       m.qtyUnit = e.qtyUnit || 'pack';
       m.price = e.priceAmount ? decFa(e.priceAmount) : '';
@@ -1428,7 +1469,7 @@
     var names = [], models = [];
     oModels.concat(oOthers).forEach(function (m) {
       if (!hasQty(m)) return;
-      var line = { productId: m.productId, qty: m.qty, qtyUnit: m.qtyUnit, price: m.price, priceUnit: m.priceUnit };
+      var line = { productId: m.productId, qty: m.qty, qtyUnit: m.qtyUnit, packSize: cleanLedgerText(m.pack), price: m.price, priceUnit: m.priceUnit };
       if (m.stored && m.id) line.id = m.id;
       if (m.other) line.productName = cleanLedgerText(m.name);
       order.lines.push(line);
@@ -1452,12 +1493,14 @@
         if (!ln.productName) addLine(i, TEXT.lNeedOtherName);
         else if (ln.productName.length > LEDGER_OTHER_MAX) addLine(i, TEXT.lLongOtherName);
       }
+      if (ln.packSize.length > LEDGER_PACK_MAX) addLine(i, TEXT.lLongPack);
       var m = ledgerMath_(ln.qty, ln.price, ln.priceUnit);
       if (m.qty === null) addLine(i, TEXT.lBadQty);
       if (m.tooBig) addLine(i, TEXT.lTooBig);
       else if (m.unitToman === null) addLine(i, String(ln.price).trim() === '' ? TEXT.oNeedPrice : TEXT.lBadPrice);
     });
     if (!ledgerOrders) add(TEXT.lOldServer2);
+    else if (!ledgerPack) add(TEXT.lOldServer3);
     if (entry.type === 'sell' && !customersReady) add(TEXT.lOldServer);
     else if (entry.type === 'sell') {
       if (entry.newCustomer) {

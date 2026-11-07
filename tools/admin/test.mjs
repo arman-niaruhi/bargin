@@ -872,11 +872,11 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const p1 = gs.planLedgerRow_(good({ productName: "fake name" }), prods, ctx);
   const ghormeh = prods.find((r) => r.id === "sabzi-ghormeh").name;
   check("(n) plan: a good entry becomes one row in LEDGER_HEADER order",
-    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "zahra ahmadi", "", OWNER, "1", "سایت", ""]), JSON.stringify(p1));
+    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "zahra ahmadi", "", OWNER, "1", "سایت", "", ""]), JSON.stringify(p1));
   check("(n) plan: the product name comes from the products tab, never from the page", p1.row[5] === ghormeh && !JSON.stringify(p1.row).includes("fake name"));
-  check("(n) LEDGER_HEADER has the 18 columns: the 15 old ones, customerId and channel, then orderId at the END",
-    L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by,customerId,channel,orderId" &&
-    Array.from(gs.LEDGER_HEADER_V1).join() === L.slice(0, 15).join() && Array.from(gs.LEDGER_HEADER_V2).join() === L.slice(0, 17).join() && gs.LEDGER_FORMATS.length === 18);
+  check("(n) LEDGER_HEADER has the 19 columns: the 15 old ones, customerId and channel, orderId, then packSize at the END",
+    L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by,customerId,channel,orderId,packSize" &&
+    Array.from(gs.LEDGER_HEADER_V1).join() === L.slice(0, 15).join() && Array.from(gs.LEDGER_HEADER_V2).join() === L.slice(0, 17).join() && gs.LEDGER_FORMATS.length === 19);
   const unknown = gs.planLedgerRow_(good({ productId: "no-such" }), prods, ctx);
   const blankP = gs.planLedgerRow_(good({ productId: "" }), prods.concat([{ row: 99, id: "", name: "" }]), ctx);
   check("(n) plan: an unknown or empty product id is refused", unknown.row === null && unknown.issues[0].field === "productId" && blankP.issues[0].field === "productId");
@@ -1011,7 +1011,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(n) save: id, time and email come from the server, never from the page (Tehran time, session email)",
     r1[0] !== "L" + "b".repeat(32) && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(r1[1]) && r1[1] !== "1999" && r1[14] === OWNER && r1[11] === 1350000, JSON.stringify(r1));
   check("(n) save: the row gets its cell formats first (text for the date, numbers for qty and toman)",
-    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@|@|@|0"));
+    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@|@|@|0|@"));
   check("(n) save: the products tab is only read, never written", !productsTab().writes);
   const a2 = add({ date: "1405-08-20", type: "buy", qty: "2.5", qtyUnit: "kg", price: "1.2", priceUnit: "million", party: "آقای رضایی", note: "نقدی" });
   clock.t += 1000;
@@ -1022,7 +1022,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const e2 = lg.data.entries[0];
   check("(n) getLedger: keys and texts come back (type buy, kg, million, typed «1.2», row total 3,000,000)",
     e2.type === "buy" && e2.typeText === "خرید" && e2.qty === 2.5 && e2.qtyUnit === "kg" && e2.priceToman === 1200000 && e2.priceAmount === "1.2" && e2.priceUnit === "million" && e2.rowToman === 3000000 && e2.party === "آقای رضایی" && e2.note === "نقدی", JSON.stringify(e2));
-  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers,orders");
+  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers,orders,packSize");
   const bad = add({ price: "0" });
   check("(n) save: a bad entry is refused with issues and nothing is written", bad.ok === true && bad.data.ok === false && bad.data.issues.length === 1 && ledgerTab().rows.length === 4, JSON.stringify(bad));
 
@@ -1090,7 +1090,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const msg = gs.setupLedger();
   check("(n) setupLedger makes «خرید و فروش» the 2nd tab (products first, log last), header, frozen, formats",
     book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,log" && ledgerTab().rows[0].join() === L.join() && ledgerTab().frozen === 1 &&
-    ledgerTab().formats.filter((f) => f[0] === "col").length === 18 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
+    ledgerTab().formats.filter((f) => f[0] === "col").length === 19 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
   gs.setupLedger();
   check("(n) setupLedger can run again safely", book.getSheets().length === 3 && ledgerTab().rows.length === 1 && book.getSheets()[1].name === "خرید و فروش");
   mkBook(["ledger", "products", "log"]);
@@ -1202,7 +1202,8 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
       post({ action: "getProducts", session: sess }).error === "server" && post({ action: "saveLedgerRow", session: sess, data: { entry: sale({ customerId: "1" }), id: "" } }).error === "server" && custTab().rows.length === 2);
     // setupLedger: the 15 → 17 column migration
     const oldHead = L.slice(0, 15);
-    const oldRow = ["L" + "9".repeat(32), "2026-11-07 09:00:00", "1405-08-16", "فروش", "sabzi-ghormeh", "سبزی قورمه", 1, "بسته/ظرف", 450000, "450", "هزار تومان", 450000, "خانم احمدی", "", OWNER];
+    const old15Head = oldHead, old15Row = ["L" + "9".repeat(32), "2026-11-07 09:00:00", "1405-08-16", "فروش", "sabzi-ghormeh", "سبزی قورمه", 1, "بسته/ظرف", 450000, "450", "هزار تومان", 450000, "خانم احمدی", "", OWNER];
+    const oldRow = old15Row;
     mkBook(["products", "ledger", "customers", "log"], [oldHead.slice(), oldRow.slice()]);
     const before17 = post({ action: "getLedger", session: sess });
     const mig = gs.setupLedger();
@@ -1224,6 +1225,29 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
       check("(p) setupLedger adds orderId at the END of a 17-column tab and keeps the data row", /OK/.test(m17) && ledgerTab().rows[0].join() === L.join() && JSON.stringify(ledgerTab().rows[1].slice(0, 17)) === JSON.stringify(row17));
       const g17 = post({ action: "getLedger", session: sess });
       check("(p) getLedger says orders:true and an old row has orderId null", g17.data.ok && g17.data.orders === true && g17.data.entries[0].orderId === null);
+      // migration 18 -> 19 columns (pack size) and 15 -> 19; save + read packSize through the order action
+      const h18 = L.slice(0, 18), row18 = row17.concat([5]);
+      mkBook(["products", "ledger", "customers", "log"], [h18.slice(), row18.slice()]);
+      const m18 = gs.setupLedger();
+      const g18 = post({ action: "getLedger", session: sess });
+      check("(q) setupLedger adds packSize at the END of an 18-column tab and keeps the data row untouched",
+        /OK/.test(m18) && ledgerTab().rows[0].join() === L.join() && JSON.stringify(ledgerTab().rows[1].slice(0, 18)) === JSON.stringify(row18) && g18.data.ok === true && g18.data.packSize === true && g18.data.entries[0].packSize === "" && g18.data.entries[0].orderId === 5, m18);
+      mkBook(["products", "ledger", "customers", "log"], [old15Head.slice(), old15Row.slice()]);
+      check("(q) setupLedger takes a 15-column tab straight to 19 columns without touching the data row", /OK/.test(gs.setupLedger()) && ledgerTab().rows[0].join() === L.join() && JSON.stringify(ledgerTab().rows[1].slice(0, 15)) === JSON.stringify(old15Row));
+      mkBook(["products", "ledger", "customers", "log"], [h18.slice(0, 17).concat(["oops"]), row18.slice()]);
+      check("(q) setupLedger still refuses a wrong header", /^ERROR/.test(gs.setupLedger()));
+      mkBook();
+      const pk = so(ord({}, [ln({ packSize: "۵۰۰ گرم" }), ln({ productId: "esfenaj", packSize: "" }), ln({ productId: "nana" })]));
+      const pkRows = ledgerTab().rows.slice(1);
+      check("(q) order lines save packSize in column 19 (empty when not given)", pk.data.ok === true && pkRows.length === 3 && pkRows[0][18] === "۵۰۰ گرم" && pkRows[1][18] === "" && pkRows[2][18] === "", JSON.stringify(pk));
+      const pkg = post({ action: "getLedger", session: sess });
+      check("(q) getLedger returns each line's packSize", pkg.data.entries.filter((e) => e.packSize === "۵۰۰ گرم").length === 1 && pkg.data.entries.every((e) => typeof e.packSize === "string"));
+      const pkBad = so(ord({}, [ln({ packSize: "y".repeat(21) })]));
+      const pkF = so(ord({}, [ln({ packSize: "=HYPERLINK(1)" })]));
+      check("(q) a 21-character packSize is refused (nothing written); a formula is stored as text",
+        pkBad.data.ok === false && pkBad.data.issues.some((i) => i.field === "packSize" && i.line === 0) && ledgerTab().rows.length === 5 && pkF.data.ok === true && ledgerTab().rows[4][18] === "'=HYPERLINK(1)");
+      const sr = post({ action: "saveLedgerRow", session: sess, data: { entry: { date: "1405-08-16", type: "buy", productId: "sabzi-ghormeh", qty: "1", qtyUnit: "pack", price: "450", priceUnit: "thousand", packSize: "۱ کیلو" }, id: "" } });
+      check("(q) saveLedgerRow saves packSize too", sr.data.ok === true && ledgerTab().rows[ledgerTab().rows.length - 1][18] === "۱ کیلو");
 
       mkBook();
       delete world.props.orderSeq; delete world.props.customerSeq;
@@ -1426,5 +1450,38 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     ["index.html", "product.html"].every((f) => /products\.js"><\/script>\s*<script src="log\.js"><\/script>\s*<script src="app\.js">/.test(read(f))));
 }
 
+
+// ---- (q) pack size (owner approved 2026-11-07) ----
+{
+  const adm = read("admin/admin.js");
+  const a = adm.indexOf("// packSizeOf (begin)"), b = adm.indexOf("// packSizeOf (end)");
+  check("(q) admin.js has the packSizeOf block", a > 0 && b > a);
+  const ctxp = {};
+  vm.runInNewContext(adm.slice(a, b) + ";this.packSizeOf=packSizeOf;", ctxp);
+  const cases = [["۵۰۰ گرم", "۵۰۰ گرم"], ["۴۰۰گرم", "۴۰۰ گرم"], ["۱ کیلو", "۱ کیلو"], ["500 گرم", "۵۰۰ گرم"], ["۳۰۰\u200cگرم", "۳۰۰ گرم"], ["کیلو", ""], ["ظرف", ""], ["", ""], [undefined, ""], ["۱۰۰ عدد", ""]];
+  check("(q) unit → packSize: «۵۰۰ گرم», «۴۰۰گرم», «۱ کیلو» are kept/normalised; «کیلو», «ظرف», empty give ''",
+    cases.every(([u, w]) => ctxp.packSizeOf(u) === w), JSON.stringify(cases.map(([u]) => ctxp.packSizeOf(u))));
+  const LH = Array.from(gs.LEDGER_HEADER);
+  check("(q) packSize is the LAST (19th) column", LH.length === 19 && LH[18] === "packSize" && Array.from(gs.LEDGER_HEADER_V3).length === 18);
+  const O = gs.ALLOWED_EMAILS[0];
+  const pr = [{ id: "sabzi-ghormeh", name: "سبزی قورمه" }];
+  const cx = { id: "L" + "b".repeat(32), created: "2026-11-07 10:00:00", by: O, customers: [{ id: "1", firstName: "a", lastName: "b" }] };
+  const gd = (o) => Object.assign({ date: "1405-08-16", type: "buy", productId: "sabzi-ghormeh", qty: "2", qtyUnit: "pack", price: "450", priceUnit: "thousand" }, o);
+  const q1 = gs.planLedgerRow_(gd({ packSize: "  ۵۰۰   گرم " }), pr, cx);
+  check("(q) plan: packSize is cleaned (spaces) and written in column 19", q1.issues.length === 0 && q1.row.length === 19 && q1.row[18] === "۵۰۰ گرم", JSON.stringify(q1.row));
+  check("(q) plan: no packSize = empty cell", gs.planLedgerRow_(gd({}), pr, cx).row[18] === "");
+  const q3 = gs.planLedgerRow_(gd({ packSize: "x".repeat(21) }), pr, cx);
+  check("(q) plan: 21 characters is refused, 20 is fine", q3.issues.some((i) => i.field === "packSize") && gs.planLedgerRow_(gd({ packSize: "x".repeat(20) }), pr, cx).issues.length === 0);
+  check("(q) plan: a non-text packSize is refused", gs.planLedgerRow_(gd({ packSize: 500 }), pr, cx).issues.some((i) => i.field === "packSize"));
+  check("(q) plan: a formula in packSize is escaped with an apostrophe", gs.planLedgerRow_(gd({ packSize: "=1+1" }), pr, cx).row[18] === "'=1+1" && gs.planLedgerRow_(gd({ packSize: "-5" }), pr, cx).row[18] === "'-5");
+  const back = gs.ledgerEntry_(q1.row);
+  check("(q) ledgerEntry_ returns packSize; an 18-column old row gives ''", back.packSize === "۵۰۰ گرم" && gs.ledgerEntry_(q1.row.slice(0, 18)).packSize === "");
+  check("(q) the server says packSize: true (capability flag)", /packSize: true/.test(read("tools/admin/Code.gs")));
+  check("(q) admin.js refuses to save when the server does not say packSize: true", /ledgerPack = r\.packSize === true/.test(adm) && /if \(!ledgerPack\) add\(/.test(adm));
+  check("(q) buildCsv still starts with the BOM (written as an escape in the source)", gs.buildCsv([], "\n").charCodeAt(0) === 0xFEFF && /'\\uFEFF'/.test(read("tools/admin/Code.gs")) && !/\uFEFF/.test(read("tools/admin/Code.gs")));
+  const cg = read("tools/admin/Code.gs");
+  const ncLine = cg.split("\n").find((l) => l.includes("toAsciiDigits(input).replace("));
+  check("(q) normalizeCode_ writes its invisible characters as escapes; no BOM or bidi mark is left in Code.gs; Persian digits still work", !!ncLine && !/[\u200c\u200e\u200f\ufeff]/.test(ncLine) && /\\u200C\\u200F\\u200E/.test(ncLine) && !/[\ufeff\u200e\u200f]/.test(cg) && gs.normalizeCode_("۱۲۳ ۴۵۶") === "123456" && gs.normalizeCode_("12\u200c3\u200f4\u200e56") === "123456");
+}
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

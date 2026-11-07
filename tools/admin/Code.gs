@@ -101,6 +101,7 @@ var MSG = {
   needOtherName: 'اسم محصول رو بنویس.',
   longOtherName: 'اسم محصول خیلی بلنده (حداکثر ۶۰ حرف).',
   longNote: 'توضیحات خیلی بلنده (حداکثر ۳۰۰ حرف).',
+  longPack: 'وزن هر بسته خیلی بلنده (حداکثر ۲۰ حرف).',
   needLines: 'حداقل یه محصول با تعداد بنویس.',
   tooManyLines: 'یه سفارش حداکثر {n} تا خط می‌تونه داشته باشه.',
   orderNotFound: 'این سفارش پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
@@ -256,7 +257,7 @@ function buildCsv(rows, eol) {
       return csvField(v);
     }).join(','));
   });
-  return '﻿' + lines.join(eol) + eol;
+  return '\uFEFF' + lines.join(eol) + eol;
 }
 
 // ---- Request handling (pure; services are passed in `deps`) ----
@@ -475,7 +476,7 @@ function randomCode_() {
 // What the owner typed → 6 ASCII digits, or '' if it is not a code. Persian and Arabic digits are accepted.
 function normalizeCode_(input) {
   if (typeof input !== 'string' || input.length > 40) return '';
-  var s = toAsciiDigits(input).replace(/[\s‌‏‎٬,\-]/g, '');
+  var s = toAsciiDigits(input).replace(/[\s\u200C\u200F\u200E\u066C,\-]/g, '');
   return /^[0-9]{6}$/.test(s) ? s : '';
 }
 
@@ -791,9 +792,12 @@ var LEDGER_HEADER_V1 = ['id', 'created', 'date', 'type', 'productId', 'productNa
 var LEDGER_HEADER_V2 = LEDGER_HEADER_V1.concat(['customerId', 'channel']);
 // orderId (owner 2026-11-07, multi-product orders): a whole number shared by every line of one order; empty on old
 // single rows. Appended at the END; setupLedger adds it to a 15- or 17-column tab.
-var LEDGER_HEADER = LEDGER_HEADER_V2.concat(['orderId']);
+var LEDGER_HEADER_V3 = LEDGER_HEADER_V2.concat(['orderId']);
+// packSize (owner 2026-11-07): the pack size of a line, e.g. «۵۰۰ گرم» (optional text, max 20). Appended at the END;
+// setupLedger adds it to a 15-, 17- or 18-column tab. Old rows have it empty.
+var LEDGER_HEADER = LEDGER_HEADER_V3.concat(['packSize']);
 // Cell formats per column: text everywhere (so 1405-08-16 never turns into a date), numbers for qty and toman.
-var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@', '@', '@', '0'];
+var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@', '@', '@', '0', '@'];
 var LEDGER_TYPES = { buy: 'خرید', sell: 'فروش' };
 var LEDGER_QTY_UNITS = { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', piece: 'عدد' };
 var LEDGER_PRICE_UNITS = { thousand: 'هزار تومان', million: 'میلیون تومان' };
@@ -806,6 +810,7 @@ var LEDGER_PARTY_MAX = 60;
 var LEDGER_OTHER_ID = '*سایر*';
 var LEDGER_OTHER_MAX = 60;
 var LEDGER_NOTE_MAX = 300;
+var LEDGER_PACK_MAX = 20;
 var LEDGER_MAX_ROWS = 20000;     // rows in the tab; when full, new rows are refused (nothing is deleted)
 var LEDGER_MAX_LINES = 50;       // lines in one order
 var ORDER_SEQ_KEY = 'orderSeq';  // last order number given out (never reused, like customerSeq)
@@ -1070,6 +1075,8 @@ function planLedgerRow_(input, products, ctx) {
   }
   var note = ledgerText_(input.note, LEDGER_NOTE_MAX);
   if (note === null) add('note', MSG.longNote);
+  var pack = ledgerText_(input.packSize, LEDGER_PACK_MAX);
+  if (pack === null) add('packSize', MSG.longPack);
 
   if (issues.length) return { issues: issues, row: null };
   return {
@@ -1079,7 +1086,7 @@ function planLedgerRow_(input, products, ctx) {
       LEDGER_QTY_UNITS[qtyUnit], math.unitToman, math.priceText, LEDGER_PRICE_UNITS[priceUnit], math.rowToman,
       sheetText_(party), sheetText_(note), cellText(ctx.by),
       customer ? customer.customerId : '', channel ? LEDGER_CHANNELS[channel] : '',
-      ctx.orderId ? ctx.orderId : '']
+      ctx.orderId ? ctx.orderId : '', sheetText_(pack)]
   };
 }
 
@@ -1117,7 +1124,7 @@ function ledgerEntry_(v) {
     priceUnit: ledgerKeyOf_(LEDGER_PRICE_UNITS, cellText(v[10])), priceUnitText: cellText(v[10]),
     rowToman: num(v[11]), party: cellText(v[12]), note: cellText(v[13]), by: cellText(v[14]),
     customerId: toAsciiDigits(cellText(v[15])), channel: ledgerKeyOf_(LEDGER_CHANNELS, cellText(v[16])), channelText: cellText(v[16]),
-    orderId: orderIdOf_(v[17])
+    orderId: orderIdOf_(v[17]), packSize: cellText(v[18])
   };
 }
 
@@ -1168,7 +1175,7 @@ function getLedger() {
     if (a.created !== b.created) return a.created < b.created ? 1 : -1;
     return 0;
   });
-  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [], orders: true };
+  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [], orders: true, packSize: true };
   var c = customersSheet_();
   if (c.sheet) out.customers = customerList_(customerValues_(c.sheet));
   else out.customersMessage = c.message;
@@ -1338,7 +1345,7 @@ function saveLedgerOrder(order, orderId, rowId) {
     var input = {
       date: order.date, type: order.type, note: order.note, party: order.party, channel: order.channel,
       customerId: isSale ? VIRTUAL : undefined,
-      productId: ln.productId, productName: ln.productName, qty: ln.qty, qtyUnit: ln.qtyUnit, price: ln.price, priceUnit: ln.priceUnit
+      productId: ln.productId, productName: ln.productName, qty: ln.qty, qtyUnit: ln.qtyUnit, price: ln.price, priceUnit: ln.priceUnit, packSize: ln.packSize
     };
     var ctx = {
       id: lid || 'L' + randomHex_(32), created: old ? cellText(old[1]) : created, by: old ? cellText(old[14]) : sessionEmail_,
@@ -1428,9 +1435,9 @@ function setupLedger() {
   }
   var lastRow = sheet.getLastRow();
   var head = lastRow ? sheet.getRange(1, 1, 1, LEDGER_HEADER.length).getValues()[0].map(cellText) : [];
-  // An older tab (15 columns before the customers, 17 before the orders): the missing columns are added at the END;
+  // An older tab (15 columns before the customers, 17 before the orders, 18 before the pack size): the missing columns are added at the END;
   // data rows are kept. Accepted when the first N columns match an older header and the rest are empty.
-  var older = [LEDGER_HEADER_V1, LEDGER_HEADER_V2].some(function (k) {
+  var older = [LEDGER_HEADER_V1, LEDGER_HEADER_V2, LEDGER_HEADER_V3].some(function (k) {
     return head.slice(0, k.length).join('\n') === k.join('\n') && head.slice(k.length).every(function (h) { return h === ''; });
   });
   if (lastRow > 1 && head.join('\n') !== LEDGER_HEADER.join('\n') && !older) {
