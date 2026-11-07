@@ -1815,6 +1815,64 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
         check("(u) admin page: HEADER (public columns) is unchanged in admin.js and Code.gs",
           /var HEADER = \['id', 'name', 'category', 'price', 'unit', 'serves', 'short', 'details', 'recipe', 'images', 'soldOut'\];/.test(adm2) && gs.HEADER.join() === "id,name,category,price,unit,serves,short,details,recipe,images,soldOut");
       }
+
+      // ---- (v) profit in the report (owner approved 2026-11-07) ----
+      {
+        const RAWN = "قیمت اولیه محصولات", rawTab = () => book.getSheetByName(RAWN);
+        const rr = (i, date, type, pid, pname, qty, unit, toman, oid) => {
+          const r = new Array(20).fill("");
+          r[0] = "L" + String(i).padStart(32, "0"); r[1] = "2026-11-07 10:00:00"; r[2] = date; r[3] = type; r[4] = pid; r[5] = pname;
+          r[6] = qty; r[7] = unit; r[11] = toman; r[14] = OWNER; r[15] = "1"; r[16] = "سایت"; r[17] = oid;
+          return r;
+        };
+        const S = "فروش", B = "خرید", PK = "بسته/ظرف", KG = "کیلو", PC = "عدد";
+        const setBook = (rows, withRaw) => {
+          mkBook(["products", "ledger", "customers", "log"], [L.slice(), ...rows]);
+          gs.setupVersioning();
+          if (withRaw) gs.setupRawPrices();
+          delete world.props.orderSeq; ss = relog();
+        };
+        const rep2 = () => post({ action: "getReport", session: ss, data: { from: "", to: "" } });
+        const rows = [
+          rr(1, "1405-08-10", S, "a", "الف", 2, PK, 900000, 1),        // raw 300,000 → cost 600,000 profit 300,000
+          rr(2, "1405-08-10", S, "b", "ب", 1, PK, 100000, 1),          // raw 150,000 → cost 150,000 profit −50,000 (a loss)
+          rr(3, "1405-08-11", S, "a", "الف", 3, KG, 700000, 2),        // kilos: not costed
+          rr(4, "1405-08-11", S, "c", "ج", 1, PK, 200000, 3),          // no raw price: not costed
+          rr(5, "1405-08-12", S, gs.LEDGER_OTHER_ID, "چیز دیگه", 1, PK, 50000, 4),   // «سایر»: not costed
+          rr(6, "1405-08-12", B, "a", "الف", 9, PK, 999000, ""),       // a buy: never counted
+          rr(7, "1405-08-13", S, "a", "الف", 1.5, PK, 600000, 5),      // cost 450,000 profit 150,000
+          rr(8, "1405-08-13", S, "b", "ب", 2, PC, 90000, 6)           // pieces: not costed
+        ];
+        setBook(rows, true);
+        const rt = rawTab();
+        const putRaw = (id, toman) => rt.rows.push([id, toman, String(toman / 1000), "thousand", "2026-11-07 10:00:00", OWNER]);
+        putRaw("a", 300000); putRaw("b", 150000); putRaw(gs.LEDGER_OTHER_ID, 1);
+        const r = rep2().data.summary, pf = r.profit;
+        check("(v) profit: cost = raw × qty for pack sales only; profit = the row's sale total − cost (a loss stays negative)",
+          pf.ready === true && pf.rows === 3 && pf.sales === 900000 + 100000 + 600000 && pf.cost === 600000 + 150000 + 450000 && pf.profit === 300000 - 50000 + 150000, JSON.stringify(pf));
+        check("(v) profit: kilos, pieces, «سایر» (even with a raw row) and a product without a raw price are left out and counted with their money; sales still contain them",
+          pf.noCost.rows === 4 && pf.noCost.toman === 700000 + 200000 + 50000 + 90000 && r.rows.used === 7 && r.totals.toman === 900000 + 100000 + 700000 + 200000 + 50000 + 600000 + 90000, JSON.stringify(pf.noCost));
+        check("(v) profit: the buy row is not counted anywhere", r.rows.buysIgnored === 1 && r.byProduct.find((p) => p.id === "a").cost === 600000 + 450000);
+        const a = r.byProduct.find((p) => p.id === "a"), b = r.byProduct.find((p) => p.id === "b"), c = r.byProduct.find((p) => p.id === "c");
+        check("(v) per product: profit, cost, costedToman (the margin base, only costed rows) and costedLines",
+          a.profit === 450000 && a.costedToman === 1500000 && a.costedLines === 2 && b.profit === -50000 && b.costedToman === 100000 && b.costedLines === 1 && c.costedLines === 0 && c.profit === 0, JSON.stringify([a, b, c]));
+        const d10 = r.byDay.find((x) => x.d === "1405-08-10"), d11 = r.byDay.find((x) => x.d === "1405-08-11");
+        check("(v) per day: cost and profit of costed rows only", d10.cost === 750000 && d10.profit === 250000 && d11.cost === 0 && d11.profit === 0, JSON.stringify(r.byDay));
+        // no raw tab → no profit, sales still fine
+        setBook(rows, false);
+        const nr = rep2();
+        check("(v) without the raw tab: the report still works, profit.ready false and nothing is costed (all sale rows counted as not costed)",
+          nr.data.ok === true && nr.data.summary.profit.ready === false && nr.data.summary.profit.rows === 0 && nr.data.summary.profit.profit === 0 && nr.data.summary.byProduct.every((p) => p.costedLines === 0) && nr.data.summary.rows.used === 7);
+        // a raw tab with an unreadable price: ignored
+        setBook(rows, true); const rt2 = book.getSheetByName(RAWN); rt2.rows.push(["a", "abc", "", "thousand", "", OWNER]); rt2.rows.push(["b", 150000, "150", "thousand", "", OWNER]);
+        const bad = rep2().data.summary.profit;
+        check("(v) a raw row whose price is not a number is ignored (that product is not costed)", bad.rows === 1 && bad.cost === 150000);
+        // read-only
+        const rw0 = book.getSheetByName(RAWN).writes || 0;
+        rep2();
+        check("(v) getReport still writes nothing (raw tab too) and the raw prices are read with rawMap_ only",
+          (book.getSheetByName(RAWN).writes || 0) === rw0 && /rawMap_\(\)/.test(read("tools/admin/Code.gs").slice(read("tools/admin/Code.gs").indexOf("function getReport("))));
+      }
     }
   }
 
@@ -2016,13 +2074,33 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(t) report.js only reads: it calls getReport and no save/delete action", /api\('getReport'/.test(rsrc) && !/saveLedger|deleteLedger|saveProduct|deleteProduct|publishCsv/.test(rsrc));
   check("(t) the page loads report.js after admin.js (script-src 'self' allows it) and has the «گزارش» tab", /<script src="admin\.js"><\/script>\s*<script src="report\.js"><\/script>/.test(html) && /id="tab-report"[^>]*>گزارش</.test(html) && /script-src 'self'/.test(html));
   check("(t) the report has the four tiles, the three switches and the four charts with a «جدول اعداد» under each",
-    ["جمع فروش", "تعداد سفارش", "تعداد مشتری", "میانگین هر سفارش"].every((t) => rsrc.includes(t)) && ["این ماه", "۳ ماه اخیر", "امسال", "روزانه", "هفتگی", "ماهانه", "به تومان", "به تعداد", "فروش در طول زمان", "پرفروش‌ترین محصولات", "سایت یا حضوری؟", "بهترین مشتری‌ها"].every((t) => html.includes(t)) && (html.match(/<summary>جدول اعداد<\/summary>/g) || []).length === 4 && (html.match(/<details/g) || []).length >= 4);
+    ["جمع فروش", "تعداد سفارش", "تعداد مشتری", "میانگین هر سفارش"].every((t) => rsrc.includes(t)) && ["این ماه", "۳ ماه اخیر", "امسال", "روزانه", "هفتگی", "ماهانه", "به تومان", "به تعداد", "فروش و سود در طول زمان", "سالانه", "۷ روز اخیر", "هفته‌ی قبل", "پرفروش‌ترین محصولات", "سایت یا حضوری؟", "بهترین مشتری‌ها"].every((t) => html.includes(t)) && (html.match(/<summary>جدول اعداد<\/summary>/g) || []).length === 4 && (html.match(/<details/g) || []).length >= 4);
   check("(t) the old-server guard: an old script (unknown_action, or no report:true) shows a message; the session loss goes through onApiError (back to login)", /unknown_action/.test(rsrc) && /r\.report !== true/.test(rsrc) && /ad\.onApiError\(err/.test(rsrc) && /onApiError[\s\S]{0,200}NO_SESSION/.test(adm));
   check("(t) the report is wiped when the login screen shows (logout / NO_SESSION), so no customer name stays in the page", /id !== 's-app' && window\.barginReport\) window\.barginReport\.reset\(\)/.test(adm) && /reset: function/.test(rsrc));
   check("(t) channel colours: green for سایت, walnut for حضوری, tan for نامشخص", /site: '#2f7a1f', person: '#4a2c1a', unknown: '#d2ad6c'/.test(rsrc));
   check("(t) the chart shows at most the newest 60 bars and says so", /MAX_BARS = 60/.test(rsrc) && /slice\(-MAX_BARS\)/.test(rsrc) && /more60/.test(rsrc));
   check("(t) customer names stay in the admin: no name in the public site files, report.js has no hard-coded names", !/zahra|ahmadi/i.test(rsrc + html.slice(html.indexOf("id=\"v-report\""), html.indexOf("id=\"v-ledger\""))));
   check("(t) deploy.yml copies the whole admin folder (so report.js goes live with it)", /cp -r[^\n]*\badmin\b/.test(read(".github/workflows/deploy.yml")));
+  // ---- profit and granularity on the page (owner approved 2026-11-07) ----
+  check("(v) yearly buckets: 1404 and 1405 sales, an empty year between is zero (1404, 1405, 1406)",
+    (() => { const y = U.buildSeries([{ d: "1404-12-29", toman: 3, orders: 1, cost: 1, profit: 2 }, { d: "1406-01-01", toman: 4, orders: 1, cost: 0, profit: 0 }], "year", "", ""); return y.length === 3 && y[0].key === "1404-01-01" && y[0].toman === 3 && y[0].profit === 2 && y[1].toman === 0 && y[2].key === "1406-01-01" && U.labelOf("1405-05-05", "year") === "۱۴۰۵"; })());
+  check("(v) bucket edges: Friday 1405-08-15 and Saturday 1405-08-16 are different weeks; Esfand 1404 and Farvardin 1405 are different months and years; profit is summed per bucket",
+    (() => { const d = [{ d: "1405-08-15", toman: 1, orders: 1, cost: 0, profit: 5 }, { d: "1405-08-16", toman: 2, orders: 1, cost: 0, profit: -7 }, { d: "1405-08-17", toman: 4, orders: 1, cost: 0, profit: 3 }];
+      const w = U.buildSeries(d, "week", "", ""), m = U.buildSeries([{ d: "1404-12-29", toman: 1, orders: 1 }, { d: "1405-01-01", toman: 2, orders: 1 }], "month", "", "");
+      return w.length === 2 && w[0].key === "1405-08-09" && w[0].profit === 5 && w[1].key === "1405-08-16" && w[1].profit === -4 && w[1].toman === 6 && m.length === 2 && m[0].key === "1404-12-01" && m[1].key === "1405-01-01" && U.buildSeries(d, "year", "", "").length === 1; })());
+  check("(v) empty days inside the period are zero for sales and profit (day series from 08-09 to 08-17)", (() => { const z = U.buildSeries([{ d: "1405-08-12", toman: 5, orders: 1, cost: 1, profit: 4 }], "day", "1405-08-09", "1405-08-17"); return z.length === 9 && z[0].toman === 0 && z[0].profit === 0 && z[3].profit === 4; })());
+  check("(v) «۷ روز اخیر» = last 7 days including today; «هفته‌ی قبل» = the previous Saturday–Friday (today Sat 1405-08-16 → 08-09…08-15; today Wed 08-20 → 08-09…08-15)",
+    U.rangeFor("week7", T).from === "1405-08-10" && U.rangeFor("week7", T).to === T && U.dayDiff(U.rangeFor("week7", T).from, T) === 6 &&
+    U.rangeFor("lastweek", T).from === "1405-08-09" && U.rangeFor("lastweek", T).to === "1405-08-15" && U.rangeFor("lastweek", "1405-08-20").from === "1405-08-09" && U.rangeFor("lastweek", "1405-08-22").to === "1405-08-15" && U.rangeFor("lastweek", "1405-01-02").from === "1404-12-23" && U.rangeFor("lastweek", "1405-01-02").to === "1404-12-29");
+  const pp = [
+    { id: "a", name: "الف", toman: 1500, lines: 2, qty: { pack: 3, kg: 0, g: 0, piece: 0 }, cost: 1000, profit: 500, costedToman: 1500, costedLines: 2 },
+    { id: "b", name: "ب", toman: 100, lines: 1, qty: { pack: 1, kg: 0, g: 0, piece: 0 }, cost: 150, profit: -50, costedToman: 100, costedLines: 1 },
+    { id: "c", name: "ج", toman: 900, lines: 1, qty: { pack: 0, kg: 2, g: 0, piece: 0 }, cost: 0, profit: 0, costedToman: 0, costedLines: 0 }];
+  const prr = U.productRows(pp, "profit");
+  check("(v) profit mode: only costed products, best profit first, the loss last; a product without cost is not listed", prr.all.map((p) => p.id).join() === "a,b" && prr.rows.length === 2);
+  check("(v) margin = profit ÷ costed sales in %, negative for a loss, 0 without a base: 500/1500 = 33, −50/100 = −50", U.margin(500, 1500) === 33 && U.margin(-50, 100) === -50 && U.margin(0, 0) === 0 && U.fmtSigned(-50000) === "\u2066\u2212۵۰,۰۰۰\u2069" && U.fmtSigned(1200) === "۱,۲۰۰");
+  check("(v) the page: profit tiles, «فروش / سود» switch, granularity (4), products «سود» mode, the no-cost note and the current-raw-price note are all there; losses are red and hang below a zero line",
+    ["سود", "هزینه", "حاشیه سود", "قیمت اولیه نداشتن", "قیمت اولیه‌ی فعلی"].every((t) => rsrc.includes(t)) && /data-metric="profit"/.test(html) && /data-grain="year"/.test(html) && /data-mode="profit"/.test(html) && /id="r-tiles-profit"/.test(html) && /loss: '#c8321e'/.test(rsrc) && /zeroY/.test(rsrc));
 }
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

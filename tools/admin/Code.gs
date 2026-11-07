@@ -1371,8 +1371,15 @@ var REPORT_UNITS = ['pack', 'kg', 'g', 'piece'];
 // Quantities are summed per unit and units are never mixed. Returns:
 // {from, to, rows:{used, skipped:{noDate, noTotal}, buysIgnored (buys in the period, not counted)}, totals:{toman, orders, customers},
 //  byDay:[{d, toman, orders}], byProduct:[{id, name, toman, lines, qty:{pack,kg,g,piece}}],
-//  byChannel:{site:{toman,orders}, person:{...}, unknown:{...}}, topCustomers:[{id, name, toman, orders}]}
-function reportSummarize_(entries, customers, from, to) {
+//  byChannel:{site:{toman,orders}, person:{...}, unknown:{...}}, topCustomers:[{id, name, toman, orders}],
+//  profit:{ready, rows, sales, cost, profit, noCost:{rows, toman}}}
+// PROFIT (owner approved 2026-11-07): `raw` = {ready, prices:{productId: rawToman}} (the private raw prices, CURRENT
+// values). A sale row is "costed" only when raw.ready, its unit is «بسته/ظرف» (pack), its product is a shop product
+// (not «سایر») with a raw price, and qty > 0: cost = round(rawToman × qty), profit = rowToman − cost (may be negative).
+// Every other sale row stays in the sales numbers but is left out of cost/profit and counted in profit.noCost
+// (rows + their money). Nothing is converted between units. byDay / byProduct also carry cost, profit and (byProduct)
+// costedToman = the sales of its costed rows (the base of its margin), costedLines.
+function reportSummarize_(entries, customers, from, to, raw) {
   var names = {};
   (customers || []).forEach(function (c) { names[c.id] = (c.firstName + ' ' + c.lastName).replace(/\s+/g, ' ').trim(); });
   var out = {
@@ -1380,8 +1387,10 @@ function reportSummarize_(entries, customers, from, to) {
     rows: { used: 0, skipped: { noDate: 0, noTotal: 0 }, buysIgnored: 0 },
     totals: { toman: 0, orders: 0, customers: 0 },
     byDay: [], byProduct: [], byChannel: { site: { toman: 0, orders: 0 }, person: { toman: 0, orders: 0 }, unknown: { toman: 0, orders: 0 } },
-    topCustomers: []
+    topCustomers: [],
+    profit: { ready: !!(raw && raw.ready), rows: 0, sales: 0, cost: 0, profit: 0, noCost: { rows: 0, toman: 0 } }
   };
+  var prices = (raw && raw.ready && raw.prices) || {};
   var orderSeen = {}, days = {}, prods = {}, custs = {}, chanSeen = { site: {}, person: {}, unknown: {} }, daySeen = {}, custSeen = {};
   (entries || []).forEach(function (e) {
     if (!e || e.id === '') return;
@@ -1395,15 +1404,24 @@ function reportSummarize_(entries, customers, from, to) {
     out.rows.used += 1;
     out.totals.toman += toman;
     if (!orderSeen[key]) { orderSeen[key] = true; out.totals.orders += 1; }
-    var day = days[date] || (days[date] = { d: date, toman: 0, orders: 0 });
+    var day = days[date] || (days[date] = { d: date, toman: 0, orders: 0, cost: 0, profit: 0 });
     day.toman += toman;
     if (!daySeen[date + key]) { daySeen[date + key] = true; day.orders += 1; }
     var ch = e.channel === 'site' || e.channel === 'person' ? e.channel : 'unknown';
     out.byChannel[ch].toman += toman;
     if (!chanSeen[ch][key]) { chanSeen[ch][key] = true; out.byChannel[ch].orders += 1; }
     var pid = e.productId !== '' ? e.productId : e.productName;
-    var p = prods[pid] || (prods[pid] = { id: e.productId, name: e.productName || e.productId, toman: 0, lines: 0, qty: { pack: 0, kg: 0, g: 0, piece: 0 } });
+    var p = prods[pid] || (prods[pid] = { id: e.productId, name: e.productName || e.productId, toman: 0, lines: 0, qty: { pack: 0, kg: 0, g: 0, piece: 0 }, cost: 0, profit: 0, costedToman: 0, costedLines: 0 });
     p.toman += toman;
+    var price = e.productId !== '' && e.productId !== LEDGER_OTHER_ID && Object.prototype.hasOwnProperty.call(prices, e.productId) ? prices[e.productId] : null;
+    if (out.profit.ready && e.qtyUnit === 'pack' && typeof price === 'number' && isFinite(price) && price > 0 && typeof e.qty === 'number' && isFinite(e.qty) && e.qty > 0) {
+      var cost = Math.round(price * e.qty);
+      out.profit.rows += 1; out.profit.sales += toman; out.profit.cost += cost; out.profit.profit += toman - cost;
+      day.cost += cost; day.profit += toman - cost;
+      p.cost += cost; p.profit += toman - cost; p.costedToman += toman; p.costedLines += 1;
+    } else {
+      out.profit.noCost.rows += 1; out.profit.noCost.toman += toman;
+    }
     p.lines += 1;
     if (REPORT_UNITS.indexOf(e.qtyUnit) >= 0 && typeof e.qty === 'number' && isFinite(e.qty) && e.qty > 0) p.qty[e.qtyUnit] += e.qty;
     if (e.customerId !== '') {
@@ -1438,7 +1456,10 @@ function getReport(data) {
   var customers = [];
   var c = customersSheet_();
   if (c.sheet) customers = customerList_(customerValues_(c.sheet));
-  return { ok: true, report: true, summary: reportSummarize_(entries, customers, from, to) };
+  // the private raw prices (read only); a missing or broken tab just means «no profit», never an error
+  var rm = rawMap_(), prices = {};
+  if (rm.ready) Object.keys(rm.map).forEach(function (id) { if (typeof rm.map[id].toman === 'number') prices[id] = rm.map[id].toman; });
+  return { ok: true, report: true, summary: reportSummarize_(entries, customers, from, to, { ready: rm.ready, prices: prices }) };
 }
 
 // Action saveLedgerRow (under the lock): `entry` from the form; `id` = the row's id when editing, '' for a new row.

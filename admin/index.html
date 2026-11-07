@@ -77,6 +77,10 @@
     .rp-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 8px 0; }
     @media (min-width: 640px) { .rp-tiles { grid-template-columns: repeat(4, 1fr); } }
     .rp-tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 8px; }
+    .rp-tiles3 { grid-template-columns: repeat(3, 1fr); margin-top: 0; }
+    .rp-tiles3 b { white-space: nowrap; }
+    @media (max-width: 639px) { .rp-tiles3 { grid-template-columns: repeat(2, 1fr); } .rp-tiles3 .rp-tile:last-child { grid-column: 1 / -1; } .rp-tiles3 b { font-size: 1.05rem; } }
+    .rp-tile.rp-neg b { color: var(--red); }
     .rp-tile b { display: block; font-size: 1.2rem; color: var(--green-dark); line-height: 1.5; }
     .rp-tile span { font-size: .9rem; color: var(--muted); }
     .rp-card h2 { font-size: 1.15rem; margin: 0 0 6px; color: var(--brown); }
@@ -258,6 +262,8 @@
           <button type="button" class="btn btn-ghost" id="r-logout">خروج</button>
         </div>
         <div class="adm-filter" role="group" aria-label="بازه‌ی زمانی" id="r-periods">
+          <button type="button" data-period="week7" aria-pressed="false">۷ روز اخیر</button>
+          <button type="button" data-period="lastweek" aria-pressed="false">هفته‌ی قبل</button>
           <button type="button" data-period="month" aria-pressed="false">این ماه</button>
           <button type="button" data-period="d90" aria-pressed="true">۳ ماه اخیر</button>
           <button type="button" data-period="year" aria-pressed="false">امسال</button>
@@ -266,13 +272,19 @@
         <p class="adm-status" id="r-note" role="status"></p>
         <div id="r-body" hidden>
           <div class="rp-tiles" id="r-tiles"></div>
+          <div class="rp-tiles rp-tiles3" id="r-tiles-profit" hidden></div>
 
           <section class="adm-card rp-card">
-            <h2>فروش در طول زمان</h2>
+            <h2>فروش و سود در طول زمان</h2>
+            <div class="adm-filter rp-switch" role="group" aria-label="نمایش" id="r-metrics">
+              <button type="button" data-metric="toman" aria-pressed="true">فروش</button>
+              <button type="button" data-metric="profit" aria-pressed="false">سود</button>
+            </div>
             <div class="adm-filter rp-switch" role="group" aria-label="دسته‌بندی زمان" id="r-grains">
               <button type="button" data-grain="day" aria-pressed="true">روزانه</button>
               <button type="button" data-grain="week" aria-pressed="false">هفتگی</button>
               <button type="button" data-grain="month" aria-pressed="false">ماهانه</button>
+              <button type="button" data-grain="year" aria-pressed="false">سالانه</button>
             </div>
             <p class="rp-hint" id="r-time-hint"></p>
             <div class="rp-chart" id="r-time"></div>
@@ -284,6 +296,7 @@
             <div class="adm-filter rp-switch" role="group" aria-label="معیار" id="r-modes">
               <button type="button" data-mode="toman" aria-pressed="true">به تومان</button>
               <button type="button" data-mode="count" aria-pressed="false">به تعداد</button>
+              <button type="button" data-mode="profit" aria-pressed="false">سود</button>
             </div>
             <p class="rp-hint" id="r-prod-hint"></p>
             <div class="rp-chart" id="r-prod"></div>

@@ -25,12 +25,20 @@
     rangeFromTo: 'از {a} تا {b}',
     skipped: '{n} ردیف فروش به خاطر نداشتن تاریخ یا مبلغ حساب نشد.',
     buys: 'ردیف‌های خرید ({n}) حساب نمی‌شن.',
-    noCustomer: 'مشتری‌ها فقط از فروش‌هایی حساب می‌شن که مشتری دارن.'
+    noCustomer: 'مشتری‌ها فقط از فروش‌هایی حساب می‌شن که مشتری دارن.',
+    profitTiles: ['سود', 'هزینه', 'حاشیه سود'],
+    thProfit: 'سود (تومان)', thCost: 'هزینه (تومان)', thMargin: 'حاشیه سود', thYear: 'سال',
+    noProfitData: 'تو این بازه سودی حساب نشد: هیچ فروشی نیست که قیمت اولیه‌ی محصولش پر شده باشه (و واحدش «بسته/ظرف» باشه).',
+    noRawTab: 'هنوز تب «قیمت اولیه محصولات» ساخته نشده. برای دیدن سود، setupRawPrices رو یه بار توی Apps Script اجرا کن.',
+    noCostRows: '{n} ردیف فروش تو سود حساب نشدن، چون قیمت اولیه نداشتن، «سایر» بودن، یا واحدشون «بسته/ظرف» نبود.',
+    rawNow: 'سود با قیمت اولیه‌ی فعلی هر محصول حساب شده: مبلغ فروشِ هر ردیف منهای (قیمت اولیه × تعداد).',
+    profitHint: 'سود فقط از ردیف‌هایی که قیمت اولیه دارن حساب شده؛ محصول بدون قیمت اولیه تو این نمودار نیست.',
+    marginNote: 'حاشیه سود = سود تقسیم بر فروشِ همون ردیف‌های حساب‌شده.'
   };
 
   var DAY_MS = 86400000;
   var MAX_BARS = 60;
-  var COLORS = { site: '#2f7a1f', person: '#4a2c1a', unknown: '#d2ad6c', bar: '#2f7a1f', grid: '#d9bd8c', rest: '#9b8160' };
+  var COLORS = { site: '#2f7a1f', person: '#4a2c1a', unknown: '#d2ad6c', bar: '#2f7a1f', grid: '#d9bd8c', rest: '#9b8160', loss: '#c8321e' };
   var UNITS = ['pack', 'kg', 'g', 'piece'];
   var ad = window.barginAdmin || {};
 
@@ -99,32 +107,42 @@
     if (period === 'month') return { from: jkey(t.y, t.m, 1), to: today };
     if (period === 'year') return { from: jkey(t.y, 1, 1), to: today };
     if (period === 'd90') return { from: addDays(today, -89), to: today };
+    if (period === 'week7') return { from: addDays(today, -6), to: today };   // the last 7 days including today
+    if (period === 'lastweek') { var ws = weekStartKey(today); return { from: addDays(ws, -7), to: addDays(ws, -1) }; }   // previous Saturday–Friday
     return { from: '', to: '' };
   }
 
   // ---- series for the time chart ----
-  function keyOf(day, grain) { return grain === 'week' ? weekStartKey(day) : (grain === 'month' ? monthKey(day) : day); }
+  function keyOf(day, grain) {
+    if (grain === 'week') return weekStartKey(day);
+    if (grain === 'month') return monthKey(day);
+    if (grain === 'year') return day.slice(0, 4) + '-01-01';
+    return day;
+  }
   function nextKey(k, grain) {
     if (grain === 'day') return addDays(k, 1);
     if (grain === 'week') return addDays(k, 7);
     var j = jparse(k);
+    if (grain === 'year') return jkey(j.y + 1, 1, 1);
     return j.m === 12 ? jkey(j.y + 1, 1, 1) : jkey(j.y, j.m + 1, 1);
   }
-  // byDay [{d, toman, orders}] → oldest-first [{key, toman, orders}] with empty days/weeks/months filled in
-  // between `from` and `to` (or between the first and last sale when there is no limit).
+  function emptyBucket(k) { return { key: k, toman: 0, orders: 0, cost: 0, profit: 0 }; }
+  // byDay [{d, toman, orders, cost, profit}] → oldest-first [{key, toman, orders, cost, profit}] with empty
+  // days/weeks/months/years filled in between `from` and `to` (or between the first and last sale when there is no limit).
   function buildSeries(byDay, grain, from, to) {
     if (!byDay.length) return [];
     var map = {}, first = byDay[0].d, last = byDay[byDay.length - 1].d;
     byDay.forEach(function (x) {
-      var k = keyOf(x.d, grain), c = map[k] || (map[k] = { key: k, toman: 0, orders: 0 });
-      c.toman += x.toman; c.orders += x.orders;
+      var k = keyOf(x.d, grain), c = map[k] || (map[k] = emptyBucket(k));
+      c.toman += x.toman; c.orders += x.orders; c.cost += x.cost || 0; c.profit += x.profit || 0;
     });
     var a = keyOf(from || first, grain), b = keyOf(to || last, grain), out = [], k = a, guard = 0;
-    while (k <= b && guard < 5000) { out.push(map[k] || { key: k, toman: 0, orders: 0 }); k = nextKey(k, grain); guard += 1; }
+    while (k <= b && guard < 5000) { out.push(map[k] || emptyBucket(k)); k = nextKey(k, grain); guard += 1; }
     return out;
   }
   function labelOf(key, grain) {
     var j = jparse(key), names = ad.months || [];
+    if (grain === 'year') return toFa(j.y);
     if (grain === 'month') return names[j.m - 1] || '';
     if (grain === 'week') return toFa(j.d) + ' ' + (names[j.m - 1] || '');
     return toFa(j.d);
@@ -145,17 +163,34 @@
     return q;
   }
   // The rows for the product chart: top 8 plus «بقیه». mode: 'toman' | 'count'.
+  // mode 'profit': only products with at least one costed line, best profit first (losses last); each row also
+  // carries cost, profit, costedToman (its margin base).
   function productRows(byProduct, mode) {
-    var list = mode === 'count' ? rankByCount(byProduct) : byProduct.slice().sort(function (a, b) { return b.toman - a.toman; });
+    var list;
+    if (mode === 'count') list = rankByCount(byProduct);
+    else if (mode === 'profit') list = byProduct.filter(function (p) { return p.costedLines > 0; }).sort(function (a, b) { return b.profit - a.profit || (a.name < b.name ? -1 : 1); });
+    else list = byProduct.slice().sort(function (a, b) { return b.toman - a.toman; });
     var top = list.slice(0, 8), rest = list.slice(8);
-    var rows = top.map(function (p) { return { name: p.name, toman: p.toman, qty: p.qty, lines: p.lines }; });
+    var rows = top.map(function (p) { return { name: p.name, toman: p.toman, qty: p.qty, lines: p.lines, cost: p.cost || 0, profit: p.profit || 0, costedToman: p.costedToman || 0 }; });
     if (rest.length) {
-      var t = 0, l = 0;
-      rest.forEach(function (p) { t += p.toman; l += p.lines; });
-      rows.push({ name: TEXT.bunch + ' (' + toFa(rest.length) + ')', toman: t, qty: sumQty(rest), lines: l, rest: true });
+      var t = 0, l = 0, c = 0, pf = 0, ct = 0;
+      rest.forEach(function (p) { t += p.toman; l += p.lines; c += p.cost || 0; pf += p.profit || 0; ct += p.costedToman || 0; });
+      rows.push({ name: TEXT.bunch + ' (' + toFa(rest.length) + ')', toman: t, qty: sumQty(rest), lines: l, cost: c, profit: pf, costedToman: ct, rest: true });
     }
     return { rows: rows, all: list };
   }
+  // margin % of money that was costed (0 when there is none); negative when selling under the cost
+  function margin(profit, costedToman) { return costedToman > 0 ? Math.round(profit * 100 / costedToman) : 0; }
+  // A negative number is one left-to-right block «−۵۰۰» (isolated with LRI/PDI), so the minus always sits right before the digits,
+  // visually on their left, as Persian readers expect; the unit word (هزار / میلیون) stays outside the block.
+  function neg(s) { return '\u2066\u2212' + s + '\u2069'; }
+  function fmtSigned(n) { return n < 0 ? neg(groupFa(-n)) : groupFa(n); }
+  function fmtMoneySigned(n) {
+    if (n >= 0) return fmtMoney(n);
+    var t = fmtMoney(-n), k = t.indexOf(' ');
+    return k < 0 ? neg(t) : neg(t.slice(0, k)) + t.slice(k);
+  }
+  function fmtPct(n) { return n < 0 ? neg(toFa(-n) + '٪') : toFa(n) + '٪'; }
 
   // ---- SVG helpers ----
   var NS = 'http://www.w3.org/2000/svg';
@@ -179,34 +214,42 @@
   }
 
   // Bars over time. series is oldest-first; the NEWEST bars are drawn (at most 60), newest on the left
-  // because the page reads right to left (oldest on the right).
-  function drawTime(host, series, grain) {
+  // because the page reads right to left (oldest on the right). metric 'toman' (sales) or 'profit' (can be
+  // negative: those bars hang below the zero line, in red).
+  function drawTime(host, series, grain, metric) {
     clear(host);
     if (!series.length) return 0;
+    metric = metric === 'profit' ? 'profit' : 'toman';
     var shown = series.slice(-MAX_BARS).reverse();   // newest first = left to right
     var n = shown.length, left = 62, right = 8, top = 26, bottom = 46, H = 230;
     var slotMin = grain === 'day' ? 18 : (grain === 'week' ? 30 : 44);
     var avail = host.clientWidth || 320;
     var W = Math.max(avail, left + right + n * slotMin);
     var slot = (W - left - right) / n, bw = Math.min(40, slot * 0.7);
-    var max = 0;
-    shown.forEach(function (x) { if (x.toman > max) max = x.toman; });
-    var top1 = niceMax(max), ch = H - top - bottom;
-    var svg = svgBox(host, W, H, 'نمودار فروش');
-    var t;
+    var max = 0, min = 0;
+    shown.forEach(function (x) { if (x[metric] > max) max = x[metric]; if (x[metric] < min) min = x[metric]; });
+    var posMax = max > 0 ? niceMax(max) : 0, negMax = min < 0 ? niceMax(-min) : 0;
+    if (posMax + negMax <= 0) posMax = 1;
+    var span = posMax + negMax, ch = H - top - bottom;
+    function yOf(v) { return top + ch * (posMax - v) / span; }
+    var svg = svgBox(host, W, H, metric === 'profit' ? 'نمودار سود' : 'نمودار فروش');
+    var t, zeroY = yOf(0);
     for (t = 0; t <= 4; t++) {
-      var y = top + ch - ch * t / 4;
-      svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: y, y2: y, stroke: COLORS.grid, 'stroke-width': 1, 'stroke-dasharray': t ? '3 4' : '' }));
-      svg.appendChild(S('text', { x: 2, y: y + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl(fmtMoney(top1 * t / 4))));
+      var v = -negMax + span * t / 4, y = yOf(v);
+      if (Math.abs(y - zeroY) < 1) continue;
+      svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: y, y2: y, stroke: COLORS.grid, 'stroke-width': 1, 'stroke-dasharray': '3 4' }));
+      if (Math.abs(y - zeroY) > 12) svg.appendChild(S('text', { x: 2, y: y + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl(fmtMoneySigned(v))));
     }
+    svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: zeroY, y2: zeroY, stroke: negMax > 0 ? COLORS.rest : COLORS.grid, 'stroke-width': negMax > 0 ? 1.5 : 1 }));
+    svg.appendChild(S('text', { x: 2, y: zeroY + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl('۰')));
     var labelW = grain === 'day' ? 16 : (grain === 'week' ? 54 : 50), step = Math.max(1, Math.ceil(labelW / slot));
     var showVals = n <= 12;
     shown.forEach(function (x, i) {
-      var cx = left + slot * i + slot / 2, bh = top1 > 0 ? ch * x.toman / top1 : 0;
-      var rect = S('rect', { x: cx - bw / 2, y: top + ch - bh, width: bw, height: Math.max(0, bh), rx: 3, fill: COLORS.bar });
-      rect.appendChild(S('title', null, rtl(labelOf(x.key, grain) + ' — ' + groupFa(x.toman) + ' ' + TEXT.toman)));
+      var val = x[metric], cx = left + slot * i + slot / 2, bh = ch * Math.abs(val) / span, neg = val < 0;
+      var rect = S('rect', { x: cx - bw / 2, y: neg ? zeroY : zeroY - bh, width: bw, height: Math.max(0, bh), rx: 3, fill: neg ? COLORS.loss : COLORS.bar });
+      rect.appendChild(S('title', null, rtl(labelOf(x.key, grain) + ' — ' + fmtSigned(val) + ' ' + TEXT.toman)));
       svg.appendChild(rect);
-      if (showVals && x.toman > 0) svg.appendChild(S('text', { x: cx, y: top + ch - bh - 5, 'font-size': 10, 'text-anchor': 'middle' }, rtl(fmtMoney(x.toman))));
+      if (showVals && val !== 0) svg.appendChild(S('text', { x: cx, y: neg ? zeroY + bh + 12 : zeroY - bh - 5, 'font-size': 10, 'text-anchor': 'middle' }, rtl(fmtMoneySigned(val))));
       if (i % step === 0 || i === 0) svg.appendChild(S('text', { x: cx, y: top + ch + 15, 'font-size': 10.5, 'text-anchor': 'middle' }, rtl(labelOf(x.key, grain))));
       if (grain === 'day') {
         var j = jparse(x.key), prev = i + 1 < n ? jparse(shown[i + 1].key) : null;   // the older neighbour is on the right
@@ -287,12 +330,12 @@
   }
 
   // ---- the tab ----
-  var st = { period: 'd90', grain: 'day', mode: 'toman', cache: {}, token: 0, data: null, range: null };
+  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null };
   function $(id) { return document.getElementById(id); }
 
-  function tile(label, big, full) {
+  function tile(label, big, full, neg) {
     var d = document.createElement('div'), b = document.createElement('b'), s = document.createElement('span');
-    d.className = 'rp-tile';
+    d.className = 'rp-tile' + (neg ? ' rp-neg' : '');
     b.textContent = big;
     if (full) d.title = full;
     s.textContent = label;
@@ -300,26 +343,41 @@
     return d;
   }
 
+  function hasProfit() { var p = st.data && st.data.profit; return !!(p && p.ready && p.rows > 0); }
+
   function renderTime() {
-    var sum = st.data, series = buildSeries(sum.byDay, st.grain, st.range.from, st.range.to);
-    var total = drawTime($('r-time'), series, st.grain);
-    $('r-time-hint').textContent = total > MAX_BARS ? fill(TEXT.more60, { n: toFa(MAX_BARS) }) : '';
-    var head = st.grain === 'week' ? TEXT.thWeek : (st.grain === 'month' ? TEXT.thMonth : TEXT.thDate);
+    var sum = st.data, series = buildSeries(sum.byDay, st.grain, st.range.from, st.range.to), prof = st.metric === 'profit';
+    if (prof && !hasProfit()) {
+      clear($('r-time'));
+      $('r-time-hint').textContent = sum.profit && !sum.profit.ready ? TEXT.noRawTab : TEXT.noProfitData;
+    } else {
+      var total = drawTime($('r-time'), series, st.grain, st.metric);
+      $('r-time-hint').textContent = (total > MAX_BARS ? fill(TEXT.more60, { n: toFa(MAX_BARS) }) + ' ' : '') + (prof ? TEXT.profitHint : '');
+    }
+    var head = st.grain === 'week' ? TEXT.thWeek : (st.grain === 'month' ? TEXT.thMonth : (st.grain === 'year' ? TEXT.thYear : TEXT.thDate));
+    var withProfit = hasProfit();
     var rows = series.slice().reverse().map(function (x) {
-      var j = jparse(x.key);
-      return [st.grain === 'month' ? (ad.months[j.m - 1] + ' ' + toFa(j.y)) : toFa(x.key.replace(/-/g, '/')), groupFa(x.toman), toFa(x.orders)];
+      var j = jparse(x.key), r = [st.grain === 'year' ? toFa(j.y) : (st.grain === 'month' ? (ad.months[j.m - 1] + ' ' + toFa(j.y)) : toFa(x.key.replace(/-/g, '/'))), groupFa(x.toman), toFa(x.orders)];
+      if (withProfit) r.push(fmtSigned(x.profit));
+      return r;
     });
-    drawTable($('r-time-table'), [head, TEXT.thSales, TEXT.thOrders], rows);
+    var heads = [head, TEXT.thSales, TEXT.thOrders];
+    if (withProfit) heads.push(TEXT.thProfit);
+    drawTable($('r-time-table'), heads, rows);
   }
 
   function renderProducts() {
-    var sum = st.data, pr = productRows(sum.byProduct, st.mode), count = st.mode === 'count';
+    var sum = st.data, pr = productRows(sum.byProduct, st.mode), count = st.mode === 'count', prof = st.mode === 'profit';
     var rows = pr.rows.map(function (r) {
+      if (prof) return { label: r.name, value: Math.abs(r.profit), text: fmtMoneySigned(r.profit) + ' ' + TEXT.toman + ' · ' + fmtPct(margin(r.profit, r.costedToman)), color: r.profit < 0 ? COLORS.loss : (r.rest ? COLORS.rest : COLORS.bar) };
       return { label: r.name, value: count ? r.qty.pack : r.toman, text: count ? fmtQty(r.qty) : fmtMoney(r.toman) + ' ' + TEXT.toman, color: r.rest ? COLORS.rest : COLORS.bar };
     });
-    if (!rows.length) { clear($('r-prod')); } else drawRows($('r-prod'), rows, 'پرفروش‌ترین محصولات');
-    $('r-prod-hint').textContent = count ? TEXT.perUnit + ' ' + TEXT.barsOnlyPacks : '';
-    drawTable($('r-prod-table'), [TEXT.thProduct, count ? TEXT.thQty : TEXT.thSales, count ? TEXT.thSales : TEXT.thQty],
+    if (!rows.length) { clear($('r-prod')); } else drawRows($('r-prod'), rows, prof ? 'پرسودترین محصولات' : 'پرفروش‌ترین محصولات');
+    if (prof) $('r-prod-hint').textContent = rows.length ? TEXT.profitHint + ' ' + TEXT.marginNote : (sum.profit && !sum.profit.ready ? TEXT.noRawTab : TEXT.noProfitData);
+    else $('r-prod-hint').textContent = count ? TEXT.perUnit + ' ' + TEXT.barsOnlyPacks : '';
+    if (prof) drawTable($('r-prod-table'), [TEXT.thProduct, TEXT.thProfit, TEXT.thMargin, TEXT.thCost],
+      pr.all.map(function (p) { return [p.name, fmtSigned(p.profit), fmtPct(margin(p.profit, p.costedToman)), groupFa(p.cost)]; }));
+    else drawTable($('r-prod-table'), [TEXT.thProduct, count ? TEXT.thQty : TEXT.thSales, count ? TEXT.thSales : TEXT.thQty],
       pr.all.map(function (p) { return count ? [p.name, fmtQty(p.qty), groupFa(p.toman)] : [p.name, groupFa(p.toman), fmtQty(p.qty)]; }));
   }
 
@@ -355,12 +413,25 @@
     tiles.appendChild(tile(TEXT.tiles[1], toFa(t.orders)));
     tiles.appendChild(tile(TEXT.tiles[2], toFa(t.customers)));
     tiles.appendChild(tile(TEXT.tiles[3], t.orders > 0 ? fmtMoney(avg) + ' ' + TEXT.toman : '—', t.orders > 0 ? groupFa(avg) + ' ' + TEXT.toman : ''));
+    var pt = $('r-tiles-profit');
+    clear(pt);
+    pt.hidden = !hasProfit();
+    if (hasProfit()) {
+      var pf = sum.profit;
+      pt.appendChild(tile(TEXT.profitTiles[0], fmtMoneySigned(pf.profit) + ' ' + TEXT.toman, fmtSigned(pf.profit) + ' ' + TEXT.toman, pf.profit < 0));
+      pt.appendChild(tile(TEXT.profitTiles[1], fmtMoney(pf.cost) + ' ' + TEXT.toman, groupFa(pf.cost) + ' ' + TEXT.toman));
+      pt.appendChild(tile(TEXT.profitTiles[2], fmtPct(margin(pf.profit, pf.sales)), '', pf.profit < 0));
+    }
     renderTime(); renderProducts(); renderChannel(); renderCustomers();
     var range = st.range.from ? fill(TEXT.rangeFromTo, { a: toFa(st.range.from.replace(/-/g, '/')), b: toFa(st.range.to.replace(/-/g, '/')) }) : TEXT.rangeAll;
     var line = fill(TEXT.used, { n: toFa(sum.rows.used), range: range });
     var sk = sum.rows.skipped.noDate + sum.rows.skipped.noTotal;
     if (sk) line += ' ' + fill(TEXT.skipped, { n: toFa(sk) });
     if (sum.rows.buysIgnored) line += ' ' + fill(TEXT.buys, { n: toFa(sum.rows.buysIgnored) });
+    if (sum.profit && sum.profit.ready) {
+      if (sum.profit.noCost.rows) line += ' ' + fill(TEXT.noCostRows, { n: toFa(sum.profit.noCost.rows) });
+      if (sum.profit.rows) line += ' ' + TEXT.rawNow;
+    } else if (sum.profit) line += ' ' + TEXT.noRawTab;
     $('r-used').textContent = line + ' ' + TEXT.noCustomer;
   }
 
@@ -416,6 +487,12 @@
       setPressed('[data-grain]', 'data-grain', st.grain);
       if (st.data && st.data.rows.used) renderTime();
     });
+    b = document.querySelectorAll('[data-metric]');
+    for (i = 0; i < b.length; i++) b[i].addEventListener('click', function () {
+      st.metric = this.getAttribute('data-metric');
+      setPressed('[data-metric]', 'data-metric', st.metric);
+      if (st.data && st.data.rows.used) renderTime();
+    });
     b = document.querySelectorAll('[data-mode]');
     for (i = 0; i < b.length; i++) b[i].addEventListener('click', function () {
       st.mode = this.getAttribute('data-mode');
@@ -433,12 +510,12 @@
     open: function () { load(false); },
     reset: function () {
       st.cache = {}; st.data = null; st.token += 1;
-      if ($('r-body')) { $('r-body').hidden = true; clear($('r-tiles')); }   // nothing of the report stays after logout
+      if ($('r-body')) { $('r-body').hidden = true; clear($('r-tiles')); if ($('r-tiles-profit')) clear($('r-tiles-profit')); }   // nothing of the report stays after logout
       ['r-time', 'r-prod', 'r-chan', 'r-chan-legend', 'r-cust', 'r-time-table', 'r-prod-table', 'r-chan-table', 'r-cust-table'].forEach(function (id) { if ($(id)) clear($(id)); });
     },
     util: {
       fmtMoney: fmtMoney, fmtQty: fmtQty, fmtNum: fmtNum, weekStartKey: weekStartKey, monthKey: monthKey, rangeFor: rangeFor, addDays: addDays,
-      dayDiff: dayDiff, buildSeries: buildSeries, productRows: productRows, rankByCount: rankByCount, todayKey: todayKey, labelOf: labelOf
+      dayDiff: dayDiff, buildSeries: buildSeries, margin: margin, fmtSigned: fmtSigned, productRows: productRows, rankByCount: rankByCount, todayKey: todayKey, labelOf: labelOf
     }
   };
   if ($('r-periods')) wire();

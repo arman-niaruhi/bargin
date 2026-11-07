@@ -633,7 +633,7 @@
   }
 
   // ---- raw price and profit (admin only; the profit is computed, never stored) ----
-  function signedFa(n) { return n < 0 ? '\u2212' + groupFa(-n) : groupFa(n); }
+  function signedFa(n) { return n < 0 ? '\u2066\u2212' + groupFa(-n) + '\u2069' : groupFa(n); }
   // sale price text (plain toman) + raw toman (number) → {raw, profit|null}; null when there is no raw price
   function profitOf(priceText, rawToman) {
     if (typeof rawToman !== 'number' || !isFinite(rawToman)) return null;
