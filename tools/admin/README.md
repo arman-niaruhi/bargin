@@ -117,24 +117,43 @@ The shop pages load `log.js`, which sends a few anonymous events to the same App
 - Limits: at most 20 events per request, 300 per visitor an hour, 600 a minute and 20,000 a day for everyone. The tab keeps
   **every row**; when it has **50,000 rows** new events are silently dropped (nothing is deleted automatically). To make
   room: download or copy the old rows somewhere, then delete them by hand (keep row 1, the header).
-- Cells that start with `= + - @` get an apostrophe, so Sheets never runs them as formulas.
 - Test locally: `python3 -m http.server 8000`, open `http://localhost:8000/?logdebug=1`; the batches are printed in the
   browser console (`[bargin-log] …`) instead of being sent. `?logdebug=1` does nothing on the live site.
 
-### Owner's checklist (once, after the code is pushed)
-1. **Google Sheet → File → Share → Publish to web.** Under "Link", the first box must say the **products tab only**
-   (not "Entire document"), format "Comma-separated values (.csv)". Under "Published content and settings" also pick
-   the products tab only. If it says "Entire document", change it to the products tab and press **Republish**. (Otherwise
-   the log could be read by anyone.)
-2. **Extensions → Apps Script.** Open `Code.gs`, select everything, delete it, and paste the new `tools/admin/Code.gs`.
+- Cells that start with `= + - @` get an apostrophe, so Sheets never runs them as formulas.
+
+## Buys and sells («خرید و فروش» tab, owner approved 2026-11-07)
+On `/admin/`, the switch at the top opens **«خرید و فروش»**: a list of buys and sells, newest first, with filters
+«همه / خرید / فروش». Each row has: date (Persian calendar), type, product (only from the current products; the name is
+copied from the products tab, so renamed or deleted products still show their old name), quantity + unit (بسته/ظرف,
+کیلو, گرم, عدد), the **unit price** (typed in «هزار تومان» or «میلیون تومان», stored in toman plus what was typed),
+the row's own total (quantity × unit price, rounded to a whole toman), and an optional name (60 characters) and
+description (300). Rows can be added, edited and deleted (delete asks first). **No sums or totals over rows anywhere.**
+- Tab **`خرید و فروش`**, made by **`setupLedger`** as the **2nd** tab (products first, `log` last). It is **private:
+  never publish it to the web.**
+- Columns: `id` (random, `L` + 32 hex; edit and delete find the row by it, never by row number), `created` (Tehran time),
+  `date` (`1405-08-16`, text), `type` (خرید / فروش), `productId`, `productName`, `qty`, `qtyUnit`, `priceToman` (unit
+  price), `priceAmount` + `priceUnit` (as typed), `rowToman`, `party`, `note`, `by` (the admin's email).
+- Same security as the products: session checked in `handleRequest_` and again in each function (`assertSession_`),
+  saves and deletes under the lock, every check done again on the server, `= + - @` at the start get an apostrophe,
+  at most 20,000 rows (then new rows are refused; nothing is deleted). Do not edit the header row by hand; if it gets
+  broken the page says so and `setupLedger` fixes it (when the tab has no other data).
+
+## Owner's checklist: deploy the log + «خرید و فروش» together (once, after the code is pushed)
+1. **Extensions → Apps Script.** Open `Code.gs`, select everything, delete it, and paste the new `tools/admin/Code.gs`.
    Press **Save** (the disk icon).
-3. In the function box at the top pick **`setupLog`** and press **Run**. If Google asks for permission, allow it as in
-   "Authorize once" above. The log at the bottom says `OK: «log» is tab N of N…`. Check the Sheet: a new tab **log** is
-   the last tab, the products tab is still the first one.
+2. In the function box at the top pick **`setupLog`** and press **Run**. If Google asks for permission, allow it as in
+   "Authorize once" above. The log at the bottom says `OK: «log» is tab N of N…`.
+3. Pick **`setupLedger`** and press **Run**. The log says `OK: «خرید و فروش» is tab 2 of N; products tab is «…»`.
+   Check the Sheet: the products tab is still the **first** tab, then **خرید و فروش**, and **log** is the last tab.
 4. **Deploy → Manage deployments →** the pencil (Edit) on the current web app **→ Version: New version → Deploy.**
    Keep "Execute as: Me" and "Who has access: Anyone". The URL stays the same, so nothing else changes.
-5. Open the live site on your phone, look at a product, add it to the cart. After a few seconds new rows appear in the
-   **log** tab. (Your own visits are logged too, unless your browser sends Do Not Track.)
+5. **Google Sheet → File → Share → Publish to web.** Under "Link", the first box must say the **products tab only**
+   (not "Entire document"), format "Comma-separated values (.csv)". Under "Published content and settings" also pick
+   the products tab only. If it says "Entire document", change it to the products tab and press **Republish**.
+   (Otherwise anyone could read the log and your buys and sells.)
+6. Try it: open the live site on your phone, look at a product; after a few seconds new rows appear in **log**. Then open
+   `/admin/` → «خرید و فروش» → «ثبت خرید یا فروش جدید», save one test row, check it in the Sheet, and delete it again.
 
 ## Notes for the programmer
 - Persian texts: `MSG` in `Code.gs` and `TEXT` in `admin/admin.js` (for `bargin-content` to review).
@@ -142,4 +161,7 @@ The shop pages load `log.js`, which sends a few anonymous events to the same App
   answers through a redirect to `script.googleusercontent.com`). If the host changes, update it.
 - Do not run `clasp` against the live project without the owner's OK.
 - Tests: `node tools/admin/test.mjs` (CSV and checks, plus the login with stubbed CacheService, LockService, MailApp,
-  PropertiesService, Utilities, Session and a fake clock, plus the activity log: `logEvent`, `setupLog` and `log.js`).
+  PropertiesService, Utilities, Session and a fake clock, plus the activity log: `logEvent`, `setupLog` and `log.js`, plus the
+  «خرید و فروش» tab: `ledgerMath_`, `ledgerDate_`, `planLedgerRow_`, save / edit / delete, `setupLedger`).
+- The calendar, number parsing and row total are in a block shared by `Code.gs` and `admin/admin.js` (marked
+  `shared with admin/admin.js`); keep both copies identical, the tests check it.

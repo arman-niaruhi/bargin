@@ -17,6 +17,11 @@
 // always the LAST tab, so the products stay the first sheet). Whitelisted fields only, formula-escaped,
 // rate-limited in CacheService, at most LOG_MAX_ROWS rows (when full, new events are dropped; nothing is
 // ever deleted automatically). It never needs a session and never reads the products.
+// Buys and sells (owner approved 2026-11-07): the protected actions getLedger, saveLedgerRow and deleteLedgerRow
+// keep a «خرید و فروش» tab (made by setupLedger, always the 2ND tab, never first, never published). One row per
+// buy or sell: Persian date, type, product (id + name taken from the products tab), quantity + unit, unit price in
+// toman (plus what was typed), the row's own total (qty × unit price). Rows are found by a random id, never by
+// row number. No sums or totals over rows anywhere.
 // Style: ES2017 only, like the site (no newer syntax or methods).
 
 // The people who may log in (owner decision 2026-10-23). All of them get FULL admin access.
@@ -29,7 +34,7 @@ var FAKE_SEND_DELAY_MS = 700;    // an unknown address waits about as long as a 
 // Actions that need no session: ask for a code, send the code, log out, write customer activity.
 var PUBLIC_ACTIONS = ['requestCode', 'verifyCode', 'logout', 'logEvent'];
 // Actions that need a valid session (checked once, in handleRequest_).
-var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv'];
+var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv', 'getLedger', 'saveLedgerRow', 'deleteLedgerRow'];
 
 // Limits checked before anything else happens.
 var MAX_BODY = 200000;   // characters in the request body
@@ -73,7 +78,25 @@ var MSG = {
   blankItem: 'هیچ اطلاعاتی برای ذخیره داده نشده.',
   noDeleteId: 'شناسه‌ای برای حذف داده نشده.',
   manyIds: 'چند سطر با شناسه «{value}» هست. اول توی شیت درستش کن.',
-  sheetProblems: 'اول مشکل‌های شیت رو درست کن، بعد ذخیره کن.'
+  sheetProblems: 'اول مشکل‌های شیت رو درست کن، بعد ذخیره کن.',
+  // «خرید و فروش» (TODO: bargin-content to review)
+  noLedger: 'تب «خرید و فروش» هنوز ساخته نشده. توی Apps Script یه بار تابع setupLedger رو اجرا کن.',
+  ledgerFirst: 'تب «خرید و فروش» نباید اولین تب شیت باشه. یه بار تابع setupLedger رو اجرا کن تا درست بشه.',
+  ledgerHeader: 'سطر اول تب «خرید و فروش» به‌هم ریخته. تابع setupLedger رو اجرا کن یا سرستون‌ها رو درست کن.',
+  badDate: 'تاریخ درست نیست.',
+  badType: 'نوع رو انتخاب کن: خرید یا فروش.',
+  badProduct: 'یه محصول از لیست انتخاب کن.',
+  goneProduct: 'این محصول دیگه توی لیست محصولات نیست. صفحه رو دوباره بارگذاری کن.',
+  badQty: 'تعداد یا مقدار باید یه عدد بزرگ‌تر از صفر باشه (حداکثر دو رقم اعشار).',
+  badQtyUnit: 'واحد تعداد رو انتخاب کن.',
+  badLedgerPrice: 'قیمت هر واحد باید یه عدد بزرگ‌تر از صفر باشه (حداکثر سه رقم اعشار).',
+  badPriceUnit: 'واحد قیمت رو انتخاب کن: هزار تومان یا میلیون تومان.',
+  priceTooBig: 'قیمت خیلی بزرگه. یه بار دیگه چکش کن.',
+  longParty: 'اسم خیلی بلنده (حداکثر ۶۰ حرف).',
+  longNote: 'توضیحات خیلی بلنده (حداکثر ۳۰۰ حرف).',
+  ledgerNotFound: 'این مورد پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
+  ledgerMany: 'چند سطر با همین شناسه هست. اول توی شیت درستش کن.',
+  ledgerFull: 'جدول خرید و فروش پر شده ({n} سطر). اول چند سطر قدیمی رو توی شیت جابه‌جا کن.'
 };
 
 var PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
@@ -110,6 +133,13 @@ function isBlankRow(r) {
 // The rows that count as products (blank rows left out).
 function productRows(rows) {
   return rows.filter(function (r) { return !isBlankRow(r); });
+}
+
+// Text for a cell written from the admin: never read as a formula by Sheets (a leading = + - @ gets an
+// apostrophe in front; Sheets stores it as plain text and does not show or export the apostrophe).
+function sheetText_(v) {
+  var s = cellText(v);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
 }
 
 // One CSV field: quoted only when it has a comma, double quote, CR or LF.
@@ -606,7 +636,10 @@ function doPost(e) {
       getProducts: function () { return getProducts(); },
       saveProduct: function (d) { return withLock_(function () { return saveProduct(d.item, d.originalId); }); },
       deleteProduct: function (d) { return withLock_(function () { return deleteProduct(d.id); }); },
-      publishCsv: function () { return publishCsv(); }
+      publishCsv: function () { return publishCsv(); },
+      getLedger: function () { return getLedger(); },
+      saveLedgerRow: function (d) { return withLock_(function () { return saveLedgerRow(d.entry, d.id); }); },
+      deleteLedgerRow: function (d) { return withLock_(function () { return deleteLedgerRow(d.id); }); }
     }
   });
   sessionEmail_ = '';
@@ -630,7 +663,11 @@ function authorizeOnce() {
 // Reads the first sheet. Returns {rows, issues}. Row 1 is the header; the
 // header can have the columns in any order, but all of them must be there.
 function productSheet() {
-  return SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+  // The log and the buys/sells tabs must never be read or written as the products.
+  var name = sheet && typeof sheet.getName === 'function' ? sheet.getName() : '';
+  if (name === LOG_SHEET || name === LEDGER_SHEET) throw new Error('WRONG_FIRST_TAB');
+  return sheet;
 }
 
 function readSheetRows() {
@@ -693,7 +730,7 @@ function saveProduct(item, originalId) {
   HEADER.forEach(function (h) {
     var v = cellText(item[h]);
     if (h === 'soldOut') v = v.toLowerCase() === 'yes' ? 'yes' : 'no';
-    values[head.indexOf(h)] = v;
+    values[head.indexOf(h)] = sheetText_(v);
   });
 
   sheet.getRange(plan.row, 1, 1, width).setValues([values]);
@@ -713,4 +750,325 @@ function deleteProduct(id) {
   if (hits.length > 1) return { ok: false, message: fill(MSG.manyIds, { value: key }) };
   productSheet().deleteRow(hits[0].row);
   return { ok: true, row: hits[0].row };
+}
+
+// ---- Buys and sells: the «خرید و فروش» tab (owner approved 2026-11-07) ----
+// The tab is made by setupLedger (run once in the editor) as the 2ND tab: never first (the products tab must stay
+// getSheets()[0]) and never published to the web. Every action needs a session (handleRequest_ + assertSession_);
+// saves and deletes run under the script lock. A row is found by its random id (column A), never by row number.
+
+var LEDGER_SHEET = 'خرید و فروش';
+var LEDGER_HEADER = ['id', 'created', 'date', 'type', 'productId', 'productName', 'qty', 'qtyUnit', 'priceToman',
+  'priceAmount', 'priceUnit', 'rowToman', 'party', 'note', 'by'];
+// Cell formats per column: text everywhere (so 1405-08-16 never turns into a date), numbers for qty and toman.
+var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@'];
+var LEDGER_TYPES = { buy: 'خرید', sell: 'فروش' };
+var LEDGER_QTY_UNITS = { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', piece: 'عدد' };
+var LEDGER_PRICE_UNITS = { thousand: 'هزار تومان', million: 'میلیون تومان' };
+var LEDGER_ID = /^L[0-9a-f]{32}$/;
+var LEDGER_PARTY_MAX = 60;
+var LEDGER_NOTE_MAX = 300;
+var LEDGER_MAX_ROWS = 20000;     // rows in the tab; when full, new rows are refused (nothing is deleted)
+var LEDGER_MAX_RETURN = 2000;    // newest rows sent to the page
+var LEDGER_YEAR_MIN = 1390;
+var LEDGER_YEAR_MAX = 1499;
+
+// ---- shared with admin/admin.js (begin): keep both copies identical (tools/admin/test.mjs checks it) ----
+// Persian (Jalali) calendar, after the jalaali-js algorithm (breaks table, valid for years 1178-3177).
+var JAL_BREAKS = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
+function jDiv_(a, b) { return ~~(a / b); }
+function jMod_(a, b) { return a - ~~(a / b) * b; }
+function jalCal_(jy) {
+  var gy = jy + 621, leapJ = -14, jp = JAL_BREAKS[0], jm, jump = 0, leap, leapG, march, n, i;
+  for (i = 1; i < JAL_BREAKS.length; i += 1) {
+    jm = JAL_BREAKS[i]; jump = jm - jp;
+    if (jy < jm) break;
+    leapJ = leapJ + jDiv_(jump, 33) * 8 + jDiv_(jMod_(jump, 33), 4);
+    jp = jm;
+  }
+  n = jy - jp;
+  leapJ = leapJ + jDiv_(n, 33) * 8 + jDiv_(jMod_(n, 33) + 3, 4);
+  if (jMod_(jump, 33) === 4 && jump - n === 4) leapJ += 1;
+  leapG = jDiv_(gy, 4) - jDiv_((jDiv_(gy, 100) + 1) * 3, 4) - 150;
+  march = 20 + leapJ - leapG;
+  if (jump - n < 6) n = n - jump + jDiv_(jump + 4, 33) * 33;
+  leap = jMod_(jMod_(n + 1, 33) - 1, 4);
+  if (leap === -1) leap = 4;
+  return { leap: leap, gy: gy, march: march };
+}
+function g2d_(gy, gm, gd) {
+  var d = jDiv_((gy + jDiv_(gm - 8, 6) + 100100) * 1461, 4) + jDiv_(153 * jMod_(gm + 9, 12) + 2, 5) + gd - 34840408;
+  return d - jDiv_(jDiv_(gy + 100100 + jDiv_(gm - 8, 6), 100) * 3, 4) + 752;
+}
+// Gregorian year, month (1-12), day → {y, m, d} in the Persian calendar.
+function toJalali_(gy, gm, gd) {
+  var jdn = g2d_(gy, gm, gd), jy = gy - 621, r = jalCal_(jy), k = jdn - g2d_(gy, 3, r.march);
+  if (k >= 0) {
+    if (k <= 185) return { y: jy, m: 1 + jDiv_(k, 31), d: jMod_(k, 31) + 1 };
+    k -= 186;
+  } else {
+    jy -= 1; k += 179;
+    if (r.leap === 1) k += 1;
+  }
+  return { y: jy, m: 7 + jDiv_(k, 30), d: jMod_(k, 30) + 1 };
+}
+// Days in a Persian month: 31 (months 1-6), 30 (7-11), 29 or 30 in Esfand (30 in a leap year).
+function jalaliMonthDays_(y, m) {
+  if (m <= 6) return 31;
+  if (m <= 11) return 30;
+  return jalCal_(y).leap === 0 ? 30 : 29;
+}
+// A typed date → 'yyyy-mm-dd' (ASCII, zero-padded) or '' if it is not a real Persian date in the allowed years.
+// Accepts Persian/Arabic digits and - or / between the parts.
+function ledgerDate_(v) {
+  if (typeof v !== 'string' || v.length > 20) return '';
+  var s = v.replace(/[۰-۹]/g, function (d) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); })
+    .replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); }).trim();
+  var m = /^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/.exec(s);
+  if (!m) return '';
+  var y = parseInt(m[1], 10), mo = parseInt(m[2], 10), d = parseInt(m[3], 10);
+  if (y < 1390 || y > 1499 || mo < 1 || mo > 12 || d < 1 || d > jalaliMonthDays_(y, mo)) return '';
+  return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
+}
+// A typed number → {i, f, text} (whole part, decimals as an integer padded to `decMax` digits, clean text) or null.
+// Persian/Arabic digits, «٫» or «.» as the decimal point and «,» / «٬» between thousands are accepted.
+function parseDecimal_(v, intMax, decMax) {
+  if (typeof v === 'number') v = isFinite(v) && v >= 0 ? String(v) : '';
+  if (typeof v !== 'string' || v.length > 40) return null;
+  var s = v.replace(/[۰-۹]/g, function (d) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); })
+    .replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); })
+    .replace(/[\s\u200c\u200e\u200f]/g, '').replace(/\u066b/g, '.').replace(/[,\u066c]/g, '');
+  var m = /^(\d+)(?:\.(\d+))?$/.exec(s);
+  if (!m) return null;
+  var ip = m[1].replace(/^0+(?=\d)/, ''), fp = (m[2] || '').replace(/0+$/, '');
+  if (ip.length > intMax || fp.length > decMax) return null;
+  var pad = fp;
+  while (pad.length < decMax) pad += '0';
+  return { i: parseInt(ip, 10), f: pad ? parseInt(pad, 10) : 0, text: ip + (fp ? '.' + fp : '') };
+}
+// Quantity (> 0, up to 99,999 with 2 decimals) and unit price (> 0, typed in «هزار» or «میلیون» تومان, up to 3
+// decimals, at most 10,000,000,000 toman) → {qty, qtyText, unitToman, priceText, tooBig, rowToman}. Each part is
+// null / '' when it is not valid. rowToman = qty × unit price, rounded to a whole toman, exact integer math.
+function ledgerMath_(qty, price, priceUnit) {
+  var mults = { thousand: 1000, million: 1000000 };
+  var q = parseDecimal_(qty, 5, 2), p = parseDecimal_(price, 9, 3);
+  var mult = typeof priceUnit === 'string' && Object.prototype.hasOwnProperty.call(mults, priceUnit) ? mults[priceUnit] : 0;
+  var out = { qty: null, qtyText: '', unitToman: null, priceText: '', tooBig: false, rowToman: null };
+  if (q && (q.i > 0 || q.f > 0)) { out.qty = (q.i * 100 + q.f) / 100; out.qtyText = q.text; }
+  if (p && mult && (p.i > 0 || p.f > 0)) {
+    var toman = p.i * mult + p.f * mult / 1000;
+    if (toman > 10000000000) out.tooBig = true;
+    else { out.unitToman = toman; out.priceText = p.text; }
+  }
+  if (out.qty !== null && out.unitToman !== null) out.rowToman = q.i * out.unitToman + Math.round(q.f * out.unitToman / 100);
+  return out;
+}
+// ---- shared with admin/admin.js (end) ----
+
+// Text for a ledger cell: no control characters or line breaks, single spaces, trimmed. Too long = null.
+function ledgerText_(v, max) {
+  if (v === undefined || v === null) return '';
+  if (typeof v !== 'string') return null;
+  var s = v.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
+  return s.length > max ? null : s;
+}
+
+function ledgerKey_(map, v) {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(map, v) ? v : '';
+}
+
+function ledgerKeyOf_(map, label) {
+  var key = '';
+  Object.keys(map).forEach(function (k) { if (map[k] === label) key = k; });
+  return key;
+}
+
+// Checks one entry from the form and builds its sheet row (pure: no sheet calls).
+// `input` = {date, type, productId, qty, qtyUnit, price, priceUnit, party, note} as typed.
+// `products` = the products tab rows ({id, name, ...}). `ctx` = {id, created, by, keep}: `keep` is the stored
+// {productId, productName} of the row being edited, so an old row whose product was deleted can still be edited
+// as long as its product is left unchanged. The product name always comes from the products tab, never from the page.
+// Returns {issues: [{field, message}], row: [LEDGER_HEADER order]}; row is null when there are issues.
+function planLedgerRow_(input, products, ctx) {
+  var issues = [];
+  function add(field, message) { issues.push({ field: field, row: null, message: message }); }
+  input = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  ctx = ctx || {};
+
+  var date = ledgerDate_(input.date);
+  if (!date) add('date', MSG.badDate);
+  var type = ledgerKey_(LEDGER_TYPES, input.type);
+  if (!type) add('type', MSG.badType);
+
+  var pid = typeof input.productId === 'string' ? input.productId.trim() : '';
+  var pname = '';
+  if (!pid) add('productId', MSG.badProduct);
+  else {
+    for (var i = 0; i < products.length; i++) {
+      var r = products[i];
+      if (!isBlankRow(r) && cellText(r.id) === pid) { pname = cellText(r.name) || pid; break; }
+    }
+    if (!pname && ctx.keep && ctx.keep.productId === pid && ctx.keep.productName) pname = ctx.keep.productName;
+    if (!pname) add('productId', MSG.goneProduct);
+  }
+
+  var math = ledgerMath_(input.qty, input.price, input.priceUnit);
+  if (math.qty === null) add('qty', MSG.badQty);
+  var qtyUnit = ledgerKey_(LEDGER_QTY_UNITS, input.qtyUnit);
+  if (!qtyUnit) add('qtyUnit', MSG.badQtyUnit);
+  var priceUnit = ledgerKey_(LEDGER_PRICE_UNITS, input.priceUnit);
+  if (!priceUnit) add('priceUnit', MSG.badPriceUnit);
+  else if (math.tooBig) add('price', MSG.priceTooBig);
+  else if (math.unitToman === null) add('price', MSG.badLedgerPrice);
+
+  var party = ledgerText_(input.party, LEDGER_PARTY_MAX);
+  if (party === null) add('party', MSG.longParty);
+  var note = ledgerText_(input.note, LEDGER_NOTE_MAX);
+  if (note === null) add('note', MSG.longNote);
+
+  if (issues.length) return { issues: issues, row: null };
+  return {
+    issues: [],
+    row: [ctx.id, ctx.created, date, LEDGER_TYPES[type], sheetText_(pid), sheetText_(pname), math.qty,
+      LEDGER_QTY_UNITS[qtyUnit], math.unitToman, math.priceText, LEDGER_PRICE_UNITS[priceUnit], math.rowToman,
+      sheetText_(party), sheetText_(note), cellText(ctx.by)]
+  };
+}
+
+// The sheet row of the ledger id among the values of column A (index 0 = sheet row 2):
+// {row} for exactly one match, {error: 'none' | 'many'} otherwise.
+function findLedgerRow_(ids, id) {
+  var hits = [];
+  ids.forEach(function (v, k) { if (cellText(v) === id) hits.push(k + 2); });
+  if (hits.length === 1) return { row: hits[0] };
+  return { error: hits.length ? 'many' : 'none' };
+}
+
+// A sheet row (array) → the object sent to the page.
+function ledgerEntry_(v) {
+  var num = function (x) { return typeof x === 'number' ? x : (cellText(x) === '' ? null : Number(toAsciiDigits(cellText(x)).replace(/,/g, ''))); };
+  return {
+    id: cellText(v[0]), created: cellText(v[1]), date: cellText(v[2]),
+    type: ledgerKeyOf_(LEDGER_TYPES, cellText(v[3])), typeText: cellText(v[3]),
+    productId: cellText(v[4]), productName: cellText(v[5]),
+    qty: num(v[6]), qtyUnit: ledgerKeyOf_(LEDGER_QTY_UNITS, cellText(v[7])), qtyUnitText: cellText(v[7]),
+    priceToman: num(v[8]), priceAmount: cellText(v[9]),
+    priceUnit: ledgerKeyOf_(LEDGER_PRICE_UNITS, cellText(v[10])), priceUnitText: cellText(v[10]),
+    rowToman: num(v[11]), party: cellText(v[12]), note: cellText(v[13]), by: cellText(v[14])
+  };
+}
+
+// The «خرید و فروش» tab, checked: {sheet} or {message} (missing, first tab, or a broken header).
+function ledgerSheet_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LEDGER_SHEET);
+  if (!sheet) return { message: MSG.noLedger };
+  if (sheet.getIndex() === 1) return { message: MSG.ledgerFirst };
+  var head = sheet.getRange(1, 1, 1, LEDGER_HEADER.length).getValues()[0].map(cellText);
+  if (head.join('\n') !== LEDGER_HEADER.join('\n')) return { message: MSG.ledgerHeader };
+  return { sheet: sheet };
+}
+
+// The data rows of the tab (row 1 is the header), as arrays.
+function ledgerValues_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  return sheet.getRange(2, 1, last - 1, LEDGER_HEADER.length).getValues();
+}
+
+// Action getLedger: the newest LEDGER_MAX_RETURN rows (by date, then time entered), newest first.
+// Returns {ok:true, entries, more} or {ok:false, message} (e.g. setupLedger not run yet).
+function getLedger() {
+  assertSession_();
+  var t = ledgerSheet_();
+  if (!t.sheet) return { ok: false, message: t.message };
+  var entries = ledgerValues_(t.sheet).map(ledgerEntry_).filter(function (e) { return e.id !== ''; });
+  entries.sort(function (a, b) {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    if (a.created !== b.created) return a.created < b.created ? 1 : -1;
+    return 0;
+  });
+  return { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN };
+}
+
+// Action saveLedgerRow (under the lock): `entry` from the form; `id` = the row's id when editing, '' for a new row.
+// A new row gets a random id, the Tehran time and the admin's email; an edit keeps id, time and email.
+// Returns {ok:true, id, updated} or {ok:false, issues} / {ok:false, message}.
+function saveLedgerRow(entry, id) {
+  assertSession_();
+  var t = ledgerSheet_();
+  if (!t.sheet) return { ok: false, message: t.message };
+  var sheet = t.sheet;
+  var data = readSheetRows();
+  if (data.issues.length) return { ok: false, message: MSG.sheetProblems };
+
+  var editing = typeof id === 'string' && id !== '';
+  if (editing && !LEDGER_ID.test(id)) return { ok: false, message: MSG.ledgerNotFound };
+  var values = ledgerValues_(sheet);
+  var target = null, ctx;
+  if (editing) {
+    var found = findLedgerRow_(values.map(function (v) { return v[0]; }), id);
+    if (!found.row) return { ok: false, message: found.error === 'many' ? MSG.ledgerMany : MSG.ledgerNotFound };
+    target = found.row;
+    var old = values[target - 2];
+    ctx = { id: id, created: cellText(old[1]), by: cellText(old[14]), keep: { productId: cellText(old[4]), productName: cellText(old[5]) } };
+  } else {
+    if (values.length >= LEDGER_MAX_ROWS) return { ok: false, message: fill(MSG.ledgerFull, { n: LEDGER_MAX_ROWS }) };
+    ctx = {
+      id: 'L' + randomHex_(32),
+      created: Utilities.formatDate(new Date(nowMs_()), 'Asia/Tehran', 'yyyy-MM-dd HH:mm:ss'),
+      by: sessionEmail_
+    };
+  }
+  var plan = planLedgerRow_(entry, data.rows, ctx);
+  if (plan.issues.length) return { ok: false, issues: plan.issues };
+
+  var row = target || sheet.getLastRow() + 1;
+  if (row > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 100);
+  var range = sheet.getRange(row, 1, 1, LEDGER_HEADER.length);
+  range.setNumberFormats([LEDGER_FORMATS]);
+  range.setValues([plan.row]);
+  return { ok: true, id: ctx.id, updated: !!target };
+}
+
+// Action deleteLedgerRow (under the lock, after the owner confirmed on the page): deletes the ONE row whose
+// column A is this id. A malformed id, no match or several matches delete nothing.
+// Returns {ok:true} or {ok:false, message}.
+function deleteLedgerRow(id) {
+  assertSession_();
+  if (typeof id !== 'string' || !LEDGER_ID.test(id)) return { ok: false, message: MSG.ledgerNotFound };
+  var t = ledgerSheet_();
+  if (!t.sheet) return { ok: false, message: t.message };
+  var last = t.sheet.getLastRow();
+  var ids = last < 2 ? [] : t.sheet.getRange(2, 1, last - 1, 1).getValues().map(function (v) { return v[0]; });
+  var found = findLedgerRow_(ids, id);
+  if (!found.row) return { ok: false, message: found.error === 'many' ? MSG.ledgerMany : MSG.ledgerNotFound };
+  t.sheet.deleteRow(found.row);
+  return { ok: true };
+}
+
+// Run this ONCE in the Apps Script editor after pasting Code.gs: makes the «خرید و فروش» tab (or fixes its place
+// and header) as the 2ND tab, right after the products tab, never first. Bold frozen header, text/number formats.
+// Safe to run again; it never changes the data rows. Do NOT publish this tab to the web.
+function setupLedger() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(LEDGER_SHEET);
+  if (!sheet) {
+    if (ss.getNumSheets() < 1) return 'ERROR: the products tab is missing';
+    sheet = ss.insertSheet(LEDGER_SHEET, 1);   // 0-based index: 1 = right after the products tab
+  }
+  var lastRow = sheet.getLastRow();
+  var head = lastRow ? sheet.getRange(1, 1, 1, LEDGER_HEADER.length).getValues()[0].map(cellText) : [];
+  if (lastRow > 1 && head.join('\n') !== LEDGER_HEADER.join('\n')) {
+    ss.setActiveSheet(ss.getSheets()[0]);
+    return 'ERROR: row 1 of «' + LEDGER_SHEET + '» is not the expected header and the tab has data; fix it by hand';
+  }
+  sheet.getRange(1, 1, 1, LEDGER_HEADER.length).setValues([LEDGER_HEADER]).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  LEDGER_FORMATS.forEach(function (f, i) { sheet.getRange(2, i + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat(f); });
+  if (sheet.getIndex() !== 2) {
+    ss.setActiveSheet(sheet);
+    ss.moveActiveSheet(2);
+  }
+  ss.setActiveSheet(ss.getSheets()[0]);
+  return 'OK: «' + LEDGER_SHEET + '» is tab ' + sheet.getIndex() + ' of ' + ss.getNumSheets() + '; products tab is «' + ss.getSheets()[0].getName() + '». Do not publish it to the web.';
 }

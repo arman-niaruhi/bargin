@@ -427,7 +427,8 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const attempts = [
     { action: "getProducts" }, { action: "getProducts", session: "" }, { action: "getProducts", session: "x".repeat(64) },
     { action: "getProducts", session: "0".repeat(64) }, { action: "saveProduct", data: { item: { id: "x", name: "x", category: "x", price: "1" }, originalId: "" } },
-    { action: "deleteProduct", data: { id: "a" } }, { action: "publishCsv" }, { action: "getProducts", session: { a: 1 } }
+    { action: "deleteProduct", data: { id: "a" } }, { action: "publishCsv" }, { action: "getProducts", session: { a: 1 } },
+    { action: "getLedger" }, { action: "saveLedgerRow", data: { entry: {}, id: "" } }, { action: "deleteLedgerRow", session: "0".repeat(64), data: { id: "L" + "0".repeat(32) } }
   ];
   const res = attempts.map((a) => post(a));
   check("(h) without a valid session every protected action gives NO_SESSION", res.every((x, i) => i === 7 ? x.error === "bad_request" : x.error === "NO_SESSION"), res.map((x) => x.error).join());
@@ -461,7 +462,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(h) the session guard sits in handleRequest_ once (requireSession_ is called only there)", (read("tools/admin/Code.gs").match(/requireSession\(/g) || []).length === 1 && /deps\.requireSession\(/.test(read("tools/admin/Code.gs")));
   const src = read("tools/admin/Code.gs");
   check("(h) every sheet function calls assertSession_ (second guard)",
-    ["getProducts", "saveProduct", "deleteProduct", "publishCsv"].every((f) => new RegExp("function " + f + "\\([^)]*\\) \\{\\s*assertSession_\\(\\)").test(src)));
+    ["getProducts", "saveProduct", "deleteProduct", "publishCsv", "getLedger", "saveLedgerRow", "deleteLedgerRow"].every((f) => new RegExp("function " + f + "\\([^)]*\\) \\{\\s*assertSession_\\(\\)").test(src)));
   let threw = false;
   try { gs.getProducts(); } catch (e) { threw = true; }
   check("(h) calling a sheet function directly, outside a checked request, throws", threw && sheetLog.touched === 0);
@@ -493,7 +494,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(j) malformed requests give bad_request and touch nothing", bad.every((b) => post(b).error === "bad_request") && sheetLog.touched === 0);
   const names = ["evil", "constructor", "__proto__", "toString", "", 5, null, "authorizeOnce", "readSheet"];
   check("(j) unknown actions are refused", names.every((a) => post({ action: a }).error === "unknown_action") && sheetLog.touched === 0);
-  check("(j) the action lists are exactly the expected ones", vm.runInContext("PUBLIC_ACTIONS.join()", gs) === "requestCode,verifyCode,logout,logEvent" && vm.runInContext("PROTECTED_ACTIONS.join()", gs) === "getProducts,saveProduct,deleteProduct,publishCsv");
+  check("(j) the action lists are exactly the expected ones", vm.runInContext("PUBLIC_ACTIONS.join()", gs) === "requestCode,verifyCode,logout,logEvent" && vm.runInContext("PROTECTED_ACTIONS.join()", gs) === "getProducts,saveProduct,deleteProduct,publishCsv,getLedger,saveLedgerRow,deleteLedgerRow");
   const g = JSON.parse(gs.doGet().s);
   check("(j) doGet returns only harmless JSON", g.ok === true && Object.keys(g).join() === "ok,service");
   const throwing = gs.handleRequest_(JSON.stringify({ action: "getProducts", session: "s" }), { requireSession: () => true, publicActions: {}, actions: { getProducts: () => { throw new Error("sheet down"); } } });
@@ -825,6 +826,260 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
 
   gs.SpreadsheetApp = oldSS;
   gs.LockService = stubs.LockService;
+}
+
+// ---- (n) «خرید و فروش» ledger (owner approved 2026-11-07) ----
+{
+  const L = Array.from(gs.LEDGER_HEADER);
+  // math, dates, Persian calendar
+  const m1 = gs.ledgerMath_("3", "۴۵۰", "thousand"), m2 = gs.ledgerMath_("۲٫۵", "1.5", "million"), m3 = gs.ledgerMath_("1.25", "0.333", "thousand");
+  check("(n) price: «۴۵۰» هزار = 450,000; «1.5» میلیون = 1,500,000; row totals 1,350,000 and 3,750,000",
+    m1.unitToman === 450000 && m1.rowToman === 1350000 && m2.unitToman === 1500000 && m2.rowToman === 3750000 && m2.qty === 2.5 && m2.priceText === "1.5", JSON.stringify([m1, m2]));
+  check("(n) row total is rounded to a whole toman (1.25 × 333 = 416.25 → 416)", m3.unitToman === 333 && m3.rowToman === 416, JSON.stringify(m3));
+  check("(n) «۱,۲۰۰» and «٤٥٠» are read; leading zeros and trailing decimal zeros are cleaned",
+    gs.ledgerMath_("1", "۱,۲۰۰", "thousand").unitToman === 1200000 && gs.ledgerMath_("1", "٤٥٠", "thousand").unitToman === 450000 && gs.ledgerMath_("01", "007.50", "thousand").priceText === "7.5");
+  const badPrices = ["0", "0.000", "-5", "abc", "1e5", "1.2345", "", " ", "۱،۵", "1.2.3", null, undefined, {}, -1, Infinity];
+  check("(n) price: 0, negative, text, 1e5, 4 decimals, empty and odd values are refused",
+    badPrices.every((p) => gs.ledgerMath_("1", p, "thousand").unitToman === null), JSON.stringify(badPrices.map((p) => gs.ledgerMath_("1", p, "thousand").unitToman)));
+  check("(n) price: an unknown unit is refused (also «constructor» / «__proto__»)",
+    ["", "billion", "constructor", "__proto__", "toString", 5].every((u) => gs.ledgerMath_("1", "1", u).unitToman === null));
+  check("(n) price: over 10,000,000,000 toman is «too big»; exactly 10,000 million is fine",
+    gs.ledgerMath_("1", "10001", "million").tooBig === true && gs.ledgerMath_("1", "10000", "million").unitToman === 1e10);
+  const badQty = ["0", "0.00", "-1", "1.234", "100000", "abc", "", null];
+  check("(n) quantity: 0, negative, 3 decimals, over 99,999 and text are refused; «99999.99» is fine",
+    badQty.every((q) => gs.ledgerMath_(q, "1", "thousand").qty === null) && gs.ledgerMath_("99999.99", "1", "thousand").qty === 99999.99);
+  check("(n) the largest row total is still an exact whole number", Number.isSafeInteger(gs.ledgerMath_("99999.99", "10000", "million").rowToman));
+  check("(n) date: 1405-08-16, «۱۴۰۵/۸/۱۶» and 1403-12-30 (leap year) are valid",
+    gs.ledgerDate_("1405-08-16") === "1405-08-16" && gs.ledgerDate_("۱۴۰۵/۸/۱۶") === "1405-08-16" && gs.ledgerDate_("1403-12-30") === "1403-12-30");
+  const badDates = ["1405-13-01", "1405-07-31", "1405-00-10", "1405-01-00", "1404-12-30", "1389-01-01", "1500-01-01", "x", "", "1405-8", "2026-11-07", null, 14050816];
+  check("(n) date: month 13, Mehr 31, month 0, day 0, Esfand 30 in a normal year, out-of-range years and junk are refused",
+    badDates.every((d) => gs.ledgerDate_(d) === ""), JSON.stringify(badDates.map((d) => gs.ledgerDate_(d))));
+  const j = (a, b, c) => JSON.stringify(gs.toJalali_(a, b, c));
+  check("(n) Persian calendar: 2026-11-07 = 1405-08-16, 2025-03-20 = 1403-12-30, 2025-03-21 = 1404-01-01, 2024-03-20 = 1403-01-01",
+    j(2026, 11, 7) === '{"y":1405,"m":8,"d":16}' && j(2025, 3, 20) === '{"y":1403,"m":12,"d":30}' && j(2025, 3, 21) === '{"y":1404,"m":1,"d":1}' && j(2024, 3, 20) === '{"y":1403,"m":1,"d":1}');
+  check("(n) Esfand has 30 days in 1399, 1403, 1408 and 29 in 1404, 1405",
+    [1399, 1403, 1408].every((y) => gs.jalaliMonthDays_(y, 12) === 30) && [1404, 1405].every((y) => gs.jalaliMonthDays_(y, 12) === 29));
+  const blockOf = (src) => { const a = src.indexOf("// ---- shared with admin/admin.js (begin)"), b = src.indexOf("// ---- shared with admin/admin.js (end)"); return a < 0 || b < 0 ? null : src.slice(a, b).split("\n").map((l) => l.trim()).join("\n"); };
+  const adminSrc = read("admin/admin.js");
+  check("(n) admin/admin.js has the same shared block (calendar, number parsing, row total) as Code.gs",
+    blockOf(read("tools/admin/Code.gs")) !== null && blockOf(read("tools/admin/Code.gs")) === blockOf(adminSrc));
+
+  // planLedgerRow_ (pure)
+  const prods = fileRows.map((r) => ({ ...r }));
+  const ctx = { id: "L" + "a".repeat(32), created: "2026-11-07 10:00:00", by: OWNER };
+  const good = (o) => Object.assign({ date: "1405-08-16", type: "sell", productId: "sabzi-ghormeh", qty: "3", qtyUnit: "pack", price: "450", priceUnit: "thousand", party: "", note: "" }, o);
+  const p1 = gs.planLedgerRow_(good({ productName: "fake name" }), prods, ctx);
+  const ghormeh = prods.find((r) => r.id === "sabzi-ghormeh").name;
+  check("(n) plan: a good entry becomes one row in LEDGER_HEADER order",
+    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "", "", OWNER]), JSON.stringify(p1));
+  check("(n) plan: the product name comes from the products tab, never from the page", p1.row[5] === ghormeh && !JSON.stringify(p1.row).includes("fake name"));
+  check("(n) LEDGER_HEADER has the 15 columns incl. rowToman", L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by");
+  const unknown = gs.planLedgerRow_(good({ productId: "no-such" }), prods, ctx);
+  const blankP = gs.planLedgerRow_(good({ productId: "" }), prods.concat([{ row: 99, id: "", name: "" }]), ctx);
+  check("(n) plan: an unknown or empty product id is refused", unknown.row === null && unknown.issues[0].field === "productId" && blankP.issues[0].field === "productId");
+  check("(n) plan: blank product rows never count as products",
+    gs.planLedgerRow_(good({ productId: "ghost" }), [{ row: 2, id: "ghost", name: "", category: "", price: "" }].map((r) => ({ ...r, unit: "", serves: "", short: "", details: "", recipe: "", images: "", soldOut: "" })), ctx).row !== null &&
+    gs.planLedgerRow_(good({ productId: "" }), [{ row: 2 }], ctx).row === null);
+  const kept = gs.planLedgerRow_(good({ productId: "old-gone" }), prods, Object.assign({ keep: { productId: "old-gone", productName: "محصول قدیمی" } }, ctx));
+  check("(n) plan: editing an old row whose product was deleted keeps its stored name (product unchanged)", kept.issues.length === 0 && kept.row[5] === "محصول قدیمی");
+  const swapGone = gs.planLedgerRow_(good({ productId: "other-gone" }), prods, Object.assign({ keep: { productId: "old-gone", productName: "x" } }, ctx));
+  check("(n) plan: ... but switching to another missing product is refused", swapGone.row === null);
+  check("(n) plan: type must be buy or sell; units from the list only",
+    ["", "خرید", "BUY", "constructor"].every((t) => gs.planLedgerRow_(good({ type: t }), prods, ctx).row === null) &&
+    ["", "kilo", "__proto__"].every((u) => gs.planLedgerRow_(good({ qtyUnit: u }), prods, ctx).row === null) &&
+    gs.planLedgerRow_(good({ type: "buy", qtyUnit: "kg" }), prods, ctx).row[3] === "خرید");
+  const inj = gs.planLedgerRow_(good({ party: "=HYPERLINK(\"http://x\")", note: "+1 -2\nline\u0000two" }), prods, ctx);
+  check("(n) plan: formula injection in name/description gets an apostrophe; control characters and line breaks become spaces",
+    inj.row[12].startsWith("'=") && inj.row[13] === "'+1 -2 line two", JSON.stringify([inj.row[12], inj.row[13]]));
+  check("(n) plan: name over 60 / description over 300 characters is refused (60 / 300 are fine)",
+    gs.planLedgerRow_(good({ party: "ب".repeat(61) }), prods, ctx).issues.some((i) => i.field === "party") &&
+    gs.planLedgerRow_(good({ note: "ب".repeat(301) }), prods, ctx).issues.some((i) => i.field === "note") &&
+    gs.planLedgerRow_(good({ party: "ب".repeat(60), note: "ب".repeat(300) }), prods, ctx).issues.length === 0 &&
+    gs.planLedgerRow_(good({ party: 5 }), prods, ctx).row === null);
+  const many = gs.planLedgerRow_({}, prods, ctx);
+  check("(n) plan: an empty entry lists every missing field", ["date", "type", "productId", "qty", "qtyUnit", "priceUnit"].every((f) => many.issues.some((i) => i.field === f)), many.issues.map((i) => i.field).join());
+  check("(n) findLedgerRow_: exactly one match → its sheet row; none / several → error",
+    gs.findLedgerRow_(["La", "Lb", "Lc"], "Lb").row === 3 && gs.findLedgerRow_(["La"], "Lz").error === "none" && gs.findLedgerRow_(["La", "Lb", "La"], "La").error === "many");
+
+  // a fake spreadsheet: products (first) + ledger (+ log)
+  const mk = (name, rows) => ({
+    name, rows, maxRows: 1000, frozen: 0, formats: [], touched: 0, deleted: [],
+    getName() { return this.name; },
+    getIndex() { return book.sheets.indexOf(this) + 1; },
+    getLastRow() { return this.rows.length; },
+    getMaxRows() { return this.maxRows; },
+    getLastColumn() { return this.rows[0] ? this.rows[0].length : 0; },
+    insertRowsAfter(a, n) { this.maxRows += n; },
+    setFrozenRows(n) { this.frozen = n; },
+    deleteRow(n) { this.touched++; this.deleted.push(n); this.rows.splice(n - 1, 1); },
+    getDataRange() { const sh = this; return { getValues: () => { sh.touched++; return sh.rows.map((r) => r.slice()); } }; },
+    getRange(r, c, nr = 1, nc = 1) {
+      const sh = this;
+      sh.touched++;
+      const rng = {
+        getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, k) => { const row = sh.rows[r - 1 + i]; return row && row[c - 1 + k] !== undefined ? row[c - 1 + k] : ""; })),
+        setValues: (v) => { if (r + nr - 1 > sh.maxRows) throw new Error("outside"); v.forEach((row, i) => { const t = sh.rows[r - 1 + i] || (sh.rows[r - 1 + i] = []); row.forEach((x, k) => { t[c - 1 + k] = x; }); }); sh.writes = (sh.writes || 0) + 1; return rng; },
+        setNumberFormats: (f) => { sh.formats.push(["row", r, f[0].join("|")]); return rng; },
+        setNumberFormat: (f) => { sh.formats.push(["col", c, f]); return rng; },
+        setFontWeight: () => rng
+      };
+      return rng;
+    }
+  });
+  let book;
+  const mkBook = (order = ["products", "ledger", "log"], ledgerRows) => {
+    const sheets = order.map((n) => n === "products" ? mk("products", [gs.HEADER.slice(), ...fileRows.map((r) => gs.HEADER.map((h) => r[h]))])
+      : n === "ledger" ? mk("خرید و فروش", ledgerRows || [L.slice()]) : mk("log", [gs.LOG_HEADER.slice()]));
+    book = {
+      sheets, active: null,
+      getSheets() { return this.sheets.slice(); },
+      getNumSheets() { return this.sheets.length; },
+      getSheetByName(n) { return this.sheets.find((x) => x.name === n) || null; },
+      insertSheet(n, i) { const sh = mk(n, []); this.sheets.splice(i, 0, sh); return sh; },
+      setActiveSheet(sh) { this.active = sh; return sh; },
+      moveActiveSheet(pos) { const i = this.sheets.indexOf(this.active); this.sheets.splice(i, 1); this.sheets.splice(pos - 1, 0, this.active); },
+      getName: () => "x"
+    };
+    return book;
+  };
+  const oldSS = gs.SpreadsheetApp;
+  gs.SpreadsheetApp = { getActiveSpreadsheet: () => book };
+  gs.Utilities.formatDate = (d) => new Date(d.getTime() + 3.5 * 3600000).toISOString().slice(0, 19).replace("T", " ");
+  const ledgerTab = () => book.getSheetByName("خرید و فروش");
+  const productsTab = () => book.getSheetByName("products");
+
+  // no session: nothing is read or written
+  mkBook();
+  reset();
+  const ns = [post({ action: "getLedger" }), post({ action: "saveLedgerRow", data: { entry: good({}), id: "" } }),
+    post({ action: "deleteLedgerRow", session: "f".repeat(64), data: { id: "L" + "0".repeat(32) } })];
+  check("(n) without a session getLedger / saveLedgerRow / deleteLedgerRow give NO_SESSION and touch no tab",
+    ns.every((x) => x.error === "NO_SESSION") && ledgerTab().touched === 0 && productsTab().touched === 0, ns.map((x) => x.error).join());
+  let threw = false;
+  try { gs.saveLedgerRow(good({}), ""); } catch (e) { threw = true; }
+  check("(n) calling saveLedgerRow directly, outside a checked request, throws (assertSession_)", threw && ledgerTab().touched === 0);
+
+  // add, list, edit, delete
+  let { sess } = login();
+  mkBook();
+  // formula escaping in saveProduct (the products tab of the fake book)
+  const sp = post({ action: "saveProduct", session: sess, data: { item: { id: "f-new", name: "=HYPERLINK(\"http://x\",\"y\")", category: "+c", price: "1", short: "-1", details: "@x", recipe: "سلام" }, originalId: "" } });
+  const w = productsTab().rows[productsTab().rows.length - 1];
+  check("(n) saveProduct: text starting with = + - @ gets an apostrophe (never a formula), other text unchanged",
+    sp.ok === true && sp.data.ok === true && w[1].startsWith("'=") && w[2] === "'+c" && w[6] === "'-1" && w[7] === "'@x" && w[8] === "سلام" && w[0] === "f-new" && w[3] === "1" && w[10] === "no", JSON.stringify([sp, w]));
+  mkBook();
+  const add = (o, id = "") => post({ action: "saveLedgerRow", session: sess, data: { entry: good(o), id } });
+  const a1 = add({ id: "L" + "b".repeat(32), created: "1999", by: "evil@x.com", rowToman: 5 });
+  const r1 = ledgerTab().rows[1];
+  check("(n) save: a new row is appended after the header with a random L+32-hex id",
+    a1.ok === true && a1.data.ok === true && /^L[0-9a-f]{32}$/.test(a1.data.id) && ledgerTab().rows.length === 2 && r1[0] === a1.data.id, JSON.stringify(a1));
+  check("(n) save: id, time and email come from the server, never from the page (Tehran time, session email)",
+    r1[0] !== "L" + "b".repeat(32) && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(r1[1]) && r1[1] !== "1999" && r1[14] === OWNER && r1[11] === 1350000, JSON.stringify(r1));
+  check("(n) save: the row gets its cell formats first (text for the date, numbers for qty and toman)",
+    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@"));
+  check("(n) save: the products tab is only read, never written", !productsTab().writes);
+  const a2 = add({ date: "1405-08-20", type: "buy", qty: "2.5", qtyUnit: "kg", price: "1.2", priceUnit: "million", party: "آقای رضایی", note: "نقدی" });
+  clock.t += 1000;
+  const a3 = add({ date: "1405-08-16", note: "دومی همون روز" });
+  const lg = post({ action: "getLedger", session: sess });
+  const ids = lg.data.entries.map((e) => e.id);
+  check("(n) getLedger: newest date first, then newest entered first", lg.ok && lg.data.ok && ids.join() === [a2.data.id, a3.data.id, a1.data.id].join(), JSON.stringify(ids));
+  const e2 = lg.data.entries[0];
+  check("(n) getLedger: keys and texts come back (type buy, kg, million, typed «1.2», row total 3,000,000)",
+    e2.type === "buy" && e2.typeText === "خرید" && e2.qty === 2.5 && e2.qtyUnit === "kg" && e2.priceToman === 1200000 && e2.priceAmount === "1.2" && e2.priceUnit === "million" && e2.rowToman === 3000000 && e2.party === "آقای رضایی" && e2.note === "نقدی", JSON.stringify(e2));
+  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more");
+  const bad = add({ price: "0" });
+  check("(n) save: a bad entry is refused with issues and nothing is written", bad.ok === true && bad.data.ok === false && bad.data.issues.length === 1 && ledgerTab().rows.length === 4, JSON.stringify(bad));
+
+  // edit
+  const before = ledgerTab().rows.map((r) => r.slice());
+  const ed = add({ qty: "4", price: "500", note: "ویرایش شد" }, a1.data.id);
+  const row1 = ledgerTab().rows[1];
+  check("(n) edit: the row with that id is updated in place; id, time and email are kept",
+    ed.ok && ed.data.ok && ed.data.updated === true && ledgerTab().rows.length === 4 && row1[0] === a1.data.id && row1[1] === before[1][1] && row1[14] === OWNER && row1[11] === 2000000 && row1[13] === "ویرایش شد",
+    JSON.stringify([ed, row1]));
+  check("(n) edit: other rows are unchanged", JSON.stringify(ledgerTab().rows.slice(2)) === JSON.stringify(before.slice(2)));
+  const edGone = add({}, "L" + "c".repeat(32));
+  const edBad = add({}, "5");
+  check("(n) edit: an unknown or malformed id changes nothing (not found)",
+    edGone.data.ok === false && edBad.data.ok === false && ledgerTab().rows.length === 4 && /پیدا نشد/.test(edGone.data.message));
+  // a row whose product was deleted from the products tab can still be edited
+  ledgerTab().rows[2][4] = "deleted-prod"; ledgerTab().rows[2][5] = "محصول پاک‌شده";
+  const edOld = add({ productId: "deleted-prod", note: "یادداشت تازه" }, ledgerTab().rows[2][0]);
+  check("(n) edit: an old row whose product was deleted keeps its stored name", edOld.data.ok === true && ledgerTab().rows[2][5] === "محصول پاک‌شده" && ledgerTab().rows[2][13] === "یادداشت تازه", JSON.stringify(edOld));
+
+  // delete
+  const del = (id) => post({ action: "deleteLedgerRow", session: sess, data: { id } });
+  const target = a3.data.id;
+  const rowOf = ledgerTab().rows.findIndex((r) => r[0] === target) + 1;
+  ledgerTab().rows.splice(1, 0, ["L" + "d".repeat(32)].concat(Array(14).fill("x")));   // a row added above it: rows shift
+  const d1 = del(target);
+  check("(n) delete: the ONE row with that id is deleted even after rows shifted (found by id, not by row number)",
+    d1.ok && d1.data.ok === true && ledgerTab().deleted[0] === rowOf + 1 && !ledgerTab().rows.some((r) => r[0] === target), JSON.stringify([d1, ledgerTab().deleted]));
+  const n0 = ledgerTab().rows.length;
+  const d2 = [del(target), del("L" + "e".repeat(32)), del("x"), del(""), del(5), del("l" + "a".repeat(32))];
+  check("(n) delete: already deleted, unknown or malformed ids delete nothing", d2.every((x) => x.ok === true ? x.data.ok === false : x.error === "server" || x.error === "bad_request") && ledgerTab().rows.length === n0, JSON.stringify(d2));
+  ledgerTab().rows.push(ledgerTab().rows[1].slice());
+  const dupId = ledgerTab().rows[1][0];
+  const d3 = del(dupId);
+  check("(n) delete: an id that is on two rows deletes nothing", d3.data.ok === false && /چند سطر/.test(d3.data.message) && ledgerTab().rows.length === n0 + 1);
+
+  // lock
+  world.lockBusy = true;
+  const lb = [add({}), del(a2.data.id)];
+  check("(n) lock busy: save and delete answer BUSY and write nothing", lb.every((x) => x.error === "BUSY") && ledgerTab().rows.length === n0 + 1);
+  world.lockBusy = false;
+
+  // cap
+  vm.runInContext("LEDGER_MAX_ROWS = 3", gs);
+  const full = add({});
+  check("(n) full tab: a new row is refused, nothing is deleted", full.data.ok === false && /پر شده/.test(full.data.message) && ledgerTab().rows.length === n0 + 1);
+  vm.runInContext("LEDGER_MAX_ROWS = 20000", gs);
+
+  // tab problems
+  mkBook(["products", "log"]);
+  const miss = post({ action: "getLedger", session: sess });
+  check("(n) no «خرید و فروش» tab yet: getLedger says to run setupLedger; saving writes nothing",
+    miss.data.ok === false && /setupLedger/.test(miss.data.message) && add({}).data.ok === false && book.getSheets().length === 2);
+  mkBook(["products", "ledger"], [["id", "x"]]);
+  check("(n) a broken header: refused, nothing written", post({ action: "getLedger", session: sess }).data.ok === false && add({}).data.ok === false && ledgerTab().rows.length === 1);
+  mkBook(["ledger", "products"]);
+  const first = [post({ action: "getLedger", session: sess }), add({}), post({ action: "getProducts", session: sess }), post({ action: "saveProduct", session: sess, data: { item: { id: "n", name: "n", category: "c", price: "1" }, originalId: "" } })];
+  check("(n) if «خرید و فروش» were the first tab: the ledger refuses, and the products actions never use it as the products",
+    first[0].data.ok === false && first[1].data.ok === false && first[2].error === "server" && first[3].error === "server" && ledgerTab().rows.length === 1 && !ledgerTab().writes, JSON.stringify(first.map((x) => x.error || x.data.ok)));
+  mkBook(["log", "products"]);
+  check("(n) the «log» tab is never read as the products either", post({ action: "getProducts", session: sess }).error === "server");
+
+  // setupLedger: 2nd tab, never first
+  mkBook(["products", "log"]);
+  const msg = gs.setupLedger();
+  check("(n) setupLedger makes «خرید و فروش» the 2nd tab (products first, log last), header, frozen, formats",
+    book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,log" && ledgerTab().rows[0].join() === L.join() && ledgerTab().frozen === 1 &&
+    ledgerTab().formats.filter((f) => f[0] === "col").length === 15 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
+  gs.setupLedger();
+  check("(n) setupLedger can run again safely", book.getSheets().length === 3 && ledgerTab().rows.length === 1 && book.getSheets()[1].name === "خرید و فروش");
+  mkBook(["ledger", "products", "log"]);
+  gs.setupLedger();
+  check("(n) setupLedger moves the tab from first to 2nd (products first again)", book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,log");
+  mkBook(["products", "log", "ledger"]);
+  gs.setupLedger(); gs.setupLog();
+  check("(n) setupLedger + setupLog together: products, «خرید و فروش», log", book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,log");
+  mkBook(["products"]);
+  gs.setupLedger();
+  check("(n) setupLedger without a «log» tab: products, «خرید و فروش»", book.getSheets().map((x) => x.name).join() === "products,خرید و فروش");
+  mkBook(["products", "ledger"], [["a", "b"], ["1", "2"]]);
+  const keepMsg = gs.setupLedger();
+  check("(n) setupLedger never overwrites a tab with other data in it", /^ERROR/.test(keepMsg) && ledgerTab().rows[0].join() === "a,b");
+
+  gs.SpreadsheetApp = oldSS;
+
+  // the page
+  check("(n) admin page: no sums or totals over rows (only each row's own total)", !/جمع|grandTotal|\.reduce\(/.test(adminSrc));
+  check("(n) admin page: ledger data shown with textContent only (no innerHTML / insertAdjacentHTML)", !/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(adminSrc));
+  const newer = /\?\.|\?\?|Object\.fromEntries|replaceAll|\.at\(|\.flat\(|flatMap|matchAll|structuredClone/;
+  check("(n) admin.js and Code.gs use nothing newer than ES2017", !newer.test(adminSrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(read("tools/admin/Code.gs").replace(/\/\/[^\n]*/g, "")));
+  const html = read("admin/index.html");
+  check("(n) admin page CSP is unchanged (no new script origins, no inline script)", /script-src 'self';/.test(html) && !/<script>(?!<\/)/.test(html) && /connect-src 'self' https:\/\/script\.google\.com/.test(html));
 }
 
 // ---- (m) log.js in the browser (stubbed window) ----
