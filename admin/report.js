@@ -33,7 +33,54 @@
     noCostRows: '{n} ردیف فروش تو سود حساب نشدن، چون قیمت اولیه نداشتن، «سایر» بودن، یا واحدشون «بسته/ظرف» نبود.',
     rawNow: 'سود با قیمت اولیه‌ی فعلی هر محصول حساب شده: مبلغ فروشِ هر ردیف منهای (قیمت اولیه × تعداد).',
     profitHint: 'سود فقط از ردیف‌هایی که قیمت اولیه دارن حساب شده؛ محصول بدون قیمت اولیه تو این نمودار نیست.',
-    marginNote: 'حاشیه سود = سود تقسیم بر فروشِ همون ردیف‌های حساب‌شده.'
+    marginNote: 'حاشیه سود = سود تقسیم بر فروشِ همون ردیف‌های حساب‌شده.',
+    // «تحلیل و پیشنهاد»
+    anLittle: 'برای تحلیل دست‌کم {need} سفارش لازمه، ولی تو این بازه فقط {n} سفارش هست. یه بازه‌ی بزرگ‌تر مثل «۳ ماه اخیر» یا «همه» رو انتخاب کن.',
+    anOld: 'تحلیل نیاز به نسخه‌ی تازه‌ی Code.gs داره. اون رو بذار و دوباره دیپلوی کن.',
+    anBasis: 'تحلیل بر اساس {n} سفارش ({m} ردیف فروش)، {range}.',
+    anBasisPrev: ' دوره‌ی قبل: {k} روز قبل از شروع این بازه ({p} سفارش).',
+    anNoPrev: ' برای این بازه، دوره‌ی قبلی نداریم؛ برای همین فلش روند نیست.',
+    anCut: 'فقط ۲۰,۰۰۰ ردیف آخر خونده شد.',
+    tipsTitle: 'پیشنهادها',
+    tipsNone: 'هنوز داده‌ی کافی برای پیشنهاد نیست.',
+    tipsHint: 'هر پیشنهاد از یه قانون ساده روی همین عددها درمیاد (حداکثر ۵ تا)؛ فقط از روی عددهای خودته، نه حدس.',
+    bestTitle: 'کدوم محصول‌ها بهترن؟',
+    quadHint: 'هر نقطه یه محصوله. هرچی نقطه رو به راست‌تر باشه فروشش بیشتره، و هرچی بالاتر، سودش. خط‌چین‌ها میانگین محصول‌هان. فقط محصول‌هایی که دست‌کم {n} ردیف فروش و قیمت اولیه دارن.',
+    quadNeed: 'برای نمودار گروه‌ها دست‌کم {n} محصول لازمه که قیمت اولیه دارن و دست‌کم {l} ردیف فروش.',
+    quadNoRaw: 'قیمت اولیه‌ی محصول‌ها رو وارد کن تا گروه‌بندی سود هم بیاد. فعلاً رتبه فقط از روی فروش و تعداد سفارشه.',
+    scoreHint: 'امتیاز (۰ تا ۱۰۰): میانگین رتبه‌ی محصول تو {what}، تعداد سفارش و روند. محصول‌هایی که کمتر از {n} ردیف فروش دارن رتبه نمی‌گیرن.',
+    whatProfit: 'سود', whatSales: 'فروش',
+    groups: { star: 'ستاره', volume: 'پرفروش کم‌سود', profit: 'پرسود کم‌فروش', weak: 'ضعیف' },
+    axisX: 'تعداد سفارش', axisY: 'حاشیه سود',
+    scoreLabel: 'امتیاز', shareLabel: 'سهم', trendNone: 'روند: —', trendLabel: 'روند',
+    trendWord: { up: 'رو به بالا', down: 'رو به پایین', flat: 'ثابت' },
+    abcTitle: 'تمرکز فروش',
+    abcLine: '{n} محصول از {m} محصول، {s}٪ فروشت رو می‌سازن.',
+    abcA: 'محصول‌های اصلی', abcB: 'میانی', abcC: 'بقیه',
+    abcHint: 'اصلی‌ها: اولین ۸۰٪ فروش. میانی‌ها: تا ۹۵٪. بقیه: ۵٪ آخر.',
+    custTitle: 'مشتری‌های برگشتی',
+    custLittle: 'هنوز مشتری کافی نیست: دست‌کم {n} مشتری با اسم ثبت‌شده لازمه؛ الان {k} تا داری.',
+    custTiles: ['خرید دوباره', 'میانگین هر سفارش', 'تعداد محصول تو هر سفارش', 'مشتری‌های دوره‌ی قبل که برگشتن'],
+    custRepeat: '{p}٪ ({a} از {b})',
+    custNoId: '{n} سفارش بدون اسم مشتری، تو این حساب نیومد.',
+    pairsTitle: 'چی با چی خریده می‌شه؟',
+    pairsNone: 'هنوز دو محصولی نیست که دست‌کم {n} بار با هم تو یه سفارش خریده شده باشن (تعداد سفارش‌های چندمحصولی: {m}).',
+    pairsRow: '{n} سفارش',
+    whenTitle: 'کی بهتر می‌فروشیم؟',
+    dayNames: ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'],
+    weekdayLittle: 'برای نتیجه‌ی روزهای هفته دست‌کم ۴ هفته فروش لازمه. بازه‌ی بزرگ‌تری انتخاب کن.',
+    weekdayTitle: 'روزهای هفته (جمع فروش)',
+    monthTitle: 'ماه‌ها (جمع فروش)',
+    monthNote: 'ماه جاری هنوز تموم نشده و تو انتخاب بهترین ماه حساب نمی‌شه.',
+    monthLittle: 'برای مقایسه‌ی ماه‌ها دست‌کم {n} ماه کامل لازمه. «همه» رو انتخاب کن.',
+    channelTitle: 'سایت یا حضوری؟',
+    thOrdersN: 'سفارش', thAvg: 'میانگین سفارش (تومان)', thMarginShort: 'حاشیه سود',
+    idleTitle: 'محصول‌های کم‌فروش',
+    idleLittle: 'برای این بخش دست‌کم ۸ هفته فروش لازمه. «۳ ماه اخیر» یا «همه» رو انتخاب کن.',
+    idleNone: 'همه‌ی محصول‌های فروشگاه تو {k} روز اخیر فروش داشتن.',
+    idleNever: 'تو این {k} روز اصلاً فروش نرفتن',
+    idleRare: 'بیشتر از ۲۸ روزه فروش نرفتن',
+    idleDays: '{n} روز'
   };
 
   var DAY_MS = 86400000;
@@ -81,6 +128,7 @@
   }
   // Saturday = 0 … Friday = 6.
   function satIndex(ms) { return (new Date(ms).getUTCDay() + 1) % 7; }
+  function weekdayOf(key) { var j = jparse(key); return satIndex(jToMs(j.y, j.m, j.d)); }   // Saturday = 0 … Friday = 6
   function weekStartKey(key) {
     var j = jparse(key), ms = jToMs(j.y, j.m, j.d) - satIndex(jToMs(j.y, j.m, j.d)) * DAY_MS;
     var w = msToJ(ms);
@@ -330,7 +378,7 @@
   }
 
   // ---- the tab ----
-  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null };
+  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0 };
   function $(id) { return document.getElementById(id); }
 
   function tile(label, big, full, neg) {
@@ -433,6 +481,269 @@
       if (sum.profit.rows) line += ' ' + TEXT.rawNow;
     } else if (sum.profit) line += ' ' + TEXT.noRawTab;
     $('r-used').textContent = line + ' ' + TEXT.noCustomer;
+    renderAnalysis();
+  }
+
+
+  // ---- «تحلیل و پیشنهاد» (numbers come from analysis.js; this part only draws) ----
+  var AN = window.barginAnalysis;
+  var GROUP_COLOR = { star: '#2f7a1f', volume: '#a8700f', profit: '#4a2c1a', weak: '#8794a0' };
+  var GROUP_ORDER = ['star', 'volume', 'profit', 'weak'];
+  function quoted(name) { return '«' + '⁨' + name + '⁩' + '»'; }
+  function fmtOf() {
+    return {
+      fa: toFa, money: fmtMoneySigned, pct: fmtPct, q: quoted, toman: TEXT.toman,
+      day: function (i) { return TEXT.dayNames[i]; },
+      month: function (key) { var j = jparse(key); return (ad.months || [])[j.m - 1] + ' ' + toFa(j.y); },
+      names: { site: TEXT.siteName, person: TEXT.personName }
+    };
+  }
+  function trendText(t) {
+    if (!t) return TEXT.trendNone;
+    return (t.dir === 'up' ? '↑ ' : (t.dir === 'down' ? '↓ ' : '→ ')) + (t.pct === 0 ? TEXT.trendWord.flat : fmtPct(t.pct));
+  }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  function kv(host, label, value) {
+    var s = el('span', 'rp-kv');
+    if (label) s.appendChild(document.createTextNode(label + ' '));
+    s.appendChild(el('b', '', value));
+    host.appendChild(s);
+  }
+  function wrapTrunc(name, n) { return name.length > n ? name.slice(0, n - 1) + '…' : name; }
+
+  // Dots: x = number of orders with the product, y = margin %. Dashed lines = the dividing averages.
+  function drawQuad(host, a) {
+    clear(host);
+    var list = a.products.filter(function (p) { return p.group; }).slice(0, 14);
+    if (!list.length) return;
+    var W = Math.max(host.clientWidth || 320, 300), H = 320, L = 44, R = 10, T = 22, B = 36;
+    var maxX = 0, minY = 0, maxY = 0;
+    list.forEach(function (p) { if (p.orders > maxX) maxX = p.orders; if (p.margin < minY) minY = p.margin; if (p.margin > maxY) maxY = p.margin; });
+    maxX = Math.max(maxX, a.quad.medVolume) * 1.12; maxY = Math.max(maxY, a.quad.avgMargin, 5) * 1.12; minY = Math.min(minY, a.quad.avgMargin, 0) * 1.12;
+    var svg = svgBox(host, W, H, TEXT.bestTitle);
+    function X(v) { return L + (W - L - R) * v / maxX; }
+    function Y(v) { return T + (H - T - B) * (maxY - v) / (maxY - minY); }
+    svg.appendChild(S('rect', { x: L, y: T, width: W - L - R, height: H - T - B, fill: 'none', stroke: COLORS.grid, 'stroke-width': 1 }));
+    svg.appendChild(S('line', { x1: X(a.quad.medVolume), x2: X(a.quad.medVolume), y1: T, y2: H - B, stroke: COLORS.rest, 'stroke-width': 1, 'stroke-dasharray': '4 4' }));
+    svg.appendChild(S('line', { x1: L, x2: W - R, y1: Y(a.quad.avgMargin), y2: Y(a.quad.avgMargin), stroke: COLORS.rest, 'stroke-width': 1, 'stroke-dasharray': '4 4' }));
+    if (minY < 0) svg.appendChild(S('line', { x1: L, x2: W - R, y1: Y(0), y2: Y(0), stroke: COLORS.loss, 'stroke-width': 1 }));
+    var corner = { 'font-size': 12, 'font-weight': 700, fill: '#7a6446', style: 'fill:#7a6446' };
+    svg.appendChild(S('text', Object.assign({ x: W - R - 4, y: T + 15, 'text-anchor': 'end' }, corner), rtl(TEXT.groups.star)));
+    svg.appendChild(S('text', Object.assign({ x: L + 4, y: T + 15, 'text-anchor': 'start' }, corner), rtl(TEXT.groups.profit)));
+    svg.appendChild(S('text', Object.assign({ x: W - R - 4, y: H - B - 5, 'text-anchor': 'end' }, corner), rtl(TEXT.groups.volume)));
+    svg.appendChild(S('text', Object.assign({ x: L + 4, y: H - B - 5, 'text-anchor': 'start' }, corner), rtl(TEXT.groups.weak)));
+    svg.appendChild(S('text', { x: (L + W - R) / 2, y: H - 8, 'font-size': 12.5, 'text-anchor': 'middle' }, rtl(TEXT.axisX + ' ←')));
+    svg.appendChild(S('text', { x: 2, y: 14, 'font-size': 12.5, 'text-anchor': 'start' }, rtl(TEXT.axisY + ' ↑')));
+    svg.appendChild(S('text', { x: L - 4, y: Y(a.quad.avgMargin) + 4, 'font-size': 11.5, 'text-anchor': 'end' }, rtl(fmtPct(a.quad.avgMargin))));
+    // slight offsets so dots at the same spot do not hide each other; names only for stars and outliers
+    var maxOrders = 0, maxMargin = -1e9, minMargin = 1e9, placed = [], boxes = [];
+    list.forEach(function (p) { maxOrders = Math.max(maxOrders, p.orders); maxMargin = Math.max(maxMargin, p.margin); minMargin = Math.min(minMargin, p.margin); });
+    var shifts = [[0, 0], [9, 0], [-9, 0], [0, 9], [0, -9], [9, 9], [-9, -9], [9, -9], [-9, 9], [18, 0], [-18, 0]];
+    list.forEach(function (p) {
+      var bx = X(p.orders), by = Y(p.margin), cx = bx, cy = by, k, q, hit;
+      for (k = 0; k < shifts.length; k++) {
+        cx = bx + shifts[k][0]; cy = by + shifts[k][1]; hit = false;
+        for (q = 0; q < placed.length; q++) if (Math.abs(placed[q][0] - cx) < 10 && Math.abs(placed[q][1] - cy) < 10) { hit = true; break; }
+        if (!hit) break;
+      }
+      placed.push([cx, cy]);
+      var dot = S('circle', { cx: cx, cy: cy, r: 6.5, fill: GROUP_COLOR[p.group], stroke: '#f8ecd5', 'stroke-width': 1.5 });
+      dot.appendChild(S('title', null, rtl(p.name + ' — ' + TEXT.groups[p.group] + ' — ' + toFa(p.orders) + ' ' + TEXT.thOrdersN + ' — ' + fmtPct(p.margin))));
+      svg.appendChild(dot);
+      var outlier = p.orders === maxOrders || p.margin === maxMargin || p.margin === minMargin || p.margin < 0;
+      if (p.group !== 'star' && !outlier) return;
+      var txt = wrapTrunc(p.name, 12), w = txt.length * 6.6 + 4, right = cx > W * 0.55, x0 = right ? cx - 10 - w : cx + 10, ok = true;
+      boxes.forEach(function (b) { if (x0 < b[0] + b[2] && x0 + w > b[0] && Math.abs(cy - b[1]) < 13) ok = false; });
+      if (!ok || x0 < L || x0 + w > W - R + 4) return;
+      boxes.push([x0, cy, w]);
+      svg.appendChild(S('text', { x: right ? cx - 10 : cx + 10, y: cy + 4, 'font-size': 12, 'font-weight': 700, 'text-anchor': right ? 'end' : 'start' }, rtl(txt)));
+    });
+  }
+
+  // one bar cut in pieces: segs [{w, color, text}]
+  function drawSegBar(host, segs, label) {
+    clear(host);
+    var total = sumOf(segs, 'w');
+    if (!(total > 0)) return;
+    var W = Math.max(host.clientWidth || 300, 280), x = W;
+    var svg = svgBox(host, W, 40, label);
+    segs.forEach(function (g) {
+      var w = W * g.w / total;
+      if (w <= 0) return;
+      x -= w;
+      svg.appendChild(S('rect', { x: x, y: 4, width: w, height: 32, fill: g.color, stroke: '#f8ecd5', 'stroke-width': 1 }));
+      if (w > 34) svg.appendChild(S('text', { x: x + w / 2, y: 25, 'font-size': 12.5, 'font-weight': 700, 'text-anchor': 'middle', style: 'fill:#ffffff', fill: '#ffffff' }, rtl(g.text)));
+    });
+  }
+  function sumOf(list, k) { var t = 0; list.forEach(function (x) { t += x[k]; }); return t; }
+
+  function legendItem(legend, color, text) {
+    var s = el('span'), sw = document.createElement('i');
+    sw.style.background = color;
+    s.appendChild(sw); s.appendChild(document.createTextNode(text));
+    legend.appendChild(s);
+  }
+
+  function renderAnalysis() {
+    var a = st.an, note = $('an-note'), body = $('an-body');
+    if (!note || !body) return;
+    clear($('an-tips'));
+    if (!a) { body.hidden = true; note.textContent = TEXT.anOld; return; }
+    if (!a.enough) { body.hidden = true; note.textContent = fill(TEXT.anLittle, { need: toFa(a.need), n: toFa(a.orders) }); return; }
+    body.hidden = false;
+    var range = st.range.from ? fill(TEXT.rangeFromTo, { a: toFa(st.range.from.replace(/-/g, '/')), b: toFa(st.range.to.replace(/-/g, '/')) }) : TEXT.rangeAll;
+    var basis = fill(TEXT.anBasis, { n: toFa(a.orders), m: toFa(a.lines), range: range });
+    if (a.hasPrev) basis += fill(TEXT.anBasisPrev, { k: toFa(st.prevDays), p: toFa(a.prevOrders) }); else basis += TEXT.anNoPrev;
+    if (st.cut) basis += ' ' + TEXT.anCut;
+    note.textContent = basis;
+
+    // tips
+    var tl = AN.tips(a, fmtOf()), ol = $('an-tips'), i;
+    if (!tl.length) ol.appendChild(el('li', 'rp-tip-none', TEXT.tipsNone));
+    tl.forEach(function (t, k) {
+      var li = el('li', '', t.text), n = el('span', 'rp-tip-n', toFa(k + 1));
+      n.setAttribute('aria-hidden', 'true');
+      li.insertBefore(n, li.firstChild);
+      ol.appendChild(li);
+    });
+    $('an-tips-hint').textContent = TEXT.tipsHint;
+
+    // products
+    var hint = [];
+    if (a.quad.ok) hint.push(fill(TEXT.quadHint, { n: toFa(AN.LIMIT.productLines) }));
+    else if (!st.data.profit || !st.data.profit.ready || !hasProfit()) hint.push(TEXT.quadNoRaw);
+    else hint.push(fill(TEXT.quadNeed, { n: toFa(AN.LIMIT.quadProducts), l: toFa(AN.LIMIT.productLines) }));
+    hint.push(fill(TEXT.scoreHint, { what: a.quad.ok ? TEXT.whatProfit : TEXT.whatSales, n: toFa(AN.LIMIT.productLines) }));
+    $('an-prod-hint').textContent = hint.join(' ');
+    var quad = $('an-quad'), leg = $('an-quad-legend');
+    clear(quad); clear(leg);
+    if (a.quad.ok) {
+      drawQuad(quad, a);
+      GROUP_ORDER.forEach(function (g) { legendItem(leg, GROUP_COLOR[g], TEXT.groups[g]); });
+    }
+    var rank = $('an-rank');
+    clear(rank);
+    a.ranked.slice(0, 8).forEach(function (p) {
+      var li = el('li', 'rp-rank-row'), top = el('div', 'rp-rank-top'), nm = el('b', '', p.name), sub;
+      top.appendChild(nm);
+      if (p.group) { var chip = el('span', 'rp-chip', TEXT.groups[p.group]); chip.style.background = GROUP_COLOR[p.group]; top.appendChild(chip); }
+      li.appendChild(top);
+      sub = el('div', 'rp-rank-sub');
+      kv(sub, TEXT.scoreLabel, toFa(p.score));
+      kv(sub, TEXT.shareLabel, toFa(Math.round(p.share)) + '٪');
+      kv(sub, '', fmtMoney(p.toman) + ' ' + TEXT.toman);
+      kv(sub, '', toFa(p.orders) + ' ' + TEXT.thOrdersN);
+      if (p.margin !== null) kv(sub, TEXT.thMarginShort, fmtPct(p.margin));
+      if (p.trend) kv(sub, TEXT.trendLabel, trendText(p.trend));
+      li.appendChild(sub);
+      rank.appendChild(li);
+    });
+    drawTable($('an-rank-table'), [TEXT.thProduct, TEXT.scoreLabel, TEXT.thSales, TEXT.thOrdersN, TEXT.thMargin],
+      a.ranked.map(function (p) { return [p.name, toFa(p.score), groupFa(p.toman), toFa(p.orders), p.margin === null ? '—' : fmtPct(p.margin)]; }));
+    var abc = a.abc;
+    drawSegBar($('an-abc'), [
+      { w: abc.a.share, color: COLORS.bar, text: toFa(abc.a.n) }, { w: abc.b.share, color: '#a8700f', text: toFa(abc.b.n) }, { w: abc.c.share, color: COLORS.rest, text: toFa(abc.c.n) }
+    ], TEXT.abcTitle);
+    var abcLeg = $('an-abc-legend');
+    clear(abcLeg);
+    legendItem(abcLeg, COLORS.bar, TEXT.abcA + ': ' + toFa(abc.a.n) + ' (' + toFa(Math.round(abc.a.share)) + '٪)');
+    legendItem(abcLeg, '#a8700f', TEXT.abcB + ': ' + toFa(abc.b.n) + ' (' + toFa(Math.round(abc.b.share)) + '٪)');
+    legendItem(abcLeg, COLORS.rest, TEXT.abcC + ': ' + toFa(abc.c.n) + ' (' + toFa(Math.round(abc.c.share)) + '٪)');
+    $('an-abc-hint').textContent = fill(TEXT.abcLine, { n: toFa(abc.a.n), m: toFa(abc.total), s: toFa(Math.round(abc.a.share)) }) + ' ' + TEXT.abcHint;
+
+    // customers
+    var c = a.customers, ct = $('an-cust'), ch = $('an-cust-hint');
+    clear(ct);
+    if (c.ok) {
+      ct.appendChild(tile(TEXT.custTiles[0], fill(TEXT.custRepeat, { p: toFa(c.repeatPct), a: toFa(c.repeat), b: toFa(c.n) })));
+      ct.appendChild(tile(TEXT.custTiles[1], fmtMoney(c.avgOrder) + ' ' + TEXT.toman, groupFa(c.avgOrder) + ' ' + TEXT.toman));
+      ct.appendChild(tile(TEXT.custTiles[2], fmtNum(c.avgLines)));
+      if (c.returning !== null) ct.appendChild(tile(TEXT.custTiles[3], toFa(c.returning) + ' ' + '/' + ' ' + toFa(c.n)));
+      ch.textContent = c.noId ? fill(TEXT.custNoId, { n: toFa(c.noId) }) : '';
+    } else {
+      ch.textContent = fill(TEXT.custLittle, { n: toFa(AN.LIMIT.customers), k: toFa(c.n) });
+      ct.appendChild(tile(TEXT.custTiles[1], fmtMoney(c.avgOrder) + ' ' + TEXT.toman, groupFa(c.avgOrder) + ' ' + TEXT.toman));
+      ct.appendChild(tile(TEXT.custTiles[2], fmtNum(c.avgLines)));
+    }
+
+    ct.className = 'rp-tiles rp-tiles2' + (ct.children.length === 3 ? ' rp-t3' : (ct.children.length === 2 ? ' rp-t2' : ''));
+
+    // together
+    var pl = $('an-pairs');
+    clear(pl);
+    if (a.pairs.list.length) a.pairs.list.forEach(function (x) {
+      var li = el('li', 'rp-rank-row');
+      li.appendChild(el('b', '', quoted(x.a) + ' + ' + quoted(x.b)));
+      li.appendChild(el('div', 'rp-rank-sub', fill(TEXT.pairsRow, { n: toFa(x.n) })));
+      pl.appendChild(li);
+    });
+    $('an-pairs-hint').textContent = a.pairs.list.length ? '' : fill(TEXT.pairsNone, { n: toFa(AN.LIMIT.pairOrders), m: toFa(a.pairs.multi) });
+
+    // when
+    var wk = $('an-week'), wh = $('an-week-hint');
+    clear(wk);
+    if (a.weekdays.ok) {
+      drawRows(wk, a.weekdays.days.map(function (d) {
+        return { label: TEXT.dayNames[d.i], value: d.toman, text: fmtMoney(d.toman) + ' ' + TEXT.toman + ' · ' + toFa(d.orders) + ' ' + TEXT.thOrdersN, color: d === a.weekdays.best ? COLORS.bar : COLORS.rest };
+      }), TEXT.weekdayTitle);
+      wh.textContent = '';
+    } else wh.textContent = TEXT.weekdayLittle;
+    var mo = $('an-month'), mh = $('an-month-hint');
+    clear(mo);
+    if (a.months.ok) {
+      drawRows(mo, a.months.list.slice(-12).map(function (m) {
+        return { label: fmtOf().month(m.key), value: m.toman, text: fmtMoney(m.toman) + ' ' + TEXT.toman + ' · ' + toFa(m.orders) + ' ' + TEXT.thOrdersN, color: m === a.months.best ? COLORS.bar : COLORS.rest };
+      }), TEXT.monthTitle);
+      mh.textContent = TEXT.monthNote;
+    } else mh.textContent = fill(TEXT.monthLittle, { n: toFa(AN.LIMIT.months) });
+
+    // channels
+    var rows = [], keys = [['site', TEXT.siteName], ['person', TEXT.personName], ['unknown', TEXT.unknownName]];
+    keys.forEach(function (k) {
+      var x = a.channels[k[0]];
+      if (x) rows.push([k[1], toFa(x.orders), fmtMoney(x.avg), toFa(x.share) + '٪', x.margin === null ? '—' : fmtPct(x.margin)]);
+    });
+    var chHeads = [TEXT.thChannel, TEXT.thOrdersN, TEXT.thAvg, TEXT.thShare, TEXT.thMarginShort];
+    drawTable($('an-chan-table'), chHeads, rows);
+    var cards = el('div', 'rp-cards');   // phones: one small card per row instead of the table
+    rows.forEach(function (r) {
+      var c = el('div', 'rp-mini'), g = el('div', 'rp-mini-grid');
+      c.appendChild(el('b', '', r[0]));
+      r.slice(1).forEach(function (v, k) { var d = el('div'); d.appendChild(el('span', '', chHeads[k + 1])); d.appendChild(el('b', '', v)); g.appendChild(d); });
+      c.appendChild(g);
+      cards.appendChild(c);
+    });
+    $('an-chan-table').appendChild(cards);
+
+    // never / rarely sold
+    var idle = $('an-idle'), ih = $('an-idle-hint');
+    clear(idle);
+    if (!a.idle.ok) ih.textContent = TEXT.idleLittle;
+    else if (!a.idle.none.length && !a.idle.rare.length) ih.textContent = fill(TEXT.idleNone, { k: toFa(a.idle.windowDays) });
+    else {
+      ih.textContent = '';
+      if (a.idle.none.length) {
+        var d1 = el('div', 'rp-idle'); d1.appendChild(el('b', '', fill(TEXT.idleNever, { k: toFa(a.idle.windowDays) }) + ':'));
+        d1.appendChild(el('p', '', a.idle.none.map(quoted).join('، ')));
+        idle.appendChild(d1);
+      }
+      if (a.idle.rare.length) {
+        var d2 = el('div', 'rp-idle'); d2.appendChild(el('b', '', TEXT.idleRare + ':'));
+        d2.appendChild(el('p', '', a.idle.rare.map(function (x) { return quoted(x.name) + ' (' + fill(TEXT.idleDays, { n: toFa(x.days) }) + ')'; }).join('، ')));
+        idle.appendChild(d2);
+      }
+    }
+  }
+
+  // The analysis of the loaded period: the previous period = the same number of days right before it.
+  function runAnalysis(raw) {
+    if (!raw) { st.an = null; return; }
+    st.an = AN.analyze(raw, { from: st.range.from, to: st.range.to, today: todayKey(), H: { dayDiff: dayDiff, addDays: addDays, weekdayOf: weekdayOf, monthKey: monthKey } });
+  }
+  function prevFromFor(range) {
+    if (!range.from) return '';
+    var len = dayDiff(range.from, range.to) + 1;
+    return addDays(range.from, -len);
   }
 
   function setPressed(sel, attr, val) {
@@ -440,8 +751,11 @@
     for (i = 0; i < b.length; i++) b[i].setAttribute('aria-pressed', String(b[i].getAttribute(attr) === val));
   }
 
-  function show(summary) {
+  function show(summary, raw) {
     st.data = summary;
+    st.cut = !!(raw && raw.cut);
+    st.prevDays = st.range.from ? dayDiff(st.range.from, st.range.to) + 1 : 0;
+    runAnalysis(raw);
     var any = summary.rows.used > 0;
     $('r-body').hidden = !any;
     $('r-note').textContent = any ? '' : TEXT.empty;
@@ -454,17 +768,17 @@
     var today = todayKey(), range = rangeFor(st.period, today), key = st.period + '|' + today;
     st.range = range;
     var mine = ++st.token;
-    if (!force && st.cache[key]) { show(st.cache[key]); return; }
+    if (!force && st.cache[key]) { show(st.cache[key].summary, st.cache[key].analysis); return; }
     $('r-note').textContent = TEXT.loading;
     $('r-note').className = 'adm-status';
     $('r-body').hidden = true;
-    ad.api('getReport', { from: range.from, to: range.to }, true).then(function (r) {
+    ad.api('getReport', { from: range.from, to: range.to, analysis: true, prevFrom: prevFromFor(range) }, true).then(function (r) {
       if (mine !== st.token) return;
       if (!r || !r.ok) { $('r-note').textContent = ''; ad.setStatus((r && r.message) || TEXT.loadFail, 'err'); return; }
       if (r.report !== true || !r.summary) { $('r-note').textContent = ''; ad.setStatus(TEXT.oldServer, 'err'); return; }
-      st.cache[key] = r.summary;
+      st.cache[key] = { summary: r.summary, analysis: r.analysis || null };
       ad.setStatus('');
-      show(r.summary);
+      show(r.summary, r.analysis || null);
     }, function (err) {
       if (mine !== st.token) return;
       $('r-note').textContent = '';
@@ -511,11 +825,14 @@
     reset: function () {
       st.cache = {}; st.data = null; st.token += 1;
       if ($('r-body')) { $('r-body').hidden = true; clear($('r-tiles')); if ($('r-tiles-profit')) clear($('r-tiles-profit')); }   // nothing of the report stays after logout
+      st.an = null;
+      ['an-tips', 'an-quad', 'an-quad-legend', 'an-rank', 'an-rank-table', 'an-abc', 'an-abc-legend', 'an-cust', 'an-pairs', 'an-week', 'an-month', 'an-chan-table', 'an-idle'].forEach(function (id) { if ($(id)) clear($(id)); });
+      if ($('an-note')) $('an-note').textContent = '';
       ['r-time', 'r-prod', 'r-chan', 'r-chan-legend', 'r-cust', 'r-time-table', 'r-prod-table', 'r-chan-table', 'r-cust-table'].forEach(function (id) { if ($(id)) clear($(id)); });
     },
     util: {
       fmtMoney: fmtMoney, fmtQty: fmtQty, fmtNum: fmtNum, weekStartKey: weekStartKey, monthKey: monthKey, rangeFor: rangeFor, addDays: addDays,
-      dayDiff: dayDiff, buildSeries: buildSeries, margin: margin, fmtSigned: fmtSigned, productRows: productRows, rankByCount: rankByCount, todayKey: todayKey, labelOf: labelOf
+      dayDiff: dayDiff, weekdayOf: weekdayOf, prevFromFor: prevFromFor, buildSeries: buildSeries, margin: margin, fmtSigned: fmtSigned, productRows: productRows, rankByCount: rankByCount, todayKey: todayKey, labelOf: labelOf
     }
   };
   if ($('r-periods')) wire();

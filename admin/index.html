@@ -83,14 +83,41 @@
     .rp-tile.rp-neg b { color: var(--red); }
     .rp-tile b { display: block; font-size: 1.2rem; color: var(--green-dark); line-height: 1.5; }
     .rp-tile span { font-size: .9rem; color: var(--muted); }
+    .rp-h { font-size: 1.3rem; color: var(--green-dark); margin: 22px 0 4px; text-align: center; }
+    .rp-tips { margin: 6px 0; padding: 0; list-style: none; }
+    .rp-tips li { position: relative; padding: 10px 40px 10px 8px; border-bottom: 1px dashed var(--line); line-height: 1.8; text-align: right; }
+    .rp-tips li:last-child { border-bottom: 0; }
+    .rp-tip-n { position: absolute; right: 4px; top: 12px; width: 28px; height: 28px; border-radius: 50%; background: var(--green-dark); color: #fff; font-weight: 700; text-align: center; line-height: 28px; font-size: .9rem; }
+    .rp-tips li.rp-tip-none { padding-right: 8px; color: var(--muted); text-align: center; }
+    .rp-rank { margin: 8px 0 0; padding: 0; list-style: none; }
+    .rp-rank-row { padding: 8px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+    .rp-rank-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+    .rp-chip { color: #fff; border-radius: 999px; padding: 1px 10px; font-size: .8rem; font-weight: 700; }
+    .rp-rank-sub { font-size: .85rem; color: var(--muted); margin-top: 2px; line-height: 1.7; display: flex; flex-wrap: wrap; gap: 0 14px; }
+    .rp-kv { white-space: nowrap; }
+    .rp-kv b { color: var(--text); }
+    .rp-cards { display: none; }
+    .rp-mini { background: #fffaf0; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 8px 0; text-align: right; }
+    .rp-mini > b { display: block; color: var(--green-dark); margin-bottom: 6px; }
+    .rp-mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+    .rp-mini-grid span { display: block; font-size: .8rem; color: var(--muted); }
+    .rp-mini-grid b { font-size: .95rem; }
+    @media (max-width: 639px) { #an-chan-table .rp-table { display: none; } #an-chan-table .rp-cards { display: block; } }
+    #an-chan-table { overflow-x: auto; }
+    #an-chan-table .rp-table { font-size: .82rem; }
+    .rp-idle { text-align: right; margin: 8px 0; }
+    .rp-idle p { margin: 2px 0; line-height: 1.8; }
+    .rp-tiles2 { grid-template-columns: repeat(2, 1fr); }
+    .rp-tiles2 .rp-tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+    @media (min-width: 640px) { .rp-tiles2 { grid-template-columns: repeat(4, 1fr); } .rp-tiles2.rp-t3 { grid-template-columns: repeat(3, 1fr); } .rp-tiles2.rp-t2 { grid-template-columns: repeat(2, 1fr); max-width: 520px; margin-inline: auto; } .rp-tiles2.rp-t3 .rp-tile:last-child, .rp-tiles2.rp-t2 .rp-tile:last-child { grid-column: auto; } }
     .rp-card h2 { font-size: 1.15rem; margin: 0 0 6px; color: var(--brown); }
-    .rp-hint { font-size: .85rem; color: var(--muted); margin: 4px 0; }
+    .rp-hint { font-size: .88rem; color: #6a5438; margin: 4px 0; }
     .rp-chart { overflow-x: auto; direction: ltr; -webkit-overflow-scrolling: touch; }
     .rp-chart svg { display: block; max-width: none; font-family: inherit; }
     .rp-chart text { font-family: inherit; fill: var(--text); }
     .rp-empty { color: var(--muted); padding: 18px 0; }
     .rp-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; margin: 8px 0 0; font-size: .9rem; }
-    .rp-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-inline-end: 5px; vertical-align: -1px; }
+    .rp-legend i { display: inline-block; width: 13px; height: 13px; border-radius: 50%; border: 2px solid #f8ecd5; box-shadow: 0 0 0 1px rgba(74,44,26,.35); margin-inline-end: 5px; vertical-align: -1px; }
     .rp-details { margin-top: 10px; text-align: right; }
     .rp-details summary { cursor: pointer; font-weight: 700; color: var(--green-dark); min-height: 44px; display: flex; align-items: center; }
     .rp-details > div { overflow-x: auto; }
@@ -315,6 +342,63 @@
             <div class="rp-chart" id="r-cust"></div>
             <details class="rp-details"><summary>جدول اعداد</summary><div id="r-cust-table"></div></details>
           </section>
+
+          <h2 class="rp-h">تحلیل و پیشنهاد</h2>
+          <p class="rp-hint" id="an-note"></p>
+          <div id="an-body" hidden>
+            <section class="adm-card rp-card">
+              <h2>پیشنهادها</h2>
+              <ol class="rp-tips" id="an-tips"></ol>
+              <p class="rp-hint" id="an-tips-hint"></p>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>کدوم محصول‌ها بهترن؟</h2>
+              <p class="rp-hint" id="an-prod-hint"></p>
+              <div class="rp-chart" id="an-quad"></div>
+              <div class="rp-legend" id="an-quad-legend"></div>
+              <ol class="rp-rank" id="an-rank"></ol>
+              <details class="rp-details"><summary>جدول همه‌ی محصول‌ها</summary><div id="an-rank-table"></div></details>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>تمرکز فروش</h2>
+              <div class="rp-chart" id="an-abc"></div>
+              <div class="rp-legend" id="an-abc-legend"></div>
+              <p class="rp-hint" id="an-abc-hint"></p>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>مشتری‌های برگشتی</h2>
+              <div class="rp-tiles rp-tiles2" id="an-cust"></div>
+              <p class="rp-hint" id="an-cust-hint"></p>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>چی با چی خریده می‌شه؟</h2>
+              <ol class="rp-rank" id="an-pairs"></ol>
+              <p class="rp-hint" id="an-pairs-hint"></p>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>کی بهتر می‌فروشیم؟</h2>
+              <p class="rp-hint" id="an-week-hint"></p>
+              <div class="rp-chart" id="an-week"></div>
+              <p class="rp-hint" id="an-month-hint"></p>
+              <div class="rp-chart" id="an-month"></div>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>سایت یا حضوری: کدوم بهتره؟</h2>
+              <div id="an-chan-table"></div>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>محصول‌های کم‌فروش</h2>
+              <p class="rp-hint" id="an-idle-hint"></p>
+              <div id="an-idle"></div>
+            </section>
+          </div>
           <p class="rp-hint" id="r-used"></p>
         </div>
       </div>
@@ -451,6 +535,7 @@
 
   <script src="../products.js"></script>
   <script src="admin.js"></script>
+  <script src="analysis.js"></script>
   <script src="report.js"></script>
 </body>
 </html>

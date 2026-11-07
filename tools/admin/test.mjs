@@ -1703,6 +1703,29 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
         let thr = false;
         try { gs.getReport({ from: "", to: "" }); } catch (e) { thr = true; }
         check("(t) report: without a session getReport gives NO_SESSION; called directly it throws (assertSession_)", nos.error === "NO_SESSION" && nos2.error === "NO_SESSION" && thr);
+        // ---- «تحلیل و پیشنهاد»: the extra `analysis` part of getReport (owner approved 2026-11-07) ----
+        {
+          const ra = rep({ from: "1405-08-01", to: "1405-08-30", analysis: true, prevFrom: "1405-06-25" }, rows0);
+          const an = ra.data.analysis;
+          check("(w) analysis: only asked for with analysis:true (a normal getReport has no analysis part)", ra.data.ok === true && !!an && !("analysis" in rep({ from: "1405-08-01", to: "1405-08-30" }, rows0).data));
+          check("(w) analysis: lines = the sales of the period AND the period before it (6 lines); buys, no-date and no-total rows are left out",
+            an.lines.length === 6 && an.lines.every((l) => l.length === 9) && an.lines.some((l) => l[0] === "1405-07-01") && !an.lines.some((l) => l[3] === "" && l[5] === 2000000), JSON.stringify(an.lines));
+          check("(w) analysis: an order's lines share one order key; a row without an order number has its own key; items are listed once",
+            an.lines.filter((l) => l[1] === "o7").length === 2 && an.lines.filter((l) => l[1] === "o8").length === 2 && new Set(an.lines.map((l) => l[1])).size === 4 && an.items.length === 2, JSON.stringify(an.items));
+          check("(w) analysis: NO customer names anywhere, only customer ids (and no raw prices)", !/zahra|ahmadi/i.test(JSON.stringify(an)) && an.lines.some((l) => l[7] === "2") && an.lines.every((l) => l[6] === null) && an.profitReady === false && Array.isArray(an.shop), JSON.stringify(an).slice(0, 300));
+          const badPrev = [rep({ from: "1405-08-01", to: "1405-08-30", analysis: true, prevFrom: "x" }, rows0), rep({ from: "1405-08-01", to: "1405-08-30", analysis: true, prevFrom: "1405-08-05" }, rows0), rep({ from: "", to: "", analysis: true, prevFrom: "1405-01-01" }, rows0), rep({ from: "1405-08-01", to: "", analysis: true, prevFrom: 7 }, rows0)];
+          check("(w) analysis: a bad prevFrom (not a date, not before from, or no from at all) is refused with a message", badPrev.every((x) => x.data.ok === false && typeof x.data.message === "string"), JSON.stringify(badPrev));
+          const ents = rows0.map((r) => gs.ledgerEntry_(r));
+          const rawP = { ready: true, prices: { a: 300000 } };
+          const sm2 = gs.reportSummarize_(ents, [], "", "", rawP), ln2 = gs.reportLines_(ents, "", "", rawP);
+          let sumP = 0; ln2.lines.forEach((l) => { if (l[6] !== null) sumP += l[6]; });
+          check("(w) analysis: the profit of the lines is exactly the report's profit (same costing rule: packs only, current raw price, not «سایر»)", sm2.profit.profit === sumP && sm2.profit.rows === ln2.lines.filter((l) => l[6] !== null).length && sumP !== 0, sm2.profit.profit + " vs " + sumP);
+          const big = []; for (let i = 0; i < 20005; i++) big.push({ id: "L" + i, type: "sell", date: "1405-08-" + String(1 + (i % 28)).padStart(2, "0"), productId: "a", productName: "x", qty: 1, qtyUnit: "pack", rowToman: 10, customerId: "", channel: "site", orderId: i });
+          const cap = gs.reportLines_(big, "", "", { ready: false, prices: {} });
+          check("(w) analysis: at most 20,000 lines are sent (the newest ones) and `cut` says so", cap.lines.length === 20000 && cap.cut === true && !cap.lines.some((l) => l[0] === "1405-08-01" && false));
+          const src = read("tools/admin/Code.gs"), gr = src.slice(src.indexOf("function getReport("));
+          check("(w) analysis: getReport stays read-only (no setValue / appendRow / lock in it or in reportLines_)", !/setValue|appendRow|withLock_|deleteRow|setValues/.test(gr.slice(0, gr.indexOf("\n}\n") > 0 ? gr.indexOf("\n}\n") : 3000)) && !/setValue|appendRow|withLock_/.test(src.slice(src.indexOf("function reportLines_("), src.indexOf("function getReport("))));
+        }
         mkBook(["products", "customers", "log"]);
         const noTab = post({ action: "getReport", session: ss, data: {} });
         check("(t) report: no «خرید و فروش» tab → a message, no crash", noTab.data.ok === false && typeof noTab.data.message === "string");
@@ -2030,6 +2053,8 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const rsrc = read("admin/report.js"), html = read("admin/index.html"), adm = read("admin/admin.js");
   const win = { barginAdmin: { jalCal_: gs.jalCal_, toJalali_: gs.toJalali_, months: ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"] } };
   const ctxr = { window: win, document: { getElementById: () => null }, Intl, Date, Math, Object, String };
+  const asrc = read("admin/analysis.js");
+  vm.runInNewContext(asrc, ctxr);
   vm.runInNewContext(rsrc, ctxr);
   const U = win.barginReport.util;
   const p2 = (n) => String(n).padStart(2, "0");
@@ -2069,10 +2094,10 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(t) an empty period gives an empty series", U.buildSeries([], "day", "", "").length === 0);
   // the page code itself
   const newer = /\?\.|\?\?|Object\.fromEntries|replaceAll|\.at\(|\.flat\(|flatMap|matchAll|structuredClone|\/[gimsy]*u[gimsy]*[,;)\s]/;
-  check("(t) report.js and the whole admin use nothing newer than ES2017", !newer.test(rsrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(adm.replace(/\/\/[^\n]*/g, "")));
+  check("(t) report.js and the whole admin use nothing newer than ES2017", !newer.test(rsrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(asrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(adm.replace(/\/\/[^\n]*/g, "")));
   check("(t) report.js: no innerHTML / eval / document.write / libraries / network calls of its own (only barginAdmin.api)", !/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|fetch\(|XMLHttpRequest|import\(|require\(|https?:\/\//.test(rsrc.replace(/'http:\/\/www\.w3\.org\/2000\/svg'/, "")));
   check("(t) report.js only reads: it calls getReport and no save/delete action", /api\('getReport'/.test(rsrc) && !/saveLedger|deleteLedger|saveProduct|deleteProduct|publishCsv/.test(rsrc));
-  check("(t) the page loads report.js after admin.js (script-src 'self' allows it) and has the «گزارش» tab", /<script src="admin\.js"><\/script>\s*<script src="report\.js"><\/script>/.test(html) && /id="tab-report"[^>]*>گزارش</.test(html) && /script-src 'self'/.test(html));
+  check("(t) the page loads report.js after admin.js (script-src 'self' allows it) and has the «گزارش» tab", /<script src="admin\.js"><\/script>\s*<script src="analysis\.js"><\/script>\s*<script src="report\.js"><\/script>/.test(html) && /id="tab-report"[^>]*>گزارش</.test(html) && /script-src 'self'/.test(html));
   check("(t) the report has the four tiles, the three switches and the four charts with a «جدول اعداد» under each",
     ["جمع فروش", "تعداد سفارش", "تعداد مشتری", "میانگین هر سفارش"].every((t) => rsrc.includes(t)) && ["این ماه", "۳ ماه اخیر", "امسال", "روزانه", "هفتگی", "ماهانه", "به تومان", "به تعداد", "فروش و سود در طول زمان", "سالانه", "۷ روز اخیر", "هفته‌ی قبل", "پرفروش‌ترین محصولات", "سایت یا حضوری؟", "بهترین مشتری‌ها"].every((t) => html.includes(t)) && (html.match(/<summary>جدول اعداد<\/summary>/g) || []).length === 4 && (html.match(/<details/g) || []).length >= 4);
   check("(t) the old-server guard: an old script (unknown_action, or no report:true) shows a message; the session loss goes through onApiError (back to login)", /unknown_action/.test(rsrc) && /r\.report !== true/.test(rsrc) && /ad\.onApiError\(err/.test(rsrc) && /onApiError[\s\S]{0,200}NO_SESSION/.test(adm));
@@ -2101,6 +2126,66 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(v) margin = profit ÷ costed sales in %, negative for a loss, 0 without a base: 500/1500 = 33, −50/100 = −50", U.margin(500, 1500) === 33 && U.margin(-50, 100) === -50 && U.margin(0, 0) === 0 && U.fmtSigned(-50000) === "\u2066\u2212۵۰,۰۰۰\u2069" && U.fmtSigned(1200) === "۱,۲۰۰");
   check("(v) the page: profit tiles, «فروش / سود» switch, granularity (4), products «سود» mode, the no-cost note and the current-raw-price note are all there; losses are red and hang below a zero line",
     ["سود", "هزینه", "حاشیه سود", "قیمت اولیه نداشتن", "قیمت اولیه‌ی فعلی"].every((t) => rsrc.includes(t)) && /data-metric="profit"/.test(html) && /data-grain="year"/.test(html) && /data-mode="profit"/.test(html) && /id="r-tiles-profit"/.test(html) && /loss: '#c8321e'/.test(rsrc) && /zeroY/.test(rsrc));
+
+  // ---- (w) «تحلیل و پیشنهاد»: admin/analysis.js (owner approved 2026-11-07) ----
+  {
+    const AN = win.barginAnalysis;
+    const H = { dayDiff: U.dayDiff, addDays: U.addDays, weekdayOf: U.weekdayOf, monthKey: U.monthKey };
+    const F = { fa: String, money: (n) => String(n), pct: (n) => n + "%", q: (n) => "«" + n + "»", toman: "تومان", day: (i) => ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"][i], month: (k) => k, names: { site: "سایت", person: "حضوری" } };
+    const items = [{ i: "a", n: "الف" }, { i: "b", n: "ب" }, { i: "c", n: "ج" }, { i: "d", n: "د" }, { i: "", n: "سایر کالا" }];
+    const shop = [{ id: "a", name: "الف" }, { id: "b", name: "ب" }, { id: "c", name: "ج" }, { id: "d", name: "د" }, { id: "f", name: "ف" }];
+    const mk = (o, day, it, toman, profit, cust, ch) => [day, "o" + o, it, "pack", 1, toman, profit, cust, ch || "s"];
+    const orders30 = [];
+    for (let i = 0; i < 30; i++) {
+      const day = U.addDays("1405-07-01", i), cust = String(1 + (i % 10)), ch = i % 2 ? "p" : "s";
+      orders30.push(mk(i, day, 0, 100000, 60000, cust, ch));
+      if (i % 2 === 0) orders30.push(mk(i, day, 1, 100000, 5000, cust, ch));
+      if (i % 5 === 0) orders30.push(mk(i, day, 2, 300000, 200000, cust, ch));
+      if (i % 3 === 0) orders30.push(mk(i, day, 3, 50000, 10000, cust, ch));
+      if (i === 29) orders30.push(mk(i, day, 4, 10000, null, cust, ch));
+    }
+    const ctx = { from: "", to: "", today: "1405-09-30", H };
+    const few = AN.analyze({ lines: orders30.filter((l) => +l[1].slice(1) < 19), items, shop, prevFrom: "" }, ctx);
+    check("(w) analysis: under 20 orders = not enough: no numbers, no tips (19 orders)", few.enough === false && few.orders === 19 && AN.tips(few, F).length === 0);
+    const a = AN.analyze({ lines: orders30, items, shop, prevFrom: "" }, ctx);
+    check("(w) analysis: 30 orders count as 30 (lines of one order are one order)", a.enough === true && a.orders === 30 && a.lines === orders30.length);
+    const g = (id) => a.products.find((p) => p.id === id);
+    check("(w) analysis: quadrant groups — الف ستاره, ب پرفروش کم‌سود, ج پرسود کم‌فروش, د ضعیف; margins 60/5/67/20", g("a").group === "star" && g("b").group === "volume" && g("c").group === "profit" && g("d").group === "weak" && g("a").margin === 60 && g("b").margin === 5 && g("c").margin === 67 && g("d").margin === 20 && a.quad.ok === true, JSON.stringify([g("a").group, g("b").group, g("c").group, g("d").group]));
+    check("(w) analysis: a «سایر» item (1 line) is not ranked or grouped, but stays in the sales numbers", a.products.some((p) => p.id === "" && p.group === "" && p.score === null) && a.ranked.every((p) => p.lines >= AN.LIMIT.productLines));
+    check("(w) analysis: score is 0-100 and the star scores best", a.ranked.every((p) => p.score >= 0 && p.score <= 100) && a.ranked[0].id === "a");
+    check("(w) analysis: ABC — the first 80% of sales come from the first products; shares add up to about 100", a.abc.a.n >= 1 && Math.abs(a.abc.a.share + a.abc.b.share + a.abc.c.share - 100) < 0.01 && a.abc.total === 5);
+    check("(w) analysis: customers — 10 customers, each bought 3 times = 100% repeat; average order = total ÷ orders", a.customers.ok && a.customers.n === 10 && a.customers.repeat === 10 && a.customers.repeatPct === 100 && a.customers.avgOrder === Math.round(a.totalToman / 30));
+    check("(w) analysis: bought together — الف+ب appear in 15 orders; pairs under 3 orders are left out", a.pairs.list[0].n === 15 && a.pairs.list.every((x) => x.n >= 3));
+    check("(w) analysis: weekdays need 4 weeks (30 days: yes) and the best day has its share; months need 3 full months (only 2: no)", a.weekdays.ok === true && a.weekdays.bestShare > 0 && a.months.ok === false);
+    check("(w) analysis: channels — site and person orders add up to 30; average per channel", a.channels.site.orders + a.channels.person.orders === 30 && a.channels.site.avg > 0 && a.channels.person.margin !== null);
+    check("(w) analysis: never-sold shop product «ف» and the long-idle ones are listed (the data reaches back 90 days)", a.idle.ok && a.idle.none.indexOf("ف") >= 0 && a.idle.rare.some((x) => x.name === "الف" && x.days >= 28));
+    const t = AN.tips(a, F);
+    check("(w) analysis: at most 5 tips, each with a number, from rules (star, low margin, idle, pairs…)", t.length > 0 && t.length <= 5 && t.every((x) => /[0-9]/.test(x.text)) && t.some((x) => x.id === "star" && x.text.includes("الف")) && t.some((x) => x.id === "lowmargin" && x.text.includes("ب")), JSON.stringify(t.map((x) => x.id)));
+    // previous period + trend: 20 orders before and 20 in the period; «الف» sells half as much now
+    const tl = [];
+    for (let i = 0; i < 40; i++) {
+      const day = U.addDays("1405-06-01", i);
+      if (i < 20 || i % 2 === 0) tl.push(mk(i, day, 0, 100000, 60000, String(i), "s"));
+      tl.push(mk(i, day, 1, 20000 + (i < 20 ? 0 : 1000), 4000, String(i), "s"));
+    }
+    const ctx2 = { from: U.addDays("1405-06-01", 20), to: U.addDays("1405-06-01", 39), today: "1405-07-20", H };
+    const b = AN.analyze({ lines: tl, items, shop, prevFrom: "1405-06-01" }, ctx2);
+    const ba = b.products.find((p) => p.id === "a");
+    check("(w) analysis: trend compares with the period before: 10 lines now against 20 before = −50%, «down»; the period only has its own lines", b.enough && b.hasPrev && ba.trend && ba.trend.pct === -50 && ba.trend.dir === "down" && ba.lines === 10 && ba.prevLines === 20);
+    check("(w) analysis: a falling product gives a tip with both numbers", AN.tips(b, F).some((x) => x.id === "falling" && x.text.includes("الف") && x.text.includes("500000") === false));
+    const c = AN.analyze({ lines: tl, items, shop, prevFrom: "1405-06-01" }, { from: "", to: "", today: "1405-07-20", H });
+    check("(w) analysis: with no start date there is no previous period, so no trend arrows", c.hasPrev === false && c.products.every((p) => p.trend === null));
+    const nr = AN.analyze({ lines: orders30.map((l) => { const x = l.slice(); x[6] = null; return x; }), items, shop, prevFrom: "" }, ctx);
+    check("(w) analysis: no raw prices = no quadrant, no margins; the ranking uses sales and volume; tips about profit never appear", nr.enough && nr.quad.ok === false && nr.products.every((p) => p.margin === null && p.group === "") && nr.ranked.length >= 3 && !AN.tips(nr, F).some((x) => ["loss", "lowmargin", "highprofit", "star"].indexOf(x.id) >= 0));
+    const neg = orders30.map((l) => { const x = l.slice(); if (x[2] === 3) x[6] = -5000; return x; });
+    check("(w) analysis: a product sold under its raw price gives the «loss» tip first", AN.tips(AN.analyze({ lines: neg, items, shop, prevFrom: "" }, ctx), F)[0].id === "loss");
+    const short = AN.analyze({ lines: orders30, items, shop, prevFrom: "" }, { from: "", to: "", today: "1405-07-31", H });
+    check("(w) analysis: «never sold» is silent when the data does not reach back 8 weeks", short.idle.ok === false);
+    check("(w) analysis: analysis.js has no DOM, no network, no names", !/document|fetch\(|XMLHttpRequest|innerHTML|zahra/.test(asrc.replace(/\/\/[^\n]*/g, "")));
+    check("(w) the page: «تحلیل و پیشنهاد» section with tips, quadrant, repeat customers, pairs, weekdays, channels, idle; report.js asks getReport with analysis:true and prevFrom",
+      /تحلیل و پیشنهاد/.test(html) && ["an-tips", "an-quad", "an-abc", "an-cust", "an-pairs", "an-week", "an-month", "an-chan-table", "an-idle"].every((i) => html.includes('id="' + i + '"')) && /analysis: true, prevFrom:/.test(rsrc) && /هنوز داده‌ی کافی برای پیشنهاد نیست/.test(rsrc));
+    check("(w) analysis: the previous period is the same number of days right before: 30 days from 1405-08-01 → prevFrom 1405-07-01", U.prevFromFor({ from: "1405-08-01", to: "1405-08-30" }) === "1405-07-01" && U.prevFromFor({ from: "", to: "" }) === "");
+  }
 }
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

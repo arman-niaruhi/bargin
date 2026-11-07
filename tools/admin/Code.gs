@@ -1443,6 +1443,38 @@ function reportSummarize_(entries, customers, from, to, raw) {
   return out;
 }
 
+// ANALYSIS lines (owner approved 2026-11-07, «تحلیل و پیشنهاد»): pure. The SALES between `lo` (the start of the previous
+// period when the page asks for one, else `from`) and `to`, as small arrays the page analyses itself:
+// lines = [[date, orderKey, itemIndex, unit, qty, rowToman, profit|null, customerId, channel('s'|'p'|'u')]],
+// items = [{i: productId ('' for «سایر»), n: name}]. profit is null unless the row is costed exactly like in
+// reportSummarize_ (same pack-unit rule, current raw price). NO customer names, only the customer id. Same skipping
+// rules as reportSummarize_ (a sale without a date or a total is left out). Capped at REPORT_MAX_LINES (newest kept).
+var REPORT_MAX_LINES = 20000;
+function reportLines_(entries, lo, to, raw) {
+  var prices = (raw && raw.ready && raw.prices) || {}, ready = !!(raw && raw.ready);
+  var items = [], itemAt = {}, lines = [];
+  (entries || []).forEach(function (e, n) {
+    if (!e || e.id === '' || e.type !== 'sell') return;
+    var date = typeof e.date === 'string' && /^\d{4}-\d\d-\d\d$/.test(e.date) ? e.date : '';
+    if (!date || (lo && date < lo) || (to && date > to)) return;
+    if (typeof e.rowToman !== 'number' || !isFinite(e.rowToman) || e.rowToman < 0) return;
+    var key = e.productId !== '' ? e.productId : e.productName;
+    if (!Object.prototype.hasOwnProperty.call(itemAt, key)) { itemAt[key] = items.length; items.push({ i: e.productId, n: e.productName || e.productId }); }
+    var qty = typeof e.qty === 'number' && isFinite(e.qty) && e.qty > 0 ? e.qty : 0;
+    var price = e.productId !== '' && e.productId !== LEDGER_OTHER_ID && Object.prototype.hasOwnProperty.call(prices, e.productId) ? prices[e.productId] : null;
+    var profit = null;
+    if (ready && e.qtyUnit === 'pack' && typeof price === 'number' && isFinite(price) && price > 0 && qty > 0) profit = e.rowToman - Math.round(price * qty);
+    lines.push([date, typeof e.orderId === 'number' ? 'o' + e.orderId : 'r' + n, itemAt[key], REPORT_UNITS.indexOf(e.qtyUnit) >= 0 ? e.qtyUnit : '', qty, e.rowToman, profit,
+      e.customerId !== '' ? e.customerId : '', e.channel === 'site' ? 's' : (e.channel === 'person' ? 'p' : 'u')]);
+  });
+  var cut = lines.length > REPORT_MAX_LINES;
+  if (cut) {
+    lines.sort(function (a, b) { return a[0] < b[0] ? 1 : (a[0] > b[0] ? -1 : 0); });
+    lines = lines.slice(0, REPORT_MAX_LINES);
+  }
+  return { lines: lines, items: items, cut: cut };
+}
+
 // Action getReport (read-only): data = {from, to} Persian dates 'yyyy-mm-dd' (either may be '' = no limit).
 // Reads ALL ledger rows (not only the newest 2000). Returns {ok:true, report:true, summary} or {ok:false, message}.
 function getReport(data) {
@@ -1459,7 +1491,21 @@ function getReport(data) {
   // the private raw prices (read only); a missing or broken tab just means «no profit», never an error
   var rm = rawMap_(), prices = {};
   if (rm.ready) Object.keys(rm.map).forEach(function (id) { if (typeof rm.map[id].toman === 'number') prices[id] = rm.map[id].toman; });
-  return { ok: true, report: true, summary: reportSummarize_(entries, customers, from, to, { ready: rm.ready, prices: prices }) };
+  var raw = { ready: rm.ready, prices: prices };
+  var out = { ok: true, report: true, summary: reportSummarize_(entries, customers, from, to, raw) };
+  if (data && data.analysis === true) {
+    // for «تحلیل و پیشنهاد»: the sale lines of the period and of the equal period before it (prevFrom), no names
+    var prevFrom = data.prevFrom !== undefined && data.prevFrom !== null ? data.prevFrom : '';
+    if (typeof prevFrom !== 'string' || (prevFrom !== '' && (ledgerDate_(prevFrom) !== prevFrom || !from || prevFrom >= from))) return { ok: false, message: MSG.reportRange };
+    var an = reportLines_(entries, prevFrom || from, to, raw);
+    var shop = [];
+    try {   // the current shop products (to find the ones that never sell); a broken products tab just means no list
+      var pr = readSheetRows();
+      if (!pr.issues.length) pr.rows.forEach(function (r) { if (r.id && r.name) shop.push({ id: r.id, name: r.name }); });
+    } catch (err) { shop = []; }
+    out.analysis = { lines: an.lines, items: an.items, cut: an.cut, shop: shop, prevFrom: prevFrom, profitReady: !!rm.ready };
+  }
+  return out;
 }
 
 // Action saveLedgerRow (under the lock): `entry` from the form; `id` = the row's id when editing, '' for a new row.
