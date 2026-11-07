@@ -52,6 +52,59 @@ DRY_PARSLEY = ["#3e5f24", "#4a6d2c", "#567934", "#36541f", "#62843d", "#43662a"]
 DRY_ZALANG = ["#55703a", "#617d42", "#6d894b", "#4a6332", "#7a9556", "#5a7540"]
 DRY_SHAMI = ["#46632a", "#526f31", "#5e7b39", "#3d5824", "#6a8743", "#4f6c2f"]
 
+BEAN_GREENS = ["#3f8a2a", "#4f9a33", "#5ea83b", "#6db048", "#47862c"]
+
+
+def bean_piece(x, y, length, angle, color, rnd):
+    # one cut piece of green bean: a rounded capsule with seed bumps and a pale cut end
+    w = length * 0.3
+    bumps = "".join(f'<ellipse cx="{-length/2 + length*(i+1)/4:.1f}" cy="0" rx="{w*0.32:.1f}" ry="{w*0.26:.1f}" '
+                    f'fill="#fff" opacity=".10"/>' for i in range(3))
+    cut = (f'<ellipse cx="{length/2 - w*0.15:.1f}" cy="0" rx="{w*0.22:.1f}" ry="{w*0.42:.1f}" fill="#c9e39a" opacity=".85"/>'
+           if rnd.random() < 0.55 else "")
+    return (f'<g transform="translate({x:.1f},{y:.1f}) rotate({angle:.1f})">'
+            f'<rect x="{-length/2:.1f}" y="{-w/2:.1f}" width="{length:.1f}" height="{w:.1f}" rx="{w/2:.1f}" fill="{color}"/>'
+            f'<rect x="{-length/2:.1f}" y="{w/2 - w*0.28:.1f}" width="{length:.1f}" height="{w*0.28:.1f}" rx="{w*0.14:.1f}" fill="#1f4d14" opacity=".35"/>'
+            f'{bumps}{cut}'
+            f'<path d="M{-length/2 + w*0.4:.1f},{-w*0.22:.1f} L{length/2 - w*0.4:.1f},{-w*0.22:.1f}" '
+            f'stroke="#fff" stroke-opacity=".3" stroke-width="{max(1.2, w*0.12):.1f}" stroke-linecap="round"/></g>')
+
+
+def bean_fill(x0, y0, x1, y1, seed, n=95):
+    rnd = random.Random(seed)
+    return "".join(bean_piece(rnd.uniform(x0 - 10, x1 + 10), rnd.uniform(y0 - 5, y1 + 15), rnd.uniform(26, 40),
+                              rnd.uniform(0, 180), rnd.choice(BEAN_GREENS), rnd) for _ in range(n))
+
+
+def green_bean(x, y, angle, length, seed):
+    # a whole green bean pod lying on the table: curved, tapered tip, small stem
+    rnd = random.Random(seed)
+    w = length * 0.075
+    c = rnd.choice(["#4f9a33", "#5ea83b", "#47862c"])
+    pod = (f'M0,{-w*0.4:.1f} Q{length*0.1:.1f},{-w*1.1:.1f} {length*0.5:.1f},{-w*1.0 - length*0.06:.1f} '
+           f'Q{length*0.85:.1f},{-w*0.9 - length*0.03:.1f} {length:.1f},{-length*0.02:.1f} '
+           f'Q{length*0.85:.1f},{w*0.6 - length*0.02:.1f} {length*0.5:.1f},{w*0.9 - length*0.05:.1f} '
+           f'Q{length*0.1:.1f},{w:.1f} 0,{w*0.4:.1f} Z')
+    bumps = "".join(f'<ellipse cx="{length*t:.1f}" cy="{-length*0.06*math.sin(math.pi*t) - w*0.05:.1f}" '
+                    f'rx="{w*0.75:.1f}" ry="{w*0.6:.1f}" fill="#fff" opacity=".09"/>' for t in (0.22, 0.37, 0.52, 0.67, 0.82))
+    return (f'<g transform="translate({x},{y}) rotate({angle})">'
+            f'<ellipse cx="{length*0.5:.0f}" cy="{w*1.6:.0f}" rx="{length*0.5:.0f}" ry="{w*0.6:.0f}" fill="#5a3a1c" opacity=".3" filter="url(#soft)"/>'
+            f'<path d="{pod}" fill="{c}"/>'
+            f'<path d="M{length*0.08:.1f},{w*0.35:.1f} Q{length*0.5:.1f},{w*0.6 - length*0.05:.1f} {length*0.95:.1f},{-length*0.015:.1f}" '
+            f'stroke="#1f4d14" stroke-opacity=".35" stroke-width="2" fill="none"/>'
+            f'{bumps}'
+            f'<path d="M{length*0.1:.1f},{-w*0.55:.1f} Q{length*0.5:.1f},{-w*0.75 - length*0.06:.1f} {length*0.88:.1f},{-w*0.45 - length*0.03:.1f}" '
+            f'stroke="#fff" stroke-opacity=".28" stroke-width="{max(2, w*0.3):.1f}" fill="none" stroke-linecap="round"/>'
+            f'<path d="M0,0 q-10,-2 -16,-9" stroke="#3d6b22" stroke-width="4" fill="none" stroke-linecap="round"/>'
+            f'<path d="M{length:.1f},{-length*0.02:.1f} q8,2 12,-5" stroke="#3d6b22" stroke-width="2" fill="none" stroke-linecap="round"/></g>')
+
+
+def bean_pieces(seed):
+    rnd = random.Random(seed)
+    spots = [(590, 700, 20), (622, 710, -35), (660, 704, 70), (700, 694, 10)]
+    return "".join(f'<ellipse cx="{x}" cy="{y + 9}" rx="18" ry="4" fill="#5a3a1c" opacity=".28" filter="url(#soft)"/>'
+                   + bean_piece(x, y, 36, a, rnd.choice(BEAN_GREENS), rnd) for x, y, a in spots)
+
 
 def page(svg_body, labels_html):
     return f"""<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">{FONT}
@@ -95,12 +148,22 @@ svg{{position:absolute;inset:0}}
 </div></body></html>"""
 
 
-def pouch(seed, palette, band_color):
-    # stand-up kraft pouch
+def pouch(seed, palette, band_color, fill="herbs", decor="sprigs"):
+    # stand-up kraft pouch; fill/decor "beans" = green beans (لوبیا سبز)
     body = ('M245,140 L555,140 L572,668 Q574,700 542,702 L258,702 Q226,700 228,668 Z')
     zig = "M245,140 " + " ".join(f"L{245 + i*10 + 5},{130 if i % 2 == 0 else 140}" for i in range(31)) + " L555,140"
     win_x0, win_y0, win_x1, win_y1 = 300, 546, 500, 650
-    herbs = herb_fill(win_x0, win_y0, win_x1, win_y1, palette, seed)
+    herbs = (bean_fill(win_x0, win_y0, win_x1, win_y1, seed) if fill == "beans"
+             else herb_fill(win_x0, win_y0, win_x1, win_y1, palette, seed))
+    if decor == "beans":
+        decor_svg = (green_bean(145, 652, -14, 140, seed+3) + green_bean(135, 676, -4, 150, seed+1)
+                     + green_bean(160, 696, 3, 130, seed+2)
+                     + sprig(640, 700, 34, 0.85, GREENS_FRESH, seed+4)
+                     + bean_pieces(seed+5))
+    else:
+        decor_svg = f"""{sprig(190, 700, -28, 1.05, GREENS_FRESH, seed+1)}
+{sprig(612, 705, 24, 0.95, GREENS_FRESH, seed+2)}
+{sprig(640, 700, 48, 0.7, GREENS_FRESH, seed+3)}"""
     return f"""
 <ellipse cx="400" cy="716" rx="230" ry="26" fill="#5a3a1c" opacity=".35" filter="url(#soft)"/>
 <path d="{body}" fill="url(#kraft)"/>
@@ -116,9 +179,7 @@ def pouch(seed, palette, band_color):
 <rect x="265" y="184" width="270" height="346" rx="16" fill="url(#paper)" stroke="#4a2c1a" stroke-width="3"/>
 <rect x="274" y="193" width="252" height="328" rx="11" fill="none" stroke="#4a2c1a" stroke-width="1.2" opacity=".6"/>
 <path d="{body}" fill="url(#shine)"/>
-{sprig(190, 700, -28, 1.05, GREENS_FRESH, seed+1)}
-{sprig(612, 705, 24, 0.95, GREENS_FRESH, seed+2)}
-{sprig(640, 700, 48, 0.7, GREENS_FRESH, seed+3)}
+{decor_svg}
 """
 
 
@@ -345,6 +406,8 @@ files = {
                     pouch_labels("اسفناج تازه", "سبزی تازه خانگی", "۴۰۰ گرم")),
     "shevid-taze": page(pouch(73, ["#5e9a2e", "#6eaa38", "#7db843", "#4f8a26", "#8cc24f", "#66a232"], "#4f8a26"),
                         pouch_labels("شوید تازه", "سبزی تازه خانگی", "۳۰۰ گرم")),
+    "lobia-sabz": page(pouch(83, GREENS_FRESH, "#2f7a1f", fill="beans", decor="beans"),
+                       pouch_labels("لوبیا سبز تازه", "لوبیا سبز خانگی", "۴۰۰ گرم")),
     "nana": page(pouch(31, DRY_MINT, "#4c6535"),
                  pouch_labels("نعنا", "سبزی خشک خانگی", "۱۰۰ گرم")),
     "shevid": page(pouch(37, DRY_DILL, "#5e7230"),
@@ -369,7 +432,7 @@ files = {
     "torshi-makhloot": page(jar(JAR_TORSHI, "herbs"),
                             jar_labels("ترشی مخلوط", "#1f5714", None, 30, "ترشی خانگی")),
     "bademjan-kababi": page(jar(JAR_BADEMJAN, "eggplant"),
-                            jar_labels("بادمجان کبابی", "#4a2c1a", "۱ کیلو", 28)),
+                            jar_labels("بادمجان کبابی", "#4a2c1a", "۵۰۰ گرم", 28)),
     "dalal-mast": page(jar(JAR_DALAL_MAST, "herbs"),
                        jar_labels("دلال ماست", "#1f5714", "۳۵۰ گرم", 26, "دلال خانگی")),
     "dalal-kahoo": page(jar(JAR_DALAL_KAHOO, "herbs"),
