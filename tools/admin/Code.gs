@@ -1476,56 +1476,6 @@ function findSaleOrder_(values, customerId, date, channelText) {
   return best;
 }
 
-// Plans the one-time grouping of OLD sale rows (no orderId): rows with the same customerId + date + channel share
-// one order number. An existing order with the same customer + date + channel is joined instead of a new number.
-// Buys and sales without a customerId are left alone. Pure. Returns {assign: [{idx, orderId}], newOrders, joined, orders, last}
-// (`idx` = index in `values`; `orders` = how many different order numbers the rows now share).
-function planGroupSales_(values, seq) {
-  var existing = {}, groups = {}, assign = [], used = {}, newOrders = 0, joined = 0;
-  var next = nextOrderId_(values.map(function (v) { return v[17]; }), seq);
-  var keyOf = function (v) { return toAsciiDigits(cellText(v[15])) + '|' + cellText(v[2]) + '|' + cellText(v[16]); };
-  var isSale = function (v) { return cellText(v[3]) === LEDGER_TYPES.sell && toAsciiDigits(cellText(v[15])) !== ''; };
-  values.forEach(function (v) {
-    var oid = orderIdOf_(v[17]);
-    if (oid === null || !isSale(v)) return;
-    var k = keyOf(v);
-    if (existing[k] === undefined || oid < existing[k]) existing[k] = oid;
-  });
-  values.forEach(function (v, idx) {
-    if (!isSale(v) || orderIdOf_(v[17]) !== null || cellText(v[0]) === '') return;
-    var k = keyOf(v), oid;
-    if (existing[k] !== undefined) {
-      oid = existing[k];
-      if (!used[oid]) { used[oid] = true; joined += 1; }
-    } else {
-      if (groups[k] === undefined) { groups[k] = next; next += 1; newOrders += 1; used[groups[k]] = true; }
-      oid = groups[k];
-    }
-    assign.push({ idx: idx, orderId: oid });
-  });
-  return { assign: assign, newOrders: newOrders, joined: joined, orders: newOrders + joined, last: next - 1 };
-}
-
-// Run this ONCE in the Apps Script editor, after setupLedger (owner approved 2026-11-07): gives every OLD sale row
-// that has no order number one, grouped by customerId + date + channel (a group joins an existing order with the same
-// three values; a single old row also gets a number). It only writes the orderId cells. Buys and rows without a
-// customerId are left alone. Safe to run again: it changes nothing the second time.
-function groupOldSales() {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(LOCK_WAIT_MS)) return 'ERROR: busy, run groupOldSales again';
-  try {
-    var t = ledgerSheet_();
-    if (!t.sheet) return 'ERROR: ' + t.message;
-    var values = ledgerValues_(t.sheet);
-    var props = PropertiesService.getScriptProperties();
-    var plan = planGroupSales_(values, props.getProperty(ORDER_SEQ_KEY));
-    if (!plan.assign.length) return 'OK: nothing to group (0 rows)';
-    plan.assign.forEach(function (a) { t.sheet.getRange(a.idx + 2, 18).setValue(a.orderId); });
-    if (plan.newOrders) props.setProperty(ORDER_SEQ_KEY, String(plan.last));
-    return 'OK: ' + plan.assign.length + ' rows grouped into ' + plan.orders + ' orders (' + plan.newOrders + ' new, ' + plan.joined + ' joined an existing order)';
-  } finally { lock.releaseLock(); }
-}
-
 // Run this ONCE in the Apps Script editor after pasting Code.gs: makes the «خرید و فروش» tab (or fixes its place
 // and header) as the 2ND tab, right after the products tab, never first. Bold frozen header, text/number formats.
 // Safe to run again; it never changes the data rows. Do NOT publish this tab to the web.

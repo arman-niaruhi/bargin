@@ -213,5 +213,4 @@ customer), so nothing half-filled is ever stored. Products are not affected at a
   A hand-typed product gets v1; a row deleted by hand closes its version; hand edits of an OLD history row are left as typed.
 - Each ledger line stores `productVersion` (the version valid on the sale date, else the current one); old lines stay empty.
 - Deploy steps: paste `Code.gs` + `appsscript.json` → run `setupVersioning` (allow the new permission) → run `setupLedger`
-  → run `groupOldSales` once → Deploy → New version (Execute as: Me, Anyone) → push the site/admin.
-- `groupOldSales` (run once): gives old sale rows without an order number one, grouped by customer + date + channel.
+  → Deploy → New version (Execute as: Me, Anyone) → push the site/admin.

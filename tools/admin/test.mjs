@@ -1335,7 +1335,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     check("(o) setupCustomers never overwrites a tab with other data in it", /^ERROR/.test(gs.setupCustomers()) && custTab().rows[0].join() === "a,b");
     check("(o) PROTECTED_ACTIONS gets no new action (customers come with getLedger)", !/getCustomers/.test(read("tools/admin/Code.gs")));
 
-    // ---- (r) product versions, merging into an order, groupOldSales (owner approved 2026-11-07) ----
+    // ---- (r) product versions, merging into an order (owner approved 2026-11-07) ----
     {
       const HH = Array.from(gs.HISTORY_HEADER);
       const ln = (o) => Object.assign({ productId: "sabzi-ghormeh", qty: "2", qtyUnit: "pack", price: "450", priceUnit: "thousand" }, o);
@@ -1565,7 +1565,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
       check("(r) setupLedger adds productVersion at the END of a 19-column tab and keeps the data row", /OK/.test(m19) && ledgerTab().rows[0].join() === L.join() && ledgerTab().rows[1].slice(0, 19).join() === srow(2, "1", D0, "سایت", 3).slice(0, 19).join() && post({ action: "getLedger", session: ss }).data.entries[0].productVersion === "");
       check("(r) admin.js: server flag productVersion + old-script guard", /ledgerVersion = r\.productVersion === true/.test(adminSrc) && /if \(!ledgerVersion\) add\(|else if \(!ledgerVersion\) add\(/.test(adminSrc));
 
-      // ---- merge a new sale into an existing order, and groupOldSales ----
+      // ---- merge a new sale into an existing order ----
       function srow(n, cust, date, ch, oid, type) {
         return ["L" + n.toString(16).padStart(32, "0"), "2026-11-07 09:00:00", date, type || "فروش", "sabzi-ghormeh", "سبزی قورمه", 1, "بسته/ظرف", 450000, "450", "هزار تومان", 450000,
           type === "خرید" ? "" : "zahra ahmadi", "", OWNER, type === "خرید" ? "" : cust, type === "خرید" ? "" : ch, oid === "" || oid === undefined ? "" : oid, "", ""];
@@ -1592,35 +1592,6 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
       const ob = soo({});
       check("(r) merge: an order of BUY rows with the same date is not a target for a sale", !("mergedInto" in ob.data) && ob.data.orderId === 6);
       check("(r) admin.js shows «به سفارش ۱۲ همون روز اضافه شد 🌿» for mergedInto", /lMerged: 'به سفارش \{n\} همون روز اضافه شد 🌿'/.test(adminSrc) && /if \(r\.mergedInto\) done = fill\(TEXT\.lMerged/.test(adminSrc));
-
-      // groupOldSales
-      const S = (n, c, d, ch, o, t) => srow(n, c, d, ch, o, t);
-      ms([S(1, "1", "1405-08-16", "سایت", ""), S(2, "1", "1405-08-16", "سایت", ""), S(3, "1", "1405-08-17", "سایت", ""), S(4, "2", "1405-08-16", "سایت", ""),
-        S(5, "1", "1405-08-16", "حضوری", ""), S(6, "3", "1405-08-16", "سایت", 7), S(7, "3", "1405-08-16", "سایت", ""), S(8, "1", "1405-08-16", "", "", "خرید"), S(9, "", "1405-08-16", "سایت", "")]);
-      ledgerTab().rows[9][15] = "";   // a sale with no customerId
-      const before = JSON.stringify(ledgerTab().rows);
-      const gos = gs.groupOldSales();
-      const oid = (n) => ledgerTab().rows[n][17];
-      check("(r) groupOldSales: rows with the same customer + date + channel share one new number; other groups get their own",
-        /^OK: 6 rows grouped into 5 orders/.test(gos) && oid(1) === 8 && oid(2) === 8 && oid(3) === 9 && oid(4) === 10 && oid(5) === 11, gos);
-      check("(r) groupOldSales: a single old row also gets an order number", oid(3) === 9 && oid(4) === 10);
-      check("(r) groupOldSales: old rows join an existing order with the same customer + date + channel (7)", oid(7) === 7 && oid(6) === 7);
-      check("(r) groupOldSales: buys and sales without a customerId are left alone", oid(8) === "" && oid(9) === "");
-      check("(r) groupOldSales: only the orderId cells change", ledgerTab().rows.every((r, i) => r.every((c, k) => k === 17 || c === JSON.parse(before)[i][k])));
-      check("(r) groupOldSales: the order sequence moves on (next new order is 12)", world.props.orderSeq === "11");
-      const after = JSON.stringify(ledgerTab().rows);
-      const again = gs.groupOldSales();
-      check("(r) groupOldSales is idempotent: the second run changes nothing", /^OK: nothing to group/.test(again) && JSON.stringify(ledgerTab().rows) === after && world.props.orderSeq === "11", again);
-      const nextAfter = soo({ date: "1405-09-09" });
-      check("(r) after groupOldSales a new order gets the next number (12)", nextAfter.data.orderId === 12);
-      ms([S(1, "1", "1405-08-16", "سایت", "")]);
-      world.lockBusy = true;
-      const gb = gs.groupOldSales();
-      world.lockBusy = false;
-      check("(r) groupOldSales with the lock busy: ERROR, nothing changed", /^ERROR/.test(gb) && ledgerTab().rows[1][17] === "");
-      mkBook(["products", "log"]);
-      check("(r) groupOldSales without the ledger tab: a clear ERROR", /^ERROR/.test(gs.groupOldSales()));
-      check("(r) groupOldSales is not a web action", post({ action: "groupOldSales", session: ss }).error === "unknown_action");
     }
   }
 
