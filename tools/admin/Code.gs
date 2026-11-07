@@ -39,7 +39,7 @@ var FAKE_SEND_DELAY_MS = 700;    // an unknown address waits about as long as a 
 // Actions that need no session: ask for a code, send the code, log out, write customer activity.
 var PUBLIC_ACTIONS = ['requestCode', 'verifyCode', 'logout', 'logEvent'];
 // Actions that need a valid session (checked once, in handleRequest_).
-var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv', 'getLedger', 'saveLedgerRow', 'deleteLedgerRow'];
+var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv', 'getLedger', 'saveLedgerRow', 'deleteLedgerRow', 'saveLedgerOrder', 'deleteLedgerOrder'];
 
 // Limits checked before anything else happens.
 var MAX_BODY = 200000;   // characters in the request body
@@ -101,6 +101,10 @@ var MSG = {
   needOtherName: 'اسم محصول رو بنویس.',
   longOtherName: 'اسم محصول خیلی بلنده (حداکثر ۶۰ حرف).',
   longNote: 'توضیحات خیلی بلنده (حداکثر ۳۰۰ حرف).',
+  needLines: 'حداقل یه محصول با تعداد بنویس.',
+  tooManyLines: 'یه سفارش حداکثر {n} تا خط می‌تونه داشته باشه.',
+  orderNotFound: 'این سفارش پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
+  badOrder: 'سفارش درست نرسید. صفحه رو دوباره باز کن.',
   ledgerNotFound: 'این مورد پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
   ledgerMany: 'چند سطر با همین شناسه هست. اول توی شیت درستش کن.',
   ledgerFull: 'جدول خرید و فروش پر شده ({n} سطر). اول چند سطر قدیمی رو توی شیت جابه‌جا کن.',
@@ -659,7 +663,9 @@ function doPost(e) {
       publishCsv: function () { return publishCsv(); },
       getLedger: function () { return getLedger(); },
       saveLedgerRow: function (d) { return withLock_(function () { return saveLedgerRow(d.entry, d.id); }); },
-      deleteLedgerRow: function (d) { return withLock_(function () { return deleteLedgerRow(d.id); }); }
+      deleteLedgerRow: function (d) { return withLock_(function () { return deleteLedgerRow(d.id); }); },
+      saveLedgerOrder: function (d) { return withLock_(function () { return saveLedgerOrder(d.order, d.orderId, d.rowId); }); },
+      deleteLedgerOrder: function (d) { return withLock_(function () { return deleteLedgerOrder(d.orderId); }); }
     }
   });
   sessionEmail_ = '';
@@ -782,9 +788,12 @@ var LEDGER_SHEET = 'خرید و فروش';
 var LEDGER_HEADER_V1 = ['id', 'created', 'date', 'type', 'productId', 'productName', 'qty', 'qtyUnit', 'priceToman',
   'priceAmount', 'priceUnit', 'rowToman', 'party', 'note', 'by'];
 // customerId + channel: filled on sales only. On a sale, party holds a copy of the customer's name at save time.
-var LEDGER_HEADER = LEDGER_HEADER_V1.concat(['customerId', 'channel']);
+var LEDGER_HEADER_V2 = LEDGER_HEADER_V1.concat(['customerId', 'channel']);
+// orderId (owner 2026-11-07, multi-product orders): a whole number shared by every line of one order; empty on old
+// single rows. Appended at the END; setupLedger adds it to a 15- or 17-column tab.
+var LEDGER_HEADER = LEDGER_HEADER_V2.concat(['orderId']);
 // Cell formats per column: text everywhere (so 1405-08-16 never turns into a date), numbers for qty and toman.
-var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@', '@', '@'];
+var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@', '@', '@', '0'];
 var LEDGER_TYPES = { buy: 'خرید', sell: 'فروش' };
 var LEDGER_QTY_UNITS = { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', piece: 'عدد' };
 var LEDGER_PRICE_UNITS = { thousand: 'هزار تومان', million: 'میلیون تومان' };
@@ -798,6 +807,8 @@ var LEDGER_OTHER_ID = '*سایر*';
 var LEDGER_OTHER_MAX = 60;
 var LEDGER_NOTE_MAX = 300;
 var LEDGER_MAX_ROWS = 20000;     // rows in the tab; when full, new rows are refused (nothing is deleted)
+var LEDGER_MAX_LINES = 50;       // lines in one order
+var ORDER_SEQ_KEY = 'orderSeq';  // last order number given out (never reused, like customerSeq)
 var LEDGER_MAX_RETURN = 2000;    // newest rows sent to the page
 var LEDGER_YEAR_MIN = 1390;
 var LEDGER_YEAR_MAX = 1499;
@@ -1067,7 +1078,8 @@ function planLedgerRow_(input, products, ctx) {
     row: [ctx.id, ctx.created, date, LEDGER_TYPES[type], sheetText_(pid), sheetText_(pname), math.qty,
       LEDGER_QTY_UNITS[qtyUnit], math.unitToman, math.priceText, LEDGER_PRICE_UNITS[priceUnit], math.rowToman,
       sheetText_(party), sheetText_(note), cellText(ctx.by),
-      customer ? customer.customerId : '', channel ? LEDGER_CHANNELS[channel] : '']
+      customer ? customer.customerId : '', channel ? LEDGER_CHANNELS[channel] : '',
+      ctx.orderId ? ctx.orderId : '']
   };
 }
 
@@ -1078,6 +1090,19 @@ function findLedgerRow_(ids, id) {
   ids.forEach(function (v, k) { if (cellText(v) === id) hits.push(k + 2); });
   if (hits.length === 1) return { row: hits[0] };
   return { error: hits.length ? 'many' : 'none' };
+}
+
+// The order number of a cell: a whole number 1..999999999, or null (old single rows).
+function orderIdOf_(x) {
+  var t = toAsciiDigits(cellText(x));
+  return /^[1-9][0-9]{0,8}$/.test(t) ? parseInt(t, 10) : null;
+}
+
+// The next order number: one more than the largest of the stored sequence and every orderId in column R.
+function nextOrderId_(ids, seq) {
+  var max = /^[0-9]+$/.test(cellText(seq)) ? parseInt(cellText(seq), 10) : 0;
+  ids.forEach(function (v) { var n = orderIdOf_(v); if (n !== null && n > max) max = n; });
+  return max + 1;
 }
 
 // A sheet row (array) → the object sent to the page.
@@ -1091,7 +1116,8 @@ function ledgerEntry_(v) {
     priceToman: num(v[8]), priceAmount: cellText(v[9]),
     priceUnit: ledgerKeyOf_(LEDGER_PRICE_UNITS, cellText(v[10])), priceUnitText: cellText(v[10]),
     rowToman: num(v[11]), party: cellText(v[12]), note: cellText(v[13]), by: cellText(v[14]),
-    customerId: toAsciiDigits(cellText(v[15])), channel: ledgerKeyOf_(LEDGER_CHANNELS, cellText(v[16])), channelText: cellText(v[16])
+    customerId: toAsciiDigits(cellText(v[15])), channel: ledgerKeyOf_(LEDGER_CHANNELS, cellText(v[16])), channelText: cellText(v[16]),
+    orderId: orderIdOf_(v[17])
   };
 }
 
@@ -1142,7 +1168,7 @@ function getLedger() {
     if (a.created !== b.created) return a.created < b.created ? 1 : -1;
     return 0;
   });
-  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [] };
+  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [], orders: true };
   var c = customersSheet_();
   if (c.sheet) out.customers = customerList_(customerValues_(c.sheet));
   else out.customersMessage = c.message;
@@ -1171,7 +1197,7 @@ function saveLedgerRow(entry, id) {
     if (!found.row) return { ok: false, message: found.error === 'many' ? MSG.ledgerMany : MSG.ledgerNotFound };
     target = found.row;
     var old = values[target - 2];
-    ctx = { id: id, created: cellText(old[1]), by: cellText(old[14]), keep: { productId: cellText(old[4]), productName: cellText(old[5]) } };
+    ctx = { id: id, created: cellText(old[1]), by: cellText(old[14]), orderId: orderIdOf_(old[17]), keep: { productId: cellText(old[4]), productName: cellText(old[5]) } };
   } else {
     if (values.length >= LEDGER_MAX_ROWS) return { ok: false, message: fill(MSG.ledgerFull, { n: LEDGER_MAX_ROWS }) };
     ctx = {
@@ -1231,6 +1257,165 @@ function deleteLedgerRow(id) {
   return { ok: true };
 }
 
+// Action saveLedgerOrder (under the lock; owner approved 2026-11-07): ONE order = shared fields + 1..50 lines.
+// order = {date, type, party | customerId | newCustomer, channel, note, lines: [{id?, productId, productName?, qty,
+// qtyUnit, price, priceUnit}]}. Every line is checked with planLedgerRow_; the customer is planned ONCE (a new one
+// is created once, after all lines passed). All rows or none: nothing is written when anything has an issue.
+// New order: orderId '' and rowId ''. Edit an order: orderId = its number; its stored lines are REPLACED by the
+// submitted ones (a line with its stored `id` is updated in place, a line without id is new, a stored line that is
+// not submitted is deleted). Edit an old single row (no orderId): rowId = its id; it is treated as a one-line order
+// (a single line stays without an order number; more lines get a new number).
+// Returns {ok:true, orderId, ids, customerId, reusedCustomer} or {ok:false, issues[{field,line?,message}]} / {ok:false, message}.
+function saveLedgerOrder(order, orderId, rowId) {
+  assertSession_();
+  var t = ledgerSheet_();
+  if (!t.sheet) return { ok: false, message: t.message };
+  var sheet = t.sheet;
+  if (!order || typeof order !== 'object' || Array.isArray(order) || !Array.isArray(order.lines)) return { ok: false, message: MSG.badOrder };
+  if (!order.lines.length) return { ok: false, message: MSG.needLines };
+  if (order.lines.length > LEDGER_MAX_LINES) return { ok: false, message: fill(MSG.tooManyLines, { n: LEDGER_MAX_LINES }) };
+  var data = readSheetRows();
+  if (data.issues.length) return { ok: false, message: MSG.sheetProblems };
+
+  var values = ledgerValues_(sheet);
+  var editOrder = orderId !== undefined && orderId !== null && orderId !== '' ? orderIdOf_(orderId) : null;
+  if (orderId !== undefined && orderId !== null && orderId !== '' && editOrder === null) return { ok: false, message: MSG.orderNotFound };
+  var editRow = typeof rowId === 'string' && rowId !== '' ? rowId : '';
+  if (editRow && (!LEDGER_ID.test(editRow) || editOrder !== null)) return { ok: false, message: MSG.ledgerNotFound };
+
+  // the stored rows this save may touch: [{idx (values index), id}]
+  var existing = [];
+  values.forEach(function (v, k) {
+    var oid = orderIdOf_(v[17]);
+    if (editOrder !== null ? oid === editOrder : (editRow && cellText(v[0]) === editRow)) existing.push(k);
+  });
+  if (editOrder !== null && !existing.length) return { ok: false, message: MSG.orderNotFound };
+  if (editRow) {
+    if (!existing.length) return { ok: false, message: MSG.ledgerNotFound };
+    if (existing.length > 1) return { ok: false, message: MSG.ledgerMany };
+    if (orderIdOf_(values[existing[0]][17]) !== null) return { ok: false, message: MSG.ledgerNotFound };
+  }
+  var byId = {};
+  existing.forEach(function (k) { byId[cellText(values[k][0])] = k; });
+
+  var isSale = order.type === 'sell';
+  var cust = null, custValues = [], customers = [];
+  if (isSale) {
+    cust = customersSheet_();
+    if (!cust.sheet) return { ok: false, message: cust.message };
+    custValues = customerValues_(cust.sheet);
+    customers = customerList_(custValues);
+  }
+  // plan the customer once; every line is then planned against one stand-in customer (replaced after the write)
+  var VIRTUAL = '999999999';
+  var issues = [];
+  var cplan = null, ctxCustomers = [];
+  if (isSale) {
+    cplan = planCustomer_(order, customers);
+    cplan.issues.forEach(function (x) { issues.push(x); });
+    var cf = 'x', cl = 'x';
+    if (!cplan.issues.length) {
+      if (cplan.newCustomer) { cf = cplan.newCustomer.firstName; cl = cplan.newCustomer.lastName; }
+      else customers.forEach(function (c) { if (c.id === cplan.customerId) { cf = c.firstName; cl = c.lastName; } });
+    }
+    ctxCustomers = [{ id: VIRTUAL, firstName: cf, lastName: cl }];
+  }
+  var created = Utilities.formatDate(new Date(nowMs_()), 'Asia/Tehran', 'yyyy-MM-dd HH:mm:ss');
+  var seen = {};
+  var plans = [];
+  order.lines.forEach(function (ln, i) {
+    ln = ln && typeof ln === 'object' && !Array.isArray(ln) ? ln : {};
+    var lid = typeof ln.id === 'string' ? ln.id : '';
+    var old = null;
+    if (lid) {
+      if (!LEDGER_ID.test(lid) || !Object.prototype.hasOwnProperty.call(byId, lid) || seen[lid]) {
+        issues.push({ field: 'id', line: i, row: null, message: MSG.ledgerNotFound });
+        return;
+      }
+      seen[lid] = true;
+      old = values[byId[lid]];
+    }
+    var input = {
+      date: order.date, type: order.type, note: order.note, party: order.party, channel: order.channel,
+      customerId: isSale ? VIRTUAL : undefined,
+      productId: ln.productId, productName: ln.productName, qty: ln.qty, qtyUnit: ln.qtyUnit, price: ln.price, priceUnit: ln.priceUnit
+    };
+    var ctx = {
+      id: lid || 'L' + randomHex_(32), created: old ? cellText(old[1]) : created, by: old ? cellText(old[14]) : sessionEmail_,
+      customers: ctxCustomers, keep: old ? { productId: cellText(old[4]), productName: cellText(old[5]) } : null
+    };
+    var plan = planLedgerRow_(input, data.rows, ctx);
+    // customer/channel problems are reported once (the customer part was planned above), not per line
+    plan.issues.forEach(function (x) {
+      if (x.field === 'customerId') return;
+      if (i > 0 && (x.field === 'date' || x.field === 'type' || x.field === 'channel' || x.field === 'party' || x.field === 'note')) return;
+      x.line = i; issues.push(x);
+    });
+    plans.push({ plan: plan, old: old ? byId[lid] : -1, ctx: ctx });
+  });
+  if (issues.length) return { ok: false, issues: issues };
+
+  var removed = existing.filter(function (k) { return !plans.some(function (p) { return p.old === k; }); });
+  var added = plans.filter(function (p) { return p.old < 0; }).length;
+  if (values.length - removed.length + added > LEDGER_MAX_ROWS) return { ok: false, message: fill(MSG.ledgerFull, { n: LEDGER_MAX_ROWS }) };
+
+  // an order number: kept when editing an order; new when a new order, or when an old single row grows to 2+ lines
+  var props = PropertiesService.getScriptProperties();
+  var finalOrder = null, newSeq = false;
+  if (editOrder !== null) finalOrder = editOrder;
+  else if (!editRow || plans.length > 1) {
+    finalOrder = nextOrderId_(values.map(function (v) { return v[17]; }), props.getProperty(ORDER_SEQ_KEY));
+    newSeq = true;
+  }
+  // the new customer, once
+  var c = cplan, newCid = '';
+  if (c && c.newCustomer) {
+    if (custValues.length >= CUSTOMER_MAX_ROWS) return { ok: false, message: fill(MSG.customersFull, { n: CUSTOMER_MAX_ROWS }) };
+    newCid = String(nextCustomerId_(custValues.map(function (v) { return v[0]; }), props.getProperty(CUSTOMER_SEQ_KEY)));
+    var crow = cust.sheet.getLastRow() + 1;
+    if (crow > cust.sheet.getMaxRows()) cust.sheet.insertRowsAfter(cust.sheet.getMaxRows(), 100);
+    var crange = cust.sheet.getRange(crow, 1, 1, CUSTOMER_HEADER.length);
+    crange.setNumberFormats([CUSTOMER_HEADER.map(function () { return '@'; })]);
+    crange.setValues([[newCid, sheetText_(c.newCustomer.firstName), sheetText_(c.newCustomer.lastName), created, cellText(sessionEmail_)]]);
+    props.setProperty(CUSTOMER_SEQ_KEY, newCid);
+  }
+  var customerId = isSale ? (newCid || c.customerId) : '';
+
+  // write: updates first (row numbers stay), then new rows at the end, then deletes from the bottom up
+  var ids = [];
+  var appendAt = sheet.getLastRow() + 1;
+  plans.forEach(function (p) {
+    var row = p.plan.row;
+    if (isSale) row[15] = customerId;
+    row[17] = finalOrder !== null ? finalOrder : '';
+    ids.push(row[0]);
+    var at = p.old >= 0 ? p.old + 2 : appendAt++;
+    if (at > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 100);
+    var range = sheet.getRange(at, 1, 1, LEDGER_HEADER.length);
+    range.setNumberFormats([LEDGER_FORMATS]);
+    range.setValues([row]);
+  });
+  removed.sort(function (a, b) { return b - a; }).forEach(function (k) { sheet.deleteRow(k + 2); });
+  if (newSeq) props.setProperty(ORDER_SEQ_KEY, String(finalOrder));
+  return { ok: true, orderId: finalOrder, ids: ids, customerId: customerId, reusedCustomer: c ? c.reused : '' };
+}
+
+// Action deleteLedgerOrder (under the lock, after the owner confirmed on the page): deletes EVERY row with this
+// order number (bottom up). A bad number or no match deletes nothing. Returns {ok:true, deleted} or {ok:false, message}.
+function deleteLedgerOrder(orderId) {
+  assertSession_();
+  var n = orderIdOf_(orderId);
+  if (n === null) return { ok: false, message: MSG.orderNotFound };
+  var t = ledgerSheet_();
+  if (!t.sheet) return { ok: false, message: t.message };
+  var values = ledgerValues_(t.sheet);
+  var hits = [];
+  values.forEach(function (v, k) { if (orderIdOf_(v[17]) === n) hits.push(k + 2); });
+  if (!hits.length) return { ok: false, message: MSG.orderNotFound };
+  hits.sort(function (a, b) { return b - a; }).forEach(function (r) { t.sheet.deleteRow(r); });
+  return { ok: true, deleted: hits.length };
+}
+
 // Run this ONCE in the Apps Script editor after pasting Code.gs: makes the «خرید و فروش» tab (or fixes its place
 // and header) as the 2ND tab, right after the products tab, never first. Bold frozen header, text/number formats.
 // Safe to run again; it never changes the data rows. Do NOT publish this tab to the web.
@@ -1243,10 +1428,12 @@ function setupLedger() {
   }
   var lastRow = sheet.getLastRow();
   var head = lastRow ? sheet.getRange(1, 1, 1, LEDGER_HEADER.length).getValues()[0].map(cellText) : [];
-  // A tab made before the customers (15 columns): the two new columns are added at the END; data rows are kept.
-  var v1 = head.slice(0, LEDGER_HEADER_V1.length).join('\n') === LEDGER_HEADER_V1.join('\n') &&
-    head.slice(LEDGER_HEADER_V1.length).every(function (h) { return h === ''; });
-  if (lastRow > 1 && head.join('\n') !== LEDGER_HEADER.join('\n') && !v1) {
+  // An older tab (15 columns before the customers, 17 before the orders): the missing columns are added at the END;
+  // data rows are kept. Accepted when the first N columns match an older header and the rest are empty.
+  var older = [LEDGER_HEADER_V1, LEDGER_HEADER_V2].some(function (k) {
+    return head.slice(0, k.length).join('\n') === k.join('\n') && head.slice(k.length).every(function (h) { return h === ''; });
+  });
+  if (lastRow > 1 && head.join('\n') !== LEDGER_HEADER.join('\n') && !older) {
     ss.setActiveSheet(ss.getSheets()[0]);
     return 'ERROR: row 1 of «' + LEDGER_SHEET + '» is not the expected header and the tab has data; fix it by hand';
   }

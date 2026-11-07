@@ -104,6 +104,40 @@
     .adm-form .adm-old { font-size: .9rem; color: var(--muted); margin: 6px 0 0; }
     .adm-ledger .l-cust bdi { unicode-bidi: isolate; }
     /* ==== end «خرید و فروش» form ==== */
+
+    /* ==== order form: product lines, search, sticky total bar (bargin-designer: polish here) ==== */
+    .o-products h3 { font-size: 1.05rem; margin: 18px 0 4px; color: var(--brown); }
+    .o-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+    .o-tools input { flex: 1 1 180px; }
+    .o-only { font-family: inherit; cursor: pointer; min-height: 44px; padding: 6px 16px; border-radius: 999px; border: 1px solid var(--line); background: #fffaf0; color: var(--text); font-weight: 700; }
+    .o-only[aria-pressed="true"] { border-color: var(--green); background: var(--green); color: #fff; }
+    .o-cat { border: 1px solid var(--line); border-radius: 12px; margin: 8px 0; background: #fffaf0; text-align: right; }
+    .o-cat > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; font-weight: 800; color: var(--brown); }
+    .o-cat > summary .o-count { font-weight: 700; font-size: .85rem; color: var(--green-dark); background: #e7f2df; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+    .o-cat > summary .o-count:empty { display: none; }
+    .o-line { border-top: 1px solid var(--line); padding: 10px 12px; text-align: right; }
+    .o-line.has-qty { background: #f3f8ec; }
+    .o-name { font-weight: 700; }
+    .o-hint { display: block; font-weight: 400; font-size: .85rem; color: var(--muted); }
+    .o-line .o-ctl { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; margin-top: 6px; }
+    .o-line .o-ctl label { margin: 0; font-size: .8rem; font-weight: 400; color: var(--muted); }
+    .o-line .o-ctl input, .o-line .o-ctl select { min-height: 44px; }
+    .o-line .o-sum { margin-top: 4px; font-size: .9rem; font-weight: 700; color: var(--green-dark); }
+    .o-line .o-sum:empty { display: none; }
+    .o-other .o-name-in { margin-bottom: 4px; }
+    .o-other .o-rm { margin-top: 6px; }
+    @media (min-width: 640px) { .o-line .o-ctl { grid-template-columns: 1fr 1fr 1fr 1fr; } }
+    .o-bar { position: sticky; bottom: 0; z-index: 5; margin: 16px -16px -20px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: rgba(236, 209, 163, .96); border-top: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius); }
+    .o-bar .o-total { margin: 0 0 6px; font-weight: 800; color: var(--brown); }
+    .o-bar .o-bar-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .o-bar .o-bar-btns .btn { flex: 1 1 140px; }
+    /* order cards in the list */
+    .adm-ledger .o-card-title { font-weight: 800; color: var(--brown); }
+    .adm-ledger .o-lines { list-style: none; margin: 6px 0; padding: 0; text-align: right; }
+    .adm-ledger .o-lines li { display: block; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+    .adm-ledger .o-lines li:last-child { border-bottom: 0; }
+    .adm-ledger .o-sum-total { font-weight: 800; color: var(--green-dark); margin: 6px 0; }
+    /* ==== end order form ==== */
   </style>
 </head>
 <body>
@@ -188,7 +222,7 @@
       <div id="v-ledger" hidden>
         <div class="adm-bar">
           <button type="button" class="btn btn-ghost" id="l-reload">بارگذاری دوباره</button>
-          <button type="button" class="btn" id="l-add">ثبت خرید یا فروش جدید</button>
+          <button type="button" class="btn" id="l-add">سفارش جدید</button>
           <button type="button" class="btn btn-ghost" id="l-logout">خروج</button>
         </div>
 
@@ -219,31 +253,6 @@
               <label><input type="radio" name="l-type" id="l-type-sell" value="sell"><span>فروش</span></label>
             </div>
           </fieldset>
-          <label for="l-product">محصول</label>
-          <select id="l-product"></select>
-          <div id="l-other-wrap" hidden>
-            <label for="l-other-name">اسم محصول<span class="hint">مثلاً برنج یا شیشه خالی، حداکثر ۶۰ حرف</span></label>
-            <input id="l-other-name" type="text" autocomplete="off" maxlength="60">
-          </div>
-          <label for="l-qty">تعداد یا مقدار<span class="hint">مثلاً ۳ یا ۲٫۵</span></label>
-          <div class="adm-row">
-            <input id="l-qty" class="wide" type="text" inputmode="decimal" autocomplete="off" maxlength="12">
-            <select id="l-qty-unit" aria-label="واحد تعداد">
-              <option value="pack">بسته/ظرف</option>
-              <option value="kg">کیلو</option>
-              <option value="g">گرم</option>
-              <option value="piece">عدد</option>
-            </select>
-          </div>
-          <label for="l-price">قیمت هر واحد<span class="hint">فقط عدد، مثلاً ۴۵۰ هزار تومان یا ۱٫۵ میلیون تومان</span></label>
-          <div class="adm-row">
-            <input id="l-price" class="wide" type="text" inputmode="decimal" autocomplete="off" maxlength="16">
-            <select id="l-price-unit" aria-label="واحد قیمت">
-              <option value="thousand">هزار تومان</option>
-              <option value="million">میلیون تومان</option>
-            </select>
-          </div>
-          <p class="adm-preview" id="l-preview" aria-live="polite"></p>
           <!-- sales only: customer + channel -->
           <div id="l-sell-wrap" hidden>
             <label for="l-cust-filter">مشتری<span class="hint">دنبال مشتری بگرد (اسم یا شماره)، بعد از لیست انتخابش کن</span></label>
@@ -276,11 +285,33 @@
             <label for="l-party">اسم فروشنده<span class="hint">اختیاری، حداکثر ۶۰ حرف</span></label>
             <input id="l-party" type="text" autocomplete="off" maxlength="60">
           </div>
-          <label for="l-note">توضیحات<span class="hint">اختیاری، حداکثر ۳۰۰ حرف</span></label>
+          <label for="l-note">توضیحات<span class="hint">اختیاری، برای کل سفارش، حداکثر ۳۰۰ حرف</span></label>
           <textarea id="l-note" rows="2" maxlength="300"></textarea>
-          <div class="adm-bar">
-            <button type="submit" class="btn" id="l-save">ذخیره</button>
-            <button type="button" class="btn btn-ghost" id="l-cancel">انصراف</button>
+
+          <!-- the products of the order (built by admin.js) -->
+          <section class="o-products" aria-labelledby="o-title">
+            <h3 id="o-title">محصولات سفارش</h3>
+            <p class="adm-old">هر محصولی که تعدادش رو بنویسی تو سفارش میاد. جای تعداد رو خالی بذار تا نیاد.</p>
+            <div class="o-tools">
+              <input id="o-search" type="search" dir="auto" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" placeholder="دنبال محصول بگرد…" aria-label="جستجوی محصول" enterkeyhint="search">
+              <button type="button" class="o-only" id="o-only" aria-pressed="false">فقط انتخاب‌شده‌ها</button>
+            </div>
+            <div id="o-groups"></div>
+            <p class="adm-old" id="o-empty" hidden>محصولی پیدا نشد.</p>
+            <h3>سایر</h3>
+            <p class="adm-old">چیزی که توی فروشگاه نیست، مثلاً برنج یا شیشه خالی.</p>
+            <div id="o-others"></div>
+            <button type="button" class="btn btn-ghost" id="o-add-other">+ یه مورد دیگه (سایر)</button>
+          </section>
+          <p class="adm-status err" id="o-lines-note" aria-live="polite"></p>
+
+          <!-- ==== order bar: stays at the bottom of the screen while scrolling (bargin-designer: polish here) ==== -->
+          <div class="o-bar">
+            <p class="o-total" id="o-total" aria-live="polite"></p>
+            <div class="o-bar-btns">
+              <button type="submit" class="btn" id="l-save">ثبت سفارش</button>
+              <button type="button" class="btn btn-ghost" id="l-cancel">انصراف</button>
+            </div>
           </div>
         </form>
       </div>

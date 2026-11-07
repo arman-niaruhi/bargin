@@ -126,6 +126,31 @@
     lNeedChannel: 'بگو فروش از کجا بود: سایت یا حضوری.',
     lReused: 'این مشتری از قبل بود ({n})؛ همونو استفاده کردیم',
     lOldServer: 'برای ثبت فروش، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، setupCustomers، نسخه‌ی جدید).',
+    // multi-product orders (TODO: bargin-content to review the wording)
+    lNewOrderBtn: 'سفارش جدید',
+    lNewOrder: 'سفارش جدید',
+    lEditOrder: 'ویرایش سفارش {n}',
+    lOrderNo: 'سفارش {n}',
+    lOrderConfirm: 'مطمئنی می‌خوای کل سفارش رو پاک کنی؟ این کار برگشت نداره.',
+    lOrderTotal: 'جمع این سفارش: {total} تومان',
+    lOrderCount: '{n} قلم',
+    oTotalNone: 'هنوز محصولی انتخاب نشده.',
+    oTotalNoPrice: 'قیمت بعضی خط‌ها رو هم بنویس.',
+    oSelected: '{n} تا انتخاب شده',
+    oShopPrice: 'قیمت توی فروشگاه: {price}',
+    oGoneGroup: 'از قبل تو این سفارش بودن',
+    oGoneTag: 'الان تو لیست فروشگاه نیست',
+    oQty: 'تعداد',
+    oQtyUnit: 'واحد',
+    oPrice: 'قیمت هر واحد',
+    oPriceUnit: 'تومان',
+    oOtherName: 'اسم محصول',
+    oOtherRemove: 'حذف این مورد',
+    oNeedLines: 'حداقل یه محصول با تعداد بنویس.',
+    oTooMany: 'یه سفارش حداکثر ۵۰ خط می‌تونه داشته باشه.',
+    oLineIssue: '«{name}»: {msg}',
+    oNeedPrice: 'قیمت این خط رو هم بنویس.',
+    lOldServer2: 'برای ثبت سفارش، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، نسخه‌ی جدید).',
     channels: { site: 'سایت', person: 'حضوری' },
     months: ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'],
     types: { buy: 'خرید', sell: 'فروش' },
@@ -156,8 +181,11 @@
   var ledgerMore = false;  // the server sent only the newest rows
   var ledgerLoaded = false;
   var ledgerFilter = 'all';
-  var lEditId = '';        // the id of the open ledger row ('' = new)
-  var lEditRow = null;     // the open ledger row (for its stored product name)
+  var lEdit = { orderId: null, rowId: '' };   // the open order form: an order number, or an old single row's id
+  var ledgerOrders = false;   // the server knows orders (an old Apps Script does not send `orders`)
+  var LEDGER_MAX_LINES = 50;  // lines in one order (same as Code.gs)
+  var oModels = [];        // the product lines of the open order form
+  var oOthers = [];        // the «سایر» lines of the open order form
   var LEDGER_YEAR_MIN = 1395;
   // «سایر»: a ledger-only item with a typed name (not a shop product). Same reserved id as LEDGER_OTHER_ID in
   // Code.gs; it has non-ASCII letters, so no shop product can have it.
@@ -821,10 +849,12 @@
       ledgerMore = !!r.more;
       customers = r.customers || [];
       customersReady = Array.isArray(r.customers) && !r.customersMessage;
+      ledgerOrders = r.orders === true;
       ledgerLoaded = true;
       renderLedger();
       if (r.customersMessage) setStatus(r.customersMessage, 'err');
       else if (!Array.isArray(r.customers)) setStatus(TEXT.lOldServer, 'err');
+      else if (!ledgerOrders) setStatus(TEXT.lOldServer2, 'err');
       else if (!keepMessage) setStatus('');
     }, function (err) {
       setBusy(false);
@@ -832,21 +862,109 @@
     });
   }
 
+  // Rows with the same orderId are ONE order (in the order they come); old rows without one stay single entries.
+  function groupLedger(rows) {
+    var out = [], byOrder = {};
+    rows.forEach(function (e) {
+      if (e.orderId === null || e.orderId === undefined) { out.push({ single: e, type: e.type }); return; }
+      var g = byOrder[e.orderId];
+      if (!g) { g = byOrder[e.orderId] = { orderId: e.orderId, rows: [], type: e.type }; out.push(g); }
+      g.rows.push(e);
+    });
+    return out;
+  }
+
   function renderLedger() {
     var ul = $('l-list');
     ul.textContent = '';
-    var rows = ledger.filter(function (e) { return ledgerFilter === 'all' || e.type === ledgerFilter; });
+    var all = groupLedger(ledger);
+    var items = all.filter(function (g) { return ledgerFilter === 'all' || g.type === ledgerFilter; });
     var count;
-    if (!ledger.length) count = TEXT.lEmpty;
-    else if (ledgerFilter === 'all') count = fill(TEXT.lCount, { n: toFa(ledger.length) });
-    else count = rows.length ? fill(TEXT.lCountFiltered, { n: toFa(rows.length), all: toFa(ledger.length) }) : TEXT.lEmptyFilter;
+    if (!all.length) count = TEXT.lEmpty;
+    else if (ledgerFilter === 'all') count = fill(TEXT.lCount, { n: toFa(all.length) });
+    else count = items.length ? fill(TEXT.lCountFiltered, { n: toFa(items.length), all: toFa(all.length) }) : TEXT.lEmptyFilter;
     if (ledgerMore) count += ' ' + fill(TEXT.lMore, { n: toFa(ledger.length) });
     $('l-count').textContent = count;
     var btns = document.querySelectorAll('[data-filter]');
     for (var i = 0; i < btns.length; i++) btns[i].setAttribute('aria-pressed', String(btns[i].getAttribute('data-filter') === ledgerFilter));
-    rows.forEach(function (e) { ul.appendChild(ledgerItem(e)); });
+    items.forEach(function (g) { ul.appendChild(g.single ? ledgerItem(g.single) : orderCard(g)); });
   }
 
+  // Edit + delete buttons and the inline confirm, shared by single entries and order cards.
+  function addActions(li, onEdit, confirmText, onDelete) {
+    var actions = el('div', 'l-actions');
+    var edit = el('button', 'btn btn-ghost', TEXT.edit);
+    edit.type = 'button';
+    edit.addEventListener('click', onEdit);
+    var del = el('button', 'btn btn-danger', TEXT.lDelete);
+    del.type = 'button';
+    actions.appendChild(edit);
+    actions.appendChild(del);
+    li.appendChild(actions);
+
+    var confirmBox = el('div', 'adm-confirm');
+    confirmBox.hidden = true;
+    confirmBox.appendChild(el('p', '', confirmText));
+    var bar = el('div', 'adm-bar');
+    var yes = el('button', 'btn btn-danger l-yes', TEXT.lYes);
+    yes.type = 'button';
+    var no = el('button', 'btn btn-ghost', TEXT.lNo);
+    no.type = 'button';
+    bar.appendChild(yes);
+    bar.appendChild(no);
+    confirmBox.appendChild(bar);
+    li.appendChild(confirmBox);
+    del.addEventListener('click', function () { confirmBox.hidden = false; no.focus(); });
+    no.addEventListener('click', function () { confirmBox.hidden = true; del.focus(); });
+    yes.addEventListener('click', onDelete);
+  }
+
+  // The line «۲ بسته × ۴۵۰,۰۰۰ تومان = ۹۰۰,۰۰۰ تومان» of one row, or null when the row has no numbers.
+  function sumLine(e) {
+    if (e.qty === null || e.priceToman === null || e.rowToman === null) return null;
+    var sum = el('div', 'l-sum');
+    sum.appendChild(el('bdi', '', fill(TEXT.lSum, {
+      qty: decFa(e.qty), unit: TEXT.qtyUnits[e.qtyUnit] || e.qtyUnitText || '',
+      price: groupFa(e.priceToman), total: groupFa(e.rowToman)
+    })));
+    return sum;
+  }
+
+  // One order = one card: «سفارش ۱۲», date, customer / seller, the lines, «جمع این سفارش».
+  function orderCard(g) {
+    var first = g.rows[0];
+    var li = el('li', 'o-card');
+    var top = el('div', 'l-top');
+    top.appendChild(el('span', 'o-card-title', fill(TEXT.lOrderNo, { n: toFa(g.orderId) })));
+    top.appendChild(el('span', 'l-date', dateFa(first.date)));
+    top.appendChild(el('span', 'tag' + (first.type ? ' t-' + first.type : ''), TEXT.types[first.type] || first.typeText || ''));
+    li.appendChild(top);
+    if (first.type === 'sell' && (first.customerId || first.channel)) li.appendChild(customerLine(first));
+    else if (first.party) li.appendChild(el('small', 'l-more', fill(TEXT.lParty, { name: first.party })));
+    var ul = el('ul', 'o-lines');
+    var total = 0, complete = true;
+    g.rows.forEach(function (e) {
+      var row = el('li');
+      var isOther = e.productId === LEDGER_OTHER_ID;
+      var prod = el('div', 'l-prod', e.productName || (isOther ? TEXT.lOther : e.productId) || '');
+      if (isOther) {
+        prod.appendChild(document.createTextNode(' '));
+        prod.appendChild(el('span', 'tag t-other', TEXT.lOther));
+      }
+      row.appendChild(prod);
+      var sum = sumLine(e);
+      if (sum) row.appendChild(sum);
+      ul.appendChild(row);
+      if (e.rowToman === null) complete = false; else total += e.rowToman;
+    });
+    li.appendChild(ul);
+    if (complete) li.appendChild(el('div', 'o-sum-total', fill(TEXT.lOrderTotal, { total: groupFa(total) }) + ' (' + fill(TEXT.lOrderCount, { n: toFa(g.rows.length) }) + ')'));
+    if (first.note) li.appendChild(el('small', 'l-more', first.note));
+    addActions(li, function () { openLedgerForm(g); }, TEXT.lOrderConfirm, function () { deleteOrder(g.orderId); });
+    return li;
+  }
+
+  // An old single entry (before orders): shown as it was; its edit opens the order form as a one-line order.
   function ledgerItem(e) {
     var li = el('li');
     var top = el('div', 'l-top');
@@ -867,46 +985,15 @@
     }
     li.appendChild(prod);
 
-    if (e.qty !== null && e.priceToman !== null && e.rowToman !== null) {
-      var sum = el('div', 'l-sum');
-      sum.appendChild(el('bdi', '', fill(TEXT.lSum, {
-        qty: decFa(e.qty), unit: TEXT.qtyUnits[e.qtyUnit] || e.qtyUnitText || '',
-        price: groupFa(e.priceToman), total: groupFa(e.rowToman)
-      })));
-      li.appendChild(sum);
-    }
+    var sum = sumLine(e);
+    if (sum) li.appendChild(sum);
     if (e.priceAmount) {
       li.appendChild(el('small', 'l-more', fill(TEXT.lTyped, { amount: decFa(e.priceAmount), unit: TEXT.priceUnits[e.priceUnit] || e.priceUnitText || '' })));
     }
     if (e.type === 'sell' && (e.customerId || e.channel)) li.appendChild(customerLine(e));
     else if (e.party) li.appendChild(el('small', 'l-more', fill(TEXT.lParty, { name: e.party })));
     if (e.note) li.appendChild(el('small', 'l-more', e.note));
-
-    var actions = el('div', 'l-actions');
-    var edit = el('button', 'btn btn-ghost', TEXT.edit);
-    edit.type = 'button';
-    edit.addEventListener('click', function () { openLedgerForm(e); });
-    var del = el('button', 'btn btn-danger', TEXT.lDelete);
-    del.type = 'button';
-    actions.appendChild(edit);
-    actions.appendChild(del);
-    li.appendChild(actions);
-
-    var confirmBox = el('div', 'adm-confirm');
-    confirmBox.hidden = true;
-    confirmBox.appendChild(el('p', '', TEXT.lConfirm));
-    var bar = el('div', 'adm-bar');
-    var yes = el('button', 'btn btn-danger l-yes', TEXT.lYes);
-    yes.type = 'button';
-    var no = el('button', 'btn btn-ghost', TEXT.lNo);
-    no.type = 'button';
-    bar.appendChild(yes);
-    bar.appendChild(no);
-    confirmBox.appendChild(bar);
-    li.appendChild(confirmBox);
-    del.addEventListener('click', function () { confirmBox.hidden = false; no.focus(); });
-    no.addEventListener('click', function () { confirmBox.hidden = true; del.focus(); });
-    yes.addEventListener('click', function () { deleteLedger(e.id); });
+    addActions(li, function () { openLedgerForm({ single: e }); }, TEXT.lConfirm, function () { deleteLedger(e.id); });
     return li;
   }
 
@@ -1013,29 +1100,6 @@
     $('l-day').value = String(Math.min(d, jalaliMonthDays_(y, m)));
   }
 
-  function fillProductOptions(keepId, keepName) {
-    var sel = $('l-product');
-    sel.textContent = '';
-    addOption(sel, '', TEXT.lPickProduct);
-    var seen = {};
-    products.forEach(function (r) {
-      var id = String(r.id || '').trim(), name = String(r.name || '').trim();
-      if (!id || !name || seen[id] || id === LEDGER_OTHER_ID) return;
-      seen[id] = true;
-      addOption(sel, id, name);
-    });
-    if (keepId && !seen[keepId] && keepId !== LEDGER_OTHER_ID) addOption(sel, keepId, fill(TEXT.lGone, { name: keepName || keepId }));
-    addOption(sel, LEDGER_OTHER_ID, TEXT.lOther);
-    sel.value = keepId || '';
-    $('l-other-name').value = keepId === LEDGER_OTHER_ID ? keepName || '' : '';
-    syncOther();
-  }
-
-  // The «اسم محصول» box is shown only while «سایر» is selected.
-  function syncOther() {
-    $('l-other-wrap').hidden = $('l-product').value !== LEDGER_OTHER_ID;
-  }
-
   function syncPills() {
     ['l-type-buy', 'l-type-sell', 'l-ch-site', 'l-ch-person'].forEach(function (id) {
       var input = $(id);
@@ -1044,19 +1108,264 @@
     syncType();
   }
 
-  function updatePreview() {
-    var m = ledgerMath_($('l-qty').value, $('l-price').value, $('l-price-unit').value);
-    $('l-preview').textContent = m.rowToman === null ? '' : fill(TEXT.lSum, {
-      qty: decFa(m.qtyText), unit: TEXT.qtyUnits[$('l-qty-unit').value] || '',
-      price: groupFa(m.unitToman), total: groupFa(m.rowToman)
+  // ---- order form: all in-stock products as lines (owner approved 2026-11-07) ----
+  function asciiDigits(v) {
+    return String(v === undefined || v === null ? '' : v).replace(/[۰-۹]/g, function (d) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); })
+      .replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); });
+  }
+  // The qty unit a product starts with: only «کیلو» / «۱ کیلو» (per kilo) is 'kg'; everything else
+  // («۵۰۰ گرم», «ظرف», «۴۰۰گرم», empty…) is a pack ('pack').
+  function unitKindOf(unit) {
+    var t = asciiDigits(unit).replace(/[\s‌]/g, '');
+    return /^1?(کیلو|کیلوگرم|kg)$/i.test(t) ? 'kg' : 'pack';
+  }
+  // The shop price (toman, from the products sheet) → {toman, price, unit} typed in «هزار» or «میلیون» تومان.
+  function shopPriceOf(r) {
+    var p = parseDecimal_(r.price, 9, 3);
+    var toman = p ? p.i + p.f / 1000 : 0;
+    if (!(toman > 0) || Math.floor(toman) !== toman) return { toman: 0, price: '', unit: 'thousand' };
+    if (toman >= 1000000 && toman % 1000 === 0) return { toman: toman, price: decFa(String(+(toman / 1000000).toFixed(3))), unit: 'million' };
+    return { toman: toman, price: decFa(String(+(toman / 1000).toFixed(3))), unit: 'thousand' };
+  }
+  function priceWords(toman, unitText) {
+    var w = toman >= 1000000 && toman % 1000 === 0 ? decFa(String(+(toman / 1000000).toFixed(3))) + ' میلیون تومان'
+      : decFa(String(+(toman / 1000).toFixed(3))) + ' هزار تومان';
+    return w + (unitText ? ' / ' + toFa(unitText) : '');
+  }
+  function isSoldOut(r) { return String(r.soldOut || '').trim().toLowerCase() === 'yes'; }
+  function currentType() { return $('l-type-buy').checked ? 'buy' : ($('l-type-sell').checked ? 'sell' : ''); }
+
+  function newModel(o) {
+    var m = { other: false, group: '', id: '', productId: '', name: '', category: '', shop: null, shopUnit: '', defKind: 'pack',
+      qty: '', qtyUnit: 'pack', price: '', priceUnit: 'thousand', stored: false, priceTouched: false, qtyUnitTouched: false, gone: false, els: {} };
+    for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) m[k] = o[k];
+    return m;
+  }
+
+  function cellWrap(labelText, control, id) {
+    var w = el('div', 'o-cell');
+    var l = el('label', '', labelText);
+    l.setAttribute('for', id);
+    w.appendChild(l);
+    w.appendChild(control);
+    return w;
+  }
+  var lineSeq = 0;
+  function mkInput(cls, aria) {
+    var i = el('input', cls);
+    i.type = 'text';
+    i.setAttribute('inputmode', 'decimal');
+    i.autocomplete = 'off';
+    i.setAttribute('maxlength', '16');
+    i.id = 'o-i' + (++lineSeq);
+    return i;
+  }
+  function mkSelect(map) {
+    var sel = el('select');
+    Object.keys(map).forEach(function (k) { addOption(sel, k, map[k]); });
+    sel.id = 'o-i' + (++lineSeq);
+    return sel;
+  }
+
+  // One line: name (+ shop price hint), qty + unit, price + unit, the line total.
+  function buildLine(m) {
+    var box = el('div', 'o-line' + (m.other ? ' o-other' : ''));
+    if (m.other) {
+      var nm = el('input', 'o-name-in');
+      nm.type = 'text';
+      nm.maxLength = LEDGER_OTHER_MAX;
+      nm.autocomplete = 'off';
+      nm.id = 'o-i' + (++lineSeq);
+      nm.value = m.name || '';
+      nm.setAttribute('aria-label', TEXT.oOtherName);
+      nm.placeholder = TEXT.oOtherName;
+      nm.addEventListener('input', function () { m.name = nm.value; });
+      m.els.name = nm;
+      box.appendChild(nm);
+    } else {
+      var nameEl = el('div', 'o-name', m.name);
+      if (m.shop && m.shop.toman) nameEl.appendChild(el('span', 'o-hint', fill(TEXT.oShopPrice, { price: priceWords(m.shop.toman, m.shopUnit) })));
+      if (m.gone) nameEl.appendChild(el('span', 'o-hint', TEXT.oGoneTag));
+      box.appendChild(nameEl);
+    }
+    var ctl = el('div', 'o-ctl');
+    var q = mkInput('o-qty'), qu = mkSelect(TEXT.qtyUnits), pr = mkInput('o-price'), pu = mkSelect(TEXT.priceUnits);
+    q.value = m.qty; qu.value = m.qtyUnit; pr.value = m.price; pu.value = m.priceUnit;
+    q.setAttribute('aria-label', (m.other ? TEXT.lOther : m.name) + ' — ' + TEXT.oQty);
+    qu.setAttribute('aria-label', (m.other ? TEXT.lOther : m.name) + ' — ' + TEXT.oQtyUnit);
+    pr.setAttribute('aria-label', (m.other ? TEXT.lOther : m.name) + ' — ' + TEXT.oPrice);
+    pu.setAttribute('aria-label', (m.other ? TEXT.lOther : m.name) + ' — ' + TEXT.oPriceUnit);
+    ctl.appendChild(cellWrap(TEXT.oQty, q, q.id));
+    ctl.appendChild(cellWrap(TEXT.oQtyUnit, qu, qu.id));
+    ctl.appendChild(cellWrap(TEXT.oPrice, pr, pr.id));
+    ctl.appendChild(cellWrap(TEXT.oPriceUnit, pu, pu.id));
+    box.appendChild(ctl);
+    var sum = el('div', 'o-sum');
+    box.appendChild(sum);
+    q.addEventListener('input', function () { m.qty = q.value; refreshOrder(); });
+    qu.addEventListener('change', function () { m.qtyUnit = qu.value; m.qtyUnitTouched = true; refreshOrder(); });
+    pr.addEventListener('input', function () { m.price = pr.value; m.priceTouched = true; refreshOrder(); });
+    pu.addEventListener('change', function () { m.priceUnit = pu.value; m.priceTouched = true; refreshOrder(); });
+    m.els = { box: box, qty: q, qtyUnit: qu, price: pr, priceUnit: pu, sum: sum, name: m.els.name };
+    if (m.other) {
+      var rm = el('button', 'btn btn-danger o-rm', TEXT.oOtherRemove);
+      rm.type = 'button';
+      rm.addEventListener('click', function () {
+        oOthers.splice(oOthers.indexOf(m), 1);
+        if (box.parentNode) box.parentNode.removeChild(box);
+        refreshOrder();
+      });
+      box.appendChild(rm);
+    }
+    return box;
+  }
+
+  // Sale: the shop price per pack (or per kilo); buy: price empty. Lines the owner typed in, or that were saved
+  // before, are never overwritten.
+  function applyDefaults() {
+    var type = currentType();
+    oModels.forEach(function (m) {
+      if (m.stored) return;
+      if (!m.qtyUnitTouched) { m.qtyUnit = m.defKind; m.els.qtyUnit.value = m.qtyUnit; }
+      if (m.priceTouched) return;
+      if (type === 'sell' && m.shop) { m.price = m.shop.price; m.priceUnit = m.shop.unit; }
+      else { m.price = ''; m.priceUnit = 'thousand'; }
+      m.els.price.value = m.price;
+      m.els.priceUnit.value = m.priceUnit;
+    });
+    refreshOrder();
+  }
+
+  function lineMath(m) { return ledgerMath_(m.qty, m.price, m.priceUnit); }
+  function hasQty(m) { return String(m.qty).trim() !== ''; }
+
+  // Totals, per-line sums, the «n تا انتخاب شده» counters and the filter. No total over all orders anywhere.
+  function refreshOrder() {
+    var total = 0, n = 0, noPrice = 0;
+    var counts = {};
+    oModels.concat(oOthers).forEach(function (m) {
+      var on = hasQty(m);
+      m.els.box.className = 'o-line' + (m.other ? ' o-other' : '') + (on ? ' has-qty' : '');
+      var math = lineMath(m);
+      if (on) {
+        n++;
+        if (math.rowToman === null) noPrice++; else total += math.rowToman;
+        if (!m.other) counts[m.group] = (counts[m.group] || 0) + 1;
+      }
+      m.els.sum.textContent = on && math.rowToman !== null ? fill(TEXT.lSum, {
+        qty: decFa(math.qtyText), unit: TEXT.qtyUnits[m.qtyUnit] || '', price: groupFa(math.unitToman), total: groupFa(math.rowToman)
+      }) : '';
+    });
+    var groups = $('o-groups').querySelectorAll('.o-cat');
+    for (var i = 0; i < groups.length; i++) {
+      var c = counts[groups[i].getAttribute('data-group')] || 0;
+      groups[i].querySelector('.o-count').textContent = c ? fill(TEXT.oSelected, { n: toFa(c) }) : '';
+    }
+    var tot = $('o-total');
+    if (!n) tot.textContent = TEXT.oTotalNone;
+    else {
+      tot.textContent = fill(TEXT.lOrderTotal, { total: groupFa(total) }) + ' (' + fill(TEXT.lOrderCount, { n: toFa(n) }) + ')' + (noPrice ? ' — ' + TEXT.oTotalNoPrice : '');
+    }
+    applyFilter();
+  }
+
+  // The name search and «فقط انتخاب‌شده‌ها»: hide lines; a category with a visible line is opened while filtering.
+  function normName(v) {
+    return customerQuery(String(v || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[‌]/g, ' '));
+  }
+  function applyFilter() {
+    var q = normName($('o-search').value), only = $('o-only').getAttribute('aria-pressed') === 'true';
+    var filtering = !!q || only, any = false;
+    var groups = $('o-groups').querySelectorAll('.o-cat');
+    for (var i = 0; i < groups.length; i++) groups[i].setAttribute('data-vis', '0');
+    oModels.forEach(function (m) {
+      var show = (!q || normName(m.name).indexOf(q) >= 0) && (!only || hasQty(m));
+      m.els.box.hidden = !show;
+      if (show) { any = true; m.els.box.parentNode.parentNode.setAttribute('data-vis', '1'); }
+    });
+    for (var k = 0; k < groups.length; k++) {
+      var vis = groups[k].getAttribute('data-vis') === '1';
+      groups[k].hidden = !vis;
+      if (filtering && vis) groups[k].open = true;
+    }
+    $('o-empty').hidden = any || !oModels.length;
+  }
+
+  function addOtherLine(stored) {
+    var m = newModel({ other: true, productId: LEDGER_OTHER_ID, stored: !!stored, priceTouched: true, qtyUnitTouched: true });
+    if (stored) {
+      m.id = stored.id; m.name = stored.productName || '';
+      m.qty = stored.qty !== null ? decFa(stored.qty) : '';
+      m.qtyUnit = stored.qtyUnit || 'pack';
+      m.price = stored.priceAmount ? decFa(stored.priceAmount) : '';
+      m.priceUnit = stored.priceUnit || 'thousand';
+    }
+    oOthers.push(m);
+    $('o-others').appendChild(buildLine(m));
+    return m;
+  }
+
+  // Builds the product list (grouped by category, in sheet order) and fills it from the stored rows when editing.
+  function buildOrderLines(rows) {
+    var groupsBox = $('o-groups');
+    groupsBox.textContent = '';
+    $('o-others').textContent = '';
+    oModels = [];
+    oOthers = [];
+    var seen = {}, order = [], byGroup = {};
+    products.forEach(function (r) {
+      var id = String(r.id || '').trim(), name = String(r.name || '').trim();
+      if (!id || !name || seen[id] || id === LEDGER_OTHER_ID || isSoldOut(r)) return;
+      seen[id] = true;
+      var cat = String(r.category || '').trim();
+      var shop = shopPriceOf(r);
+      var unit = String(r.unit || '').trim();
+      var m = newModel({ productId: id, name: name, group: cat, shop: shop, shopUnit: unit, defKind: unitKindOf(unit), qtyUnit: unitKindOf(unit) });
+      oModels.push(m);
+      if (!byGroup[cat]) { byGroup[cat] = []; order.push(cat); }
+      byGroup[cat].push(m);
+    });
+    var extras = [];
+    (rows || []).forEach(function (e) {
+      if (e.productId === LEDGER_OTHER_ID) { addOtherLine(e); return; }
+      var m = null;
+      for (var i = 0; i < oModels.length; i++) if (oModels[i].productId === e.productId && !oModels[i].stored) { m = oModels[i]; break; }
+      if (!m) {
+        m = newModel({ productId: e.productId, name: e.productName || e.productId, group: TEXT.oGoneGroup, gone: true });
+        oModels.push(m);
+        extras.push(m);
+      }
+      m.id = e.id; m.stored = true; m.priceTouched = true; m.qtyUnitTouched = true;
+      m.qty = e.qty !== null ? decFa(e.qty) : '';
+      m.qtyUnit = e.qtyUnit || 'pack';
+      m.price = e.priceAmount ? decFa(e.priceAmount) : '';
+      m.priceUnit = e.priceUnit || 'thousand';
+    });
+    if (extras.length) { byGroup[TEXT.oGoneGroup] = extras; order.push(TEXT.oGoneGroup); }
+    order.forEach(function (cat, gi) {
+      var det = el('details', 'o-cat');
+      det.setAttribute('data-group', cat);
+      var sum = el('summary');
+      sum.appendChild(el('span', '', cat || '—'));
+      sum.appendChild(el('span', 'o-count'));
+      det.appendChild(sum);
+      var inner = el('div', 'o-cat-lines');
+      byGroup[cat].forEach(function (m) { inner.appendChild(buildLine(m)); });
+      det.appendChild(inner);
+      var hasOn = byGroup[cat].some(hasQty);
+      det.open = hasOn || (!rows && gi === 0);
+      groupsBox.appendChild(det);
     });
   }
 
-  function openLedgerForm(e) {
+  // target: null = a new order; {orderId, rows} = an order; {single} = an old entry (opens as a one-line order).
+  function openLedgerForm(target) {
     if (busy) return;
-    lEditId = e ? e.id : '';
-    lEditRow = e || null;
+    var rows = target ? (target.single ? [target.single] : target.rows) : null;
+    var e = rows ? rows[0] : null;
+    lEdit = { orderId: target && !target.single ? target.orderId : null, rowId: target && target.single ? target.single.id : '' };
     showIssues([]);
+    $('o-lines-note').textContent = '';
     var parts = e ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(e.date) : null;
     var t = todayJ();
     if (parts) setDateFields(parseInt(parts[1], 10), parseInt(parts[2], 10), parseInt(parts[3], 10));
@@ -1075,15 +1384,13 @@
     var oldName = e && e.type === 'sell' && !known ? e.party || '' : '';
     $('l-old-name').textContent = oldName ? fill(TEXT.lOldName, { name: oldName }) : '';
     $('l-old-name').hidden = !oldName;
-    fillProductOptions(e ? e.productId : '', e ? e.productName : '');
-    $('l-qty').value = e && e.qty !== null ? decFa(e.qty) : '';
-    $('l-qty-unit').value = e && e.qtyUnit ? e.qtyUnit : 'pack';
-    $('l-price').value = e && e.priceAmount ? decFa(e.priceAmount) : '';
-    $('l-price-unit').value = e && e.priceUnit ? e.priceUnit : 'thousand';
     $('l-party').value = e && (e.type !== 'sell' || !e.customerId) ? e.party || '' : '';
     $('l-note').value = e ? e.note || '' : '';
-    $('l-form-title').textContent = e ? TEXT.lEditTitle : TEXT.lNewTitle;
-    updatePreview();
+    $('o-search').value = '';
+    $('o-only').setAttribute('aria-pressed', 'false');
+    buildOrderLines(rows);
+    applyDefaults();
+    $('l-form-title').textContent = lEdit.orderId !== null ? fill(TEXT.lEditOrder, { n: toFa(lEdit.orderId) }) : (e ? TEXT.lEditTitle : TEXT.lNewOrder);
     $('l-form').hidden = false;
     $('l-list-card').hidden = true;
     setStatus(products.length ? '' : TEXT.lNoProducts, products.length ? '' : 'err');
@@ -1092,53 +1399,65 @@
   }
 
   function closeLedgerForm() {
-    lEditId = '';
-    lEditRow = null;
+    lEdit = { orderId: null, rowId: '' };
+    oModels = [];
+    oOthers = [];
     $('l-form').hidden = true;
     $('l-list-card').hidden = false;
   }
 
-  function collectLedger() {
-    var type = $('l-type-buy').checked ? 'buy' : ($('l-type-sell').checked ? 'sell' : '');
-    var out = {
+  // The order from the form: shared fields + the lines that have a quantity. `names` = the name of each line.
+  function collectOrder() {
+    var type = currentType();
+    var order = {
       date: $('l-year').value + '-' + pad2(parseInt($('l-month').value, 10)) + '-' + pad2(parseInt($('l-day').value, 10)),
       type: type,
-      productId: $('l-product').value,
-      productName: $('l-product').value === LEDGER_OTHER_ID ? cleanLedgerText($('l-other-name').value) : '',
-      qty: $('l-qty').value,
-      qtyUnit: $('l-qty-unit').value,
-      price: $('l-price').value,
-      priceUnit: $('l-price-unit').value,
       party: type === 'sell' ? '' : $('l-party').value,
-      note: $('l-note').value
+      note: $('l-note').value,
+      lines: []
     };
     if (type === 'sell') {
-      out.channel = $('l-ch-site').checked ? 'site' : ($('l-ch-person').checked ? 'person' : '');
+      order.channel = $('l-ch-site').checked ? 'site' : ($('l-ch-person').checked ? 'person' : '');
       if ($('l-customer').value === NEW_CUSTOMER) {
         var f = customerName_($('l-first').value), l = customerName_($('l-last').value);
-        out.newCustomer = { firstName: f.value || $('l-first').value, lastName: l.value || $('l-last').value };
+        order.newCustomer = { firstName: f.value || $('l-first').value, lastName: l.value || $('l-last').value };
       } else {
-        out.customerId = $('l-customer').value;
+        order.customerId = $('l-customer').value;
       }
     }
-    return out;
+    var names = [], models = [];
+    oModels.concat(oOthers).forEach(function (m) {
+      if (!hasQty(m)) return;
+      var line = { productId: m.productId, qty: m.qty, qtyUnit: m.qtyUnit, price: m.price, priceUnit: m.priceUnit };
+      if (m.stored && m.id) line.id = m.id;
+      if (m.other) line.productName = cleanLedgerText(m.name);
+      order.lines.push(line);
+      names.push(m.other ? (cleanLedgerText(m.name) || TEXT.lOther) : m.name);
+      models.push(m);
+    });
+    return { order: order, names: names, models: models };
   }
 
   // The same checks as the server (the server checks again; it is the real guard).
-  function ledgerIssues(entry) {
-    var out = [];
+  function orderIssues(built) {
+    var entry = built.order, out = [];
     function add(m) { out.push({ row: null, message: m }); }
+    function addLine(i, m) { out.push({ row: null, message: fill(TEXT.oLineIssue, { name: built.names[i], msg: m }) }); }
     if (!ledgerDate_(entry.date)) add(TEXT.lNeedDate);
     if (!entry.type) add(TEXT.lNeedType);
-    if (!entry.productId) add(TEXT.lNeedProduct);
-    else if (entry.productId === LEDGER_OTHER_ID) {
-      if (!entry.productName) add(TEXT.lNeedOtherName);
-      else if (entry.productName.length > LEDGER_OTHER_MAX) add(TEXT.lLongOtherName);
-    }
-    var m = ledgerMath_(entry.qty, entry.price, entry.priceUnit);
-    if (m.qty === null) add(TEXT.lBadQty);
-    if (m.tooBig) add(TEXT.lTooBig);
-    else if (m.unitToman === null) add(TEXT.lBadPrice);
+    if (!entry.lines.length) add(TEXT.oNeedLines);
+    else if (entry.lines.length > LEDGER_MAX_LINES) add(TEXT.oTooMany);
+    entry.lines.forEach(function (ln, i) {
+      if (ln.productId === LEDGER_OTHER_ID) {
+        if (!ln.productName) addLine(i, TEXT.lNeedOtherName);
+        else if (ln.productName.length > LEDGER_OTHER_MAX) addLine(i, TEXT.lLongOtherName);
+      }
+      var m = ledgerMath_(ln.qty, ln.price, ln.priceUnit);
+      if (m.qty === null) addLine(i, TEXT.lBadQty);
+      if (m.tooBig) addLine(i, TEXT.lTooBig);
+      else if (m.unitToman === null) addLine(i, String(ln.price).trim() === '' ? TEXT.oNeedPrice : TEXT.lBadPrice);
+    });
+    if (!ledgerOrders) add(TEXT.lOldServer2);
     if (entry.type === 'sell' && !customersReady) add(TEXT.lOldServer);
     else if (entry.type === 'sell') {
       if (entry.newCustomer) {
@@ -1155,14 +1474,14 @@
   function saveLedger(ev) {
     ev.preventDefault();
     if (busy) return;
-    var entry = collectLedger();
-    var issues = ledgerIssues(entry);
+    var built = collectOrder();
+    var issues = orderIssues(built);
     if (issues.length) { setStatus(TEXT.lSaveBlocked, 'err'); showIssues(issues); return; }
-    var wasEdit = !!lEditId;
+    var wasEdit = lEdit.orderId !== null || !!lEdit.rowId;
     setBusy(true);
     setStatus(TEXT.saving);
     showIssues([]);
-    api('saveLedgerRow', { entry: entry, id: lEditId }, true).then(function (r) {
+    api('saveLedgerOrder', { order: built.order, orderId: lEdit.orderId === null ? '' : lEdit.orderId, rowId: lEdit.rowId }, true).then(function (r) {
       if (r && r.ok) {
         closeLedgerForm();
         var done = wasEdit ? TEXT.lUpdated : TEXT.lSaved;
@@ -1172,10 +1491,31 @@
       }
       setBusy(false);
       setStatus(TEXT.lSaveBlocked, 'err');
-      showIssues((r && r.issues) || (r && r.message ? [{ row: null, message: r.message }] : []));
+      var list = (r && r.issues) || (r && r.message ? [{ row: null, message: r.message }] : []);
+      showIssues(list.map(function (it) {
+        var name = typeof it.line === 'number' ? built.names[it.line] : '';
+        return { row: null, message: name ? fill(TEXT.oLineIssue, { name: name, msg: it.message }) : it.message };
+      }));
     }, function (err) {
       setBusy(false);
-      onApiError(err);
+      onApiError(err, err && err.code === 'unknown_action' ? TEXT.lOldServer2 : undefined);
+    });
+  }
+
+  function deleteOrder(orderId) {
+    if (busy) return;
+    setBusy(true);
+    setStatus(TEXT.deleting);
+    api('deleteLedgerOrder', { orderId: orderId }, true).then(function (r) {
+      if (r && r.ok) {
+        setStatus(TEXT.lDeleted, 'ok');
+        return loadLedger(true);
+      }
+      setBusy(false);
+      setStatus((r && r.message) || TEXT.deleteFail, 'err');
+    }, function (err) {
+      setBusy(false);
+      onApiError(err, err && err.code === 'unknown_action' ? TEXT.lOldServer2 : TEXT.deleteFail);
     });
   }
 
@@ -1212,11 +1552,19 @@
     $('l-cancel').addEventListener('click', function () { closeLedgerForm(); showIssues([]); setStatus(''); });
     $('l-year').addEventListener('change', rebuildDays);
     $('l-month').addEventListener('change', rebuildDays);
-    $('l-product').addEventListener('change', function () {
-      syncOther();
-      if (this.value === LEDGER_OTHER_ID) $('l-other-name').focus();
-    });
     ['l-type-buy', 'l-type-sell', 'l-ch-site', 'l-ch-person'].forEach(function (id) { $(id).addEventListener('change', syncPills); });
+    ['l-type-buy', 'l-type-sell'].forEach(function (id) { $(id).addEventListener('change', applyDefaults); });
+    $('o-search').addEventListener('input', applyFilter);
+    $('o-only').addEventListener('click', function () {
+      this.setAttribute('aria-pressed', String(this.getAttribute('aria-pressed') !== 'true'));
+      applyFilter();
+    });
+    $('o-add-other').addEventListener('click', function () {
+      if (oModels.length + oOthers.length >= 400) return;
+      var m = addOtherLine(null);
+      refreshOrder();
+      m.els.name.focus();
+    });
     $('l-cust-filter').addEventListener('input', function () { fillCustomerOptions(); });
     $('l-customer').addEventListener('change', function () {
       syncCustomer();
@@ -1229,8 +1577,6 @@
       }
       $('l-first').focus();
     });
-    ['l-qty', 'l-price'].forEach(function (id) { $(id).addEventListener('input', updatePreview); });
-    ['l-qty-unit', 'l-price-unit'].forEach(function (id) { $(id).addEventListener('change', updatePreview); });
     var btns = document.querySelectorAll('[data-filter]');
     for (var i = 0; i < btns.length; i++) {
       btns[i].addEventListener('click', function () { ledgerFilter = this.getAttribute('data-filter'); renderLedger(); });

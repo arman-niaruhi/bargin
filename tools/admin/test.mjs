@@ -494,7 +494,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(j) malformed requests give bad_request and touch nothing", bad.every((b) => post(b).error === "bad_request") && sheetLog.touched === 0);
   const names = ["evil", "constructor", "__proto__", "toString", "", 5, null, "authorizeOnce", "readSheet"];
   check("(j) unknown actions are refused", names.every((a) => post({ action: a }).error === "unknown_action") && sheetLog.touched === 0);
-  check("(j) the action lists are exactly the expected ones", vm.runInContext("PUBLIC_ACTIONS.join()", gs) === "requestCode,verifyCode,logout,logEvent" && vm.runInContext("PROTECTED_ACTIONS.join()", gs) === "getProducts,saveProduct,deleteProduct,publishCsv,getLedger,saveLedgerRow,deleteLedgerRow");
+  check("(j) the action lists are exactly the expected ones", vm.runInContext("PUBLIC_ACTIONS.join()", gs) === "requestCode,verifyCode,logout,logEvent" && vm.runInContext("PROTECTED_ACTIONS.join()", gs) === "getProducts,saveProduct,deleteProduct,publishCsv,getLedger,saveLedgerRow,deleteLedgerRow,saveLedgerOrder,deleteLedgerOrder");
   const g = JSON.parse(gs.doGet().s);
   check("(j) doGet returns only harmless JSON", g.ok === true && Object.keys(g).join() === "ok,service");
   const throwing = gs.handleRequest_(JSON.stringify({ action: "getProducts", session: "s" }), { requireSession: () => true, publicActions: {}, actions: { getProducts: () => { throw new Error("sheet down"); } } });
@@ -872,11 +872,11 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const p1 = gs.planLedgerRow_(good({ productName: "fake name" }), prods, ctx);
   const ghormeh = prods.find((r) => r.id === "sabzi-ghormeh").name;
   check("(n) plan: a good entry becomes one row in LEDGER_HEADER order",
-    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "zahra ahmadi", "", OWNER, "1", "سایت"]), JSON.stringify(p1));
+    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "zahra ahmadi", "", OWNER, "1", "سایت", ""]), JSON.stringify(p1));
   check("(n) plan: the product name comes from the products tab, never from the page", p1.row[5] === ghormeh && !JSON.stringify(p1.row).includes("fake name"));
-  check("(n) LEDGER_HEADER has the 17 columns: the 15 old ones, then customerId and channel at the END",
-    L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by,customerId,channel" &&
-    Array.from(gs.LEDGER_HEADER_V1).join() === L.slice(0, 15).join() && gs.LEDGER_FORMATS.length === 17);
+  check("(n) LEDGER_HEADER has the 18 columns: the 15 old ones, customerId and channel, then orderId at the END",
+    L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by,customerId,channel,orderId" &&
+    Array.from(gs.LEDGER_HEADER_V1).join() === L.slice(0, 15).join() && Array.from(gs.LEDGER_HEADER_V2).join() === L.slice(0, 17).join() && gs.LEDGER_FORMATS.length === 18);
   const unknown = gs.planLedgerRow_(good({ productId: "no-such" }), prods, ctx);
   const blankP = gs.planLedgerRow_(good({ productId: "" }), prods.concat([{ row: 99, id: "", name: "" }]), ctx);
   check("(n) plan: an unknown or empty product id is refused", unknown.row === null && unknown.issues[0].field === "productId" && blankP.issues[0].field === "productId");
@@ -1011,7 +1011,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(n) save: id, time and email come from the server, never from the page (Tehran time, session email)",
     r1[0] !== "L" + "b".repeat(32) && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(r1[1]) && r1[1] !== "1999" && r1[14] === OWNER && r1[11] === 1350000, JSON.stringify(r1));
   check("(n) save: the row gets its cell formats first (text for the date, numbers for qty and toman)",
-    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@|@|@"));
+    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@|@|@|0"));
   check("(n) save: the products tab is only read, never written", !productsTab().writes);
   const a2 = add({ date: "1405-08-20", type: "buy", qty: "2.5", qtyUnit: "kg", price: "1.2", priceUnit: "million", party: "آقای رضایی", note: "نقدی" });
   clock.t += 1000;
@@ -1022,7 +1022,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const e2 = lg.data.entries[0];
   check("(n) getLedger: keys and texts come back (type buy, kg, million, typed «1.2», row total 3,000,000)",
     e2.type === "buy" && e2.typeText === "خرید" && e2.qty === 2.5 && e2.qtyUnit === "kg" && e2.priceToman === 1200000 && e2.priceAmount === "1.2" && e2.priceUnit === "million" && e2.rowToman === 3000000 && e2.party === "آقای رضایی" && e2.note === "نقدی", JSON.stringify(e2));
-  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers");
+  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers,orders");
   const bad = add({ price: "0" });
   check("(n) save: a bad entry is refused with issues and nothing is written", bad.ok === true && bad.data.ok === false && bad.data.issues.length === 1 && ledgerTab().rows.length === 4, JSON.stringify(bad));
 
@@ -1090,7 +1090,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const msg = gs.setupLedger();
   check("(n) setupLedger makes «خرید و فروش» the 2nd tab (products first, log last), header, frozen, formats",
     book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,log" && ledgerTab().rows[0].join() === L.join() && ledgerTab().frozen === 1 &&
-    ledgerTab().formats.filter((f) => f[0] === "col").length === 17 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
+    ledgerTab().formats.filter((f) => f[0] === "col").length === 18 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
   gs.setupLedger();
   check("(n) setupLedger can run again safely", book.getSheets().length === 3 && ledgerTab().rows.length === 1 && book.getSheets()[1].name === "خرید و فروش");
   mkBook(["ledger", "products", "log"]);
@@ -1212,6 +1212,83 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
       after17.data.ok === true && after17.data.entries[0].party === "خانم احمدی" && after17.data.entries[0].customerId === "" && after17.data.entries[0].channel === "", mig);
     mkBook(["products", "ledger"], [oldHead.slice(0, 14).concat(["oops"]), oldRow.slice()]);
     check("(o) setupLedger still refuses a tab whose header is neither the old nor the new one", /^ERROR/.test(gs.setupLedger()) && ledgerTab().rows[0][14] === "oops");
+    // ---- (p) multi-product orders (owner approved 2026-11-07) ----
+    {
+      const ln = (o) => Object.assign({ productId: "sabzi-ghormeh", qty: "2", qtyUnit: "pack", price: "450", priceUnit: "thousand" }, o);
+      const ord = (o, lines) => Object.assign({ date: "1405-08-16", type: "sell", channel: "site", customerId: "1", note: "یادداشت", lines: lines || [ln({}), ln({ productId: "esfenaj", price: "280" })] }, o);
+      const so = (o, orderId = "", rowId = "") => post({ action: "saveLedgerOrder", session: sess, data: { order: o, orderId, rowId } });
+      // migration 17 -> 18 columns
+      const h17 = L.slice(0, 17), row17 = ["L" + "8".repeat(32), "2026-11-07 09:00:00", "1405-08-16", "فروش", "sabzi-ghormeh", "سبزی قورمه", 1, "بسته/ظرف", 450000, "450", "هزار تومان", 450000, "zahra ahmadi", "", OWNER, "1", "سایت"];
+      mkBook(["products", "ledger", "customers", "log"], [h17.slice(), row17.slice()]);
+      const m17 = gs.setupLedger();
+      check("(p) setupLedger adds orderId at the END of a 17-column tab and keeps the data row", /OK/.test(m17) && ledgerTab().rows[0].join() === L.join() && JSON.stringify(ledgerTab().rows[1].slice(0, 17)) === JSON.stringify(row17));
+      const g17 = post({ action: "getLedger", session: sess });
+      check("(p) getLedger says orders:true and an old row has orderId null", g17.data.ok && g17.data.orders === true && g17.data.entries[0].orderId === null);
+
+      mkBook();
+      delete world.props.orderSeq; delete world.props.customerSeq;
+      const o1 = so(ord({}));
+      const rows1 = ledgerTab().rows.slice(1);
+      check("(p) order: 2 lines = 2 rows with the same orderId 1, date, type, customer, channel and note",
+        o1.data.ok === true && o1.data.orderId === 1 && rows1.length === 2 && rows1.every((r) => r[17] === 1 && r[2] === "1405-08-16" && r[3] === "فروش" && r[15] === "1" && r[16] === "سایت" && r[13] === "یادداشت" && r[12] === "zahra ahmadi") &&
+        rows1[0][0] !== rows1[1][0] && world.props.orderSeq === "1" && rows1[1][8] === 280000, JSON.stringify(o1));
+      const o2 = so(ord({ newCustomer: { firstName: "Neda", lastName: "Rad" }, customerId: undefined }, [ln({}), ln({ productId: "esfenaj" }), ln({ productId: gs.LEDGER_OTHER_ID, productName: "برنج", qtyUnit: "kg" })]));
+      const rows2 = ledgerTab().rows.slice(3);
+      check("(p) order: a NEW customer is created ONCE for 3 lines, all lines point to it, the order number is 2",
+        o2.data.ok === true && o2.data.orderId === 2 && custTab().rows.length === 3 && custTab().rows[2][1] === "neda" && rows2.length === 3 && rows2.every((r) => r[15] === "2" && r[12] === "neda rad" && r[17] === 2) && rows2[2][5] === "برنج", JSON.stringify(o2));
+      const nRowsB = ledgerTab().rows.length, nCustB = custTab().rows.length;
+      const badO = so(ord({ newCustomer: { firstName: "Bad", lastName: "One" }, customerId: undefined }, [ln({}), ln({ price: "0" })]));
+      check("(p) order: ONE bad line writes nothing (no rows, no customer, no order number used); the issue names the line",
+        badO.data.ok === false && badO.data.issues.length === 1 && badO.data.issues[0].line === 1 && badO.data.issues[0].field === "price" && ledgerTab().rows.length === nRowsB && custTab().rows.length === nCustB && world.props.orderSeq === "2", JSON.stringify(badO));
+      check("(p) order: a bad shared field (date) and a missing customer are reported once, not per line",
+        (() => { const r = so(ord({ date: "x", customerId: "" })); return r.data.ok === false && r.data.issues.filter((i) => i.field === "date").length === 1 && r.data.issues.filter((i) => i.field === "customerId").length === 1; })());
+      const none = so(ord({}, [])), many = so(ord({}, Array.from({ length: 51 }, () => ln({}))));
+      check("(p) order: no lines, or 51 lines, is refused; 50 lines are fine",
+        none.data.ok === false && /حداقل/.test(none.data.message) && many.data.ok === false && /۵۰|50/.test(many.data.message + "50") && so(ord({}, Array.from({ length: 50 }, () => ln({})))).data.ok === true);
+      const buy = so({ date: "1405-08-16", type: "buy", party: "=cmd", note: "", lines: [ln({ price: "10", priceUnit: "thousand" })] });
+      const br = ledgerTab().rows[ledgerTab().rows.length - 1];
+      check("(p) buy order: seller name kept (formula-escaped), no customer, no channel", buy.data.ok === true && br[12] === "'=cmd" && br[15] === "" && br[16] === "" && typeof br[17] === "number");
+      const inj = so(ord({}, [ln({ productId: gs.LEDGER_OTHER_ID, productName: "=HYPERLINK(\"x\")" })]));
+      check("(p) order: a «سایر» name starting with = gets an apostrophe", inj.data.ok === true && ledgerTab().rows[ledgerTab().rows.length - 1][5].startsWith("'="));
+      // edit: replace the lines of order 1
+      const first = rows1[0][0];
+      const keepBefore = ledgerTab().rows.find((r) => r[0] === first).slice();
+      const ed = so(ord({ note: "تازه" }, [ln({ id: first, qty: "5" }), ln({ productId: "nana", price: "330" })]), 1);
+      const ordRows = ledgerTab().rows.slice(1).filter((r) => r[17] === 1);
+      check("(p) edit order: a stored line keeps its id/time/email and is updated; the dropped line is deleted; a new line is added; note changes on all",
+        ed.data.ok === true && ed.data.orderId === 1 && ordRows.length === 2 && ordRows.find((r) => r[0] === first)[6] === 5 && ordRows.find((r) => r[0] === first)[1] === keepBefore[1] && ordRows.find((r) => r[0] === first)[14] === keepBefore[14] &&
+        ordRows.some((r) => r[4] === "nana") && !ordRows.some((r) => r[4] === "esfenaj") && ordRows.every((r) => r[13] === "تازه"), JSON.stringify(ed));
+      const foreign = so(ord({}, [ln({ id: rows2[0][0] })]), 1);
+      check("(p) edit order: a line id from ANOTHER order is refused, nothing changes", foreign.data.ok === false && ledgerTab().rows.slice(1).filter((r) => r[17] === 1).length === 2 && ledgerTab().rows.find((r) => r[0] === rows2[0][0])[17] === 2);
+      check("(p) edit order: an unknown order number is refused", so(ord({}), 999).data.ok === false && so(ord({}), "x").data.ok === false);
+      // old single row
+      const oldId = "L" + "7".repeat(32);
+      ledgerTab().rows.push(["" + oldId, "2026-11-07 08:00:00", "1405-08-15", "فروش", "sabzi-ghormeh", "سبزی قورمه", 1, "بسته/ظرف", 450000, "450", "هزار تومان", 450000, "zahra ahmadi", "", OWNER, "1", "سایت"]);
+      const seqBefore = world.props.orderSeq;
+      const eo1 = so(ord({}, [ln({ id: oldId, qty: "3" })]), "", oldId);
+      const oldRow = ledgerTab().rows.find((r) => r[0] === oldId);
+      check("(p) old single row edited as a one-line order: updated in place, still NO orderId, sequence unchanged", eo1.data.ok === true && eo1.data.orderId === null && oldRow[6] === 3 && !oldRow[17] && world.props.orderSeq === seqBefore, JSON.stringify(eo1));
+      const eo2 = so(ord({}, [ln({ id: oldId }), ln({ productId: "nana", price: "330" })]), "", oldId);
+      const grown = ledgerTab().rows.slice(1).filter((r) => r[17] === eo2.data.orderId);
+      check("(p) old single row grown to 2 lines: both get a new order number", eo2.data.ok === true && typeof eo2.data.orderId === "number" && grown.length === 2 && grown.some((r) => r[0] === oldId) && world.props.orderSeq === String(eo2.data.orderId), JSON.stringify(eo2));
+      // delete
+      const nBeforeDel = ledgerTab().rows.length;
+      const dOrd = post({ action: "deleteLedgerOrder", session: sess, data: { orderId: 2 } });
+      check("(p) deleteLedgerOrder removes every line of that order only", dOrd.data.ok === true && dOrd.data.deleted === 3 && ledgerTab().rows.length === nBeforeDel - 3 && !ledgerTab().rows.some((r) => r[17] === 2) && ledgerTab().rows.some((r) => r[17] === 1));
+      const dBad = [post({ action: "deleteLedgerOrder", session: sess, data: { orderId: 2 } }), post({ action: "deleteLedgerOrder", session: sess, data: { orderId: "x" } }), post({ action: "deleteLedgerOrder", session: sess, data: {} })];
+      check("(p) deleteLedgerOrder: already gone, malformed or missing number deletes nothing", dBad.every((x) => x.data && x.data.ok === false) && ledgerTab().rows.length === nBeforeDel - 3);
+      const nextO = so(ord({}, [ln({})]));
+      check("(p) an order number is never reused after its order was deleted", nextO.data.orderId > 2 && nextO.data.orderId === Number(world.props.orderSeq));
+      // session, lock
+      const nos = [post({ action: "saveLedgerOrder", data: { order: ord({}), orderId: "", rowId: "" } }), post({ action: "deleteLedgerOrder", session: "f".repeat(64), data: { orderId: 1 } })];
+      check("(p) saveLedgerOrder / deleteLedgerOrder need a session", nos.every((x) => x.error === "NO_SESSION"));
+      let thr = false; try { gs.saveLedgerOrder(ord({}), "", ""); } catch (e) { thr = true; } let thr2 = false; try { gs.deleteLedgerOrder(1); } catch (e) { thr2 = true; }
+      check("(p) calling them directly (outside a checked request) throws", thr && thr2);
+      const nl = ledgerTab().rows.length; world.lockBusy = true; const lb2 = so(ord({})); world.lockBusy = false;
+      check("(p) lock busy: BUSY and nothing written", lb2.error === "BUSY" && ledgerTab().rows.length === nl);
+      check("(p) a sale on a book without «مشتری‌ها» is refused", (() => { mkBook(["products", "ledger", "log"]); const r = so(ord({})); return r.data.ok === false && /setupCustomers/.test(r.data.message) && ledgerTab().rows.length === 1; })());
+      check("(p) admin.js uses the same line cap (50) as Code.gs", /LEDGER_MAX_LINES = 50/.test(read("admin/admin.js")) && gs.LEDGER_MAX_LINES === 50);
+    }
     // setupCustomers
     mkBook(["products", "ledger", "log"]);
     const sc = gs.setupCustomers();
@@ -1236,7 +1313,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   gs.SpreadsheetApp = oldSS;
 
   // the page
-  check("(n) admin page: no sums or totals over rows (only each row's own total)", !/جمع|grandTotal|\.reduce\(/.test(adminSrc));
+  check("(n) admin page: no sums or totals over all rows (only each row's total and «جمع این سفارش» for ONE order)", !/جمع|grandTotal|\.reduce\(/.test(adminSrc.replace(/جمع این سفارش/g, "")));
   check("(n) admin page: ledger data shown with textContent only (no innerHTML / insertAdjacentHTML)", !/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(adminSrc));
   const newer = /\?\.|\?\?|Object\.fromEntries|replaceAll|\.at\(|\.flat\(|flatMap|matchAll|structuredClone/;
   check("(n) admin.js and Code.gs use nothing newer than ES2017", !newer.test(adminSrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(read("tools/admin/Code.gs").replace(/\/\/[^\n]*/g, "")));
