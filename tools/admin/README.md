@@ -201,3 +201,17 @@ customer), so nothing half-filled is ever stored. Products are not affected at a
   `planCustomer_`, new / reused customers, the 15→17 column migration, `setupCustomers`).
 - The calendar, number parsing, row total and customer-name check are in a block shared by `Code.gs` and `admin/admin.js` (marked
   `shared with admin/admin.js`); keep both copies identical, the tests check it.
+
+## Product versions (owner approved 2026-11-07)
+- Private tab **`تاریخچه محصولات`**, made by **`setupVersioning`** right after «مشتری‌ها» (before `log`), never first, never published.
+  Columns: `versionId` (`<id>-v<n>`), `productId`, `name`, `category`, `price` (digits), `unit`, `soldOut`, `valid_from`, `valid_to`, `is_current`.
+  One row per version. The products tab (Sheet1) is never changed by this.
+- A new version starts when **name, price, unit or soldOut** changes. Category changes only update the category on every row of that product.
+  Text, recipe and image changes are not tracked.
+- Admin saves/deletes are captured at once. Hand edits in the Sheet are captured by the hourly trigger `hourlyVersioning`
+  (installed by `setupVersioning`, exactly one) and before every product save and ledger save.
+  A hand-typed product gets v1; a row deleted by hand closes its version; hand edits of an OLD history row are left as typed.
+- Each ledger line stores `productVersion` (the version valid on the sale date, else the current one); old lines stay empty.
+- Deploy steps: paste `Code.gs` + `appsscript.json` → run `setupVersioning` (allow the new permission) → run `setupLedger`
+  → run `groupOldSales` once → Deploy → New version (Execute as: Me, Anyone) → push the site/admin.
+- `groupOldSales` (run once): gives old sale rows without an order number one, grouped by customer + date + channel.

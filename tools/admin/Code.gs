@@ -27,6 +27,12 @@
 // Customers get a whole-number id (1, 2, 3…) that is never given out twice, even after a row is deleted. Names
 // are English letters only, stored in lowercase. A new customer is added by saveLedgerRow in the same lock as the
 // sale; a name that is already on the list (case ignored) reuses that customer.
+// Product versions (owner approved 2026-11-07, SCD type 2): a private «تاریخچه محصولات» tab (made by setupVersioning,
+// after «مشتری‌ها», before «log», never first, never published) keeps one row per VERSION of a product. A new version
+// starts when name, price, unit or soldOut changes (category changes only update the category on every row of that
+// product). The products tab is never changed by this: it is compared with the current history row. Admin saves
+// and deletes are captured at once; hand edits in the Sheet are captured by an hourly trigger (hourlyVersioning) and
+// before every product save and ledger save. Each ledger line stores the productVersion valid on its sale date.
 // Style: ES2017 only, like the site (no newer syntax or methods).
 
 // The people who may log in (owner decision 2026-10-23). All of them get FULL admin access.
@@ -40,6 +46,7 @@ var FAKE_SEND_DELAY_MS = 700;    // an unknown address waits about as long as a 
 var PUBLIC_ACTIONS = ['requestCode', 'verifyCode', 'logout', 'logEvent'];
 // Actions that need a valid session (checked once, in handleRequest_).
 var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv', 'getLedger', 'saveLedgerRow', 'deleteLedgerRow', 'saveLedgerOrder', 'deleteLedgerOrder'];
+// (hourlyVersioning is NOT an action: it is only started by its time trigger.)
 
 // Limits checked before anything else happens.
 var MAX_BODY = 200000;   // characters in the request body
@@ -121,7 +128,11 @@ var MSG = {
   longCustomerName: 'اسم و فامیل هر کدوم حداکثر ۳۰ حرف.',
   persianCustomerName: 'اسم و فامیل مشتری رو با حروف انگلیسی بنویس، مثلاً zahra ahmadi.',
   badCustomerName: 'توی اسم و فامیل فقط حروف انگلیسی، فاصله، - و \' قبوله.',
-  badChannel: 'بگو فروش از کجا بود: سایت یا حضوری.'
+  badChannel: 'بگو فروش از کجا بود: سایت یا حضوری.',
+  // تاریخچه محصولات (TODO: bargin-content to review)
+  noHistory: 'تب «تاریخچه محصولات» هنوز ساخته نشده. توی Apps Script یه بار تابع setupVersioning رو اجرا کن.',
+  historyFirst: 'تب «تاریخچه محصولات» نباید اولین تب شیت باشه. یه بار تابع setupVersioning رو اجرا کن.',
+  historyHeader: 'سطر اول تب «تاریخچه محصولات» به‌هم ریخته. تابع setupVersioning رو اجرا کن یا سرستون‌ها رو درست کن.'
 };
 
 var PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
@@ -693,7 +704,7 @@ function productSheet() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   // The log and the buys/sells tabs must never be read or written as the products.
   var name = sheet && typeof sheet.getName === 'function' ? sheet.getName() : '';
-  if (name === LOG_SHEET || name === LEDGER_SHEET || name === CUSTOMER_SHEET) throw new Error('WRONG_FIRST_TAB');
+  if (name === LOG_SHEET || name === LEDGER_SHEET || name === CUSTOMER_SHEET || name === HISTORY_SHEET) throw new Error('WRONG_FIRST_TAB');
   return sheet;
 }
 
@@ -741,6 +752,7 @@ function publishCsv() {
 // or {ok:false, issues} (issues have row numbers, same as the checks).
 function saveProduct(item, originalId) {
   assertSession_();
+  captureQuiet_();   // hand edits made in the Sheet first, so they get their own version
   var sheet = productSheet();
   var data = readSheetRows();
   if (data.issues.length) return { ok: false, issues: data.issues };
@@ -761,6 +773,7 @@ function saveProduct(item, originalId) {
   });
 
   sheet.getRange(plan.row, 1, 1, width).setValues([values]);
+  captureQuiet_();   // and this save becomes a version at once (if name, price, unit or soldOut changed)
   return { ok: true, row: plan.row, updated: !!plan.target };
 }
 
@@ -770,12 +783,14 @@ function deleteProduct(id) {
   assertSession_();
   var key = cellText(id);
   if (!key) return { ok: false, message: MSG.noDeleteId };
+  captureQuiet_();
   var data = readSheetRows();
   if (data.issues.length) return { ok: false, message: MSG.sheetProblems };
   var hits = data.rows.filter(function (r) { return !isBlankRow(r) && cellText(r.id) === key; });
   if (!hits.length) return { ok: false, message: fill(MSG.notFound, { value: key }) };
   if (hits.length > 1) return { ok: false, message: fill(MSG.manyIds, { value: key }) };
   productSheet().deleteRow(hits[0].row);
+  captureQuiet_();   // ends the product's current version; the history rows stay
   return { ok: true, row: hits[0].row };
 }
 
@@ -795,9 +810,12 @@ var LEDGER_HEADER_V2 = LEDGER_HEADER_V1.concat(['customerId', 'channel']);
 var LEDGER_HEADER_V3 = LEDGER_HEADER_V2.concat(['orderId']);
 // packSize (owner 2026-11-07): the pack size of a line, e.g. «۵۰۰ گرم» (optional text, max 20). Appended at the END;
 // setupLedger adds it to a 15-, 17- or 18-column tab. Old rows have it empty.
-var LEDGER_HEADER = LEDGER_HEADER_V3.concat(['packSize']);
+var LEDGER_HEADER_V4 = LEDGER_HEADER_V3.concat(['packSize']);
+// productVersion (owner 2026-11-07): the versionId (from «تاریخچه محصولات») valid on the sale date, filled by the server
+// (never typed). Appended at the END; setupLedger adds it to a 15-, 17-, 18- or 19-column tab. Old rows have it empty.
+var LEDGER_HEADER = LEDGER_HEADER_V4.concat(['productVersion']);
 // Cell formats per column: text everywhere (so 1405-08-16 never turns into a date), numbers for qty and toman.
-var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@', '@', '@', '0', '@'];
+var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@', '@', '@', '0', '@', '@'];
 var LEDGER_TYPES = { buy: 'خرید', sell: 'فروش' };
 var LEDGER_QTY_UNITS = { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', piece: 'عدد' };
 var LEDGER_PRICE_UNITS = { thousand: 'هزار تومان', million: 'میلیون تومان' };
@@ -1079,6 +1097,12 @@ function planLedgerRow_(input, products, ctx) {
   if (pack === null) add('packSize', MSG.longPack);
 
   if (issues.length) return { issues: issues, row: null };
+  // the product version valid on the sale date; an edit that keeps the same product and date keeps the stored one
+  var version = '';
+  if (pid !== LEDGER_OTHER_ID) {
+    if (ctx.keep && ctx.keep.productId === pid && ctx.keep.date === date) version = cellText(ctx.keep.version);
+    else version = versionFor_(ctx.versions, pid, date);
+  }
   return {
     issues: [],
     customer: customer,
@@ -1086,7 +1110,7 @@ function planLedgerRow_(input, products, ctx) {
       LEDGER_QTY_UNITS[qtyUnit], math.unitToman, math.priceText, LEDGER_PRICE_UNITS[priceUnit], math.rowToman,
       sheetText_(party), sheetText_(note), cellText(ctx.by),
       customer ? customer.customerId : '', channel ? LEDGER_CHANNELS[channel] : '',
-      ctx.orderId ? ctx.orderId : '', sheetText_(pack)]
+      ctx.orderId ? ctx.orderId : '', sheetText_(pack), sheetText_(version)]
   };
 }
 
@@ -1124,7 +1148,7 @@ function ledgerEntry_(v) {
     priceUnit: ledgerKeyOf_(LEDGER_PRICE_UNITS, cellText(v[10])), priceUnitText: cellText(v[10]),
     rowToman: num(v[11]), party: cellText(v[12]), note: cellText(v[13]), by: cellText(v[14]),
     customerId: toAsciiDigits(cellText(v[15])), channel: ledgerKeyOf_(LEDGER_CHANNELS, cellText(v[16])), channelText: cellText(v[16]),
-    orderId: orderIdOf_(v[17]), packSize: cellText(v[18])
+    orderId: orderIdOf_(v[17]), packSize: cellText(v[18]), productVersion: cellText(v[19])
   };
 }
 
@@ -1175,7 +1199,7 @@ function getLedger() {
     if (a.created !== b.created) return a.created < b.created ? 1 : -1;
     return 0;
   });
-  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [], orders: true, packSize: true };
+  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [], orders: true, packSize: true, productVersion: true };
   var c = customersSheet_();
   if (c.sheet) out.customers = customerList_(customerValues_(c.sheet));
   else out.customersMessage = c.message;
@@ -1189,6 +1213,7 @@ function getLedger() {
 // Returns {ok:true, id, updated, customerId, reusedCustomer} or {ok:false, issues} / {ok:false, message}.
 function saveLedgerRow(entry, id) {
   assertSession_();
+  captureQuiet_();   // hand edits first, so the line gets the right product version
   var t = ledgerSheet_();
   if (!t.sheet) return { ok: false, message: t.message };
   var sheet = t.sheet;
@@ -1204,7 +1229,8 @@ function saveLedgerRow(entry, id) {
     if (!found.row) return { ok: false, message: found.error === 'many' ? MSG.ledgerMany : MSG.ledgerNotFound };
     target = found.row;
     var old = values[target - 2];
-    ctx = { id: id, created: cellText(old[1]), by: cellText(old[14]), orderId: orderIdOf_(old[17]), keep: { productId: cellText(old[4]), productName: cellText(old[5]) } };
+    ctx = { id: id, created: cellText(old[1]), by: cellText(old[14]), orderId: orderIdOf_(old[17]),
+      keep: { productId: cellText(old[4]), productName: cellText(old[5]), date: cellText(old[2]), version: cellText(old[19]) } };
   } else {
     if (values.length >= LEDGER_MAX_ROWS) return { ok: false, message: fill(MSG.ledgerFull, { n: LEDGER_MAX_ROWS }) };
     ctx = {
@@ -1213,6 +1239,7 @@ function saveLedgerRow(entry, id) {
       by: sessionEmail_
     };
   }
+  ctx.versions = versionMap_();
   var isSale = !!entry && typeof entry === 'object' && entry.type === 'sell';
   var cust = null, custValues = [];
   if (isSale) {
@@ -1275,6 +1302,7 @@ function deleteLedgerRow(id) {
 // Returns {ok:true, orderId, ids, customerId, reusedCustomer} or {ok:false, issues[{field,line?,message}]} / {ok:false, message}.
 function saveLedgerOrder(order, orderId, rowId) {
   assertSession_();
+  captureQuiet_();   // hand edits first, so every line gets the right product version
   var t = ledgerSheet_();
   if (!t.sheet) return { ok: false, message: t.message };
   var sheet = t.sheet;
@@ -1328,6 +1356,7 @@ function saveLedgerOrder(order, orderId, rowId) {
     ctxCustomers = [{ id: VIRTUAL, firstName: cf, lastName: cl }];
   }
   var created = Utilities.formatDate(new Date(nowMs_()), 'Asia/Tehran', 'yyyy-MM-dd HH:mm:ss');
+  var versions = versionMap_();
   var seen = {};
   var plans = [];
   order.lines.forEach(function (ln, i) {
@@ -1349,7 +1378,8 @@ function saveLedgerOrder(order, orderId, rowId) {
     };
     var ctx = {
       id: lid || 'L' + randomHex_(32), created: old ? cellText(old[1]) : created, by: old ? cellText(old[14]) : sessionEmail_,
-      customers: ctxCustomers, keep: old ? { productId: cellText(old[4]), productName: cellText(old[5]) } : null
+      customers: ctxCustomers, versions: versions,
+      keep: old ? { productId: cellText(old[4]), productName: cellText(old[5]), date: cellText(old[2]), version: cellText(old[19]) } : null
     };
     var plan = planLedgerRow_(input, data.rows, ctx);
     // customer/channel problems are reported once (the customer part was planned above), not per line
@@ -1369,10 +1399,18 @@ function saveLedgerOrder(order, orderId, rowId) {
   // an order number: kept when editing an order; new when a new order, or when an old single row grows to 2+ lines
   var props = PropertiesService.getScriptProperties();
   var finalOrder = null, newSeq = false;
+  var mergedInto = null;
   if (editOrder !== null) finalOrder = editOrder;
   else if (!editRow || plans.length > 1) {
-    finalOrder = nextOrderId_(values.map(function (v) { return v[17]; }), props.getProperty(ORDER_SEQ_KEY));
-    newSeq = true;
+    // a NEW sale for an existing customer on a day/channel that already has an order joins that order
+    if (!editRow && isSale && cplan && !cplan.newCustomer && cplan.customerId && plans.length) {
+      mergedInto = findSaleOrder_(values, cplan.customerId, plans[0].plan.row[2], plans[0].plan.row[16]);
+    }
+    if (mergedInto !== null) finalOrder = mergedInto;
+    else {
+      finalOrder = nextOrderId_(values.map(function (v) { return v[17]; }), props.getProperty(ORDER_SEQ_KEY));
+      newSeq = true;
+    }
   }
   // the new customer, once
   var c = cplan, newCid = '';
@@ -1404,7 +1442,9 @@ function saveLedgerOrder(order, orderId, rowId) {
   });
   removed.sort(function (a, b) { return b - a; }).forEach(function (k) { sheet.deleteRow(k + 2); });
   if (newSeq) props.setProperty(ORDER_SEQ_KEY, String(finalOrder));
-  return { ok: true, orderId: finalOrder, ids: ids, customerId: customerId, reusedCustomer: c ? c.reused : '' };
+  var res = { ok: true, orderId: finalOrder, ids: ids, customerId: customerId, reusedCustomer: c ? c.reused : '' };
+  if (mergedInto !== null) res.mergedInto = mergedInto;
+  return res;
 }
 
 // Action deleteLedgerOrder (under the lock, after the owner confirmed on the page): deletes EVERY row with this
@@ -1423,6 +1463,69 @@ function deleteLedgerOrder(orderId) {
   return { ok: true, deleted: hits.length };
 }
 
+// The order number of an existing SALE order with this customer id, date ('yyyy-mm-dd') and channel text, or null.
+// When several orders match, the lowest number wins. `values` = the ledger rows (arrays).
+function findSaleOrder_(values, customerId, date, channelText) {
+  var best = null;
+  values.forEach(function (v) {
+    var oid = orderIdOf_(v[17]);
+    if (oid === null || cellText(v[3]) !== LEDGER_TYPES.sell) return;
+    if (toAsciiDigits(cellText(v[15])) !== customerId || cellText(v[2]) !== date || cellText(v[16]) !== channelText) return;
+    if (best === null || oid < best) best = oid;
+  });
+  return best;
+}
+
+// Plans the one-time grouping of OLD sale rows (no orderId): rows with the same customerId + date + channel share
+// one order number. An existing order with the same customer + date + channel is joined instead of a new number.
+// Buys and sales without a customerId are left alone. Pure. Returns {assign: [{idx, orderId}], newOrders, joined, orders, last}
+// (`idx` = index in `values`; `orders` = how many different order numbers the rows now share).
+function planGroupSales_(values, seq) {
+  var existing = {}, groups = {}, assign = [], used = {}, newOrders = 0, joined = 0;
+  var next = nextOrderId_(values.map(function (v) { return v[17]; }), seq);
+  var keyOf = function (v) { return toAsciiDigits(cellText(v[15])) + '|' + cellText(v[2]) + '|' + cellText(v[16]); };
+  var isSale = function (v) { return cellText(v[3]) === LEDGER_TYPES.sell && toAsciiDigits(cellText(v[15])) !== ''; };
+  values.forEach(function (v) {
+    var oid = orderIdOf_(v[17]);
+    if (oid === null || !isSale(v)) return;
+    var k = keyOf(v);
+    if (existing[k] === undefined || oid < existing[k]) existing[k] = oid;
+  });
+  values.forEach(function (v, idx) {
+    if (!isSale(v) || orderIdOf_(v[17]) !== null || cellText(v[0]) === '') return;
+    var k = keyOf(v), oid;
+    if (existing[k] !== undefined) {
+      oid = existing[k];
+      if (!used[oid]) { used[oid] = true; joined += 1; }
+    } else {
+      if (groups[k] === undefined) { groups[k] = next; next += 1; newOrders += 1; used[groups[k]] = true; }
+      oid = groups[k];
+    }
+    assign.push({ idx: idx, orderId: oid });
+  });
+  return { assign: assign, newOrders: newOrders, joined: joined, orders: newOrders + joined, last: next - 1 };
+}
+
+// Run this ONCE in the Apps Script editor, after setupLedger (owner approved 2026-11-07): gives every OLD sale row
+// that has no order number one, grouped by customerId + date + channel (a group joins an existing order with the same
+// three values; a single old row also gets a number). It only writes the orderId cells. Buys and rows without a
+// customerId are left alone. Safe to run again: it changes nothing the second time.
+function groupOldSales() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_WAIT_MS)) return 'ERROR: busy, run groupOldSales again';
+  try {
+    var t = ledgerSheet_();
+    if (!t.sheet) return 'ERROR: ' + t.message;
+    var values = ledgerValues_(t.sheet);
+    var props = PropertiesService.getScriptProperties();
+    var plan = planGroupSales_(values, props.getProperty(ORDER_SEQ_KEY));
+    if (!plan.assign.length) return 'OK: nothing to group (0 rows)';
+    plan.assign.forEach(function (a) { t.sheet.getRange(a.idx + 2, 18).setValue(a.orderId); });
+    if (plan.newOrders) props.setProperty(ORDER_SEQ_KEY, String(plan.last));
+    return 'OK: ' + plan.assign.length + ' rows grouped into ' + plan.orders + ' orders (' + plan.newOrders + ' new, ' + plan.joined + ' joined an existing order)';
+  } finally { lock.releaseLock(); }
+}
+
 // Run this ONCE in the Apps Script editor after pasting Code.gs: makes the «خرید و فروش» tab (or fixes its place
 // and header) as the 2ND tab, right after the products tab, never first. Bold frozen header, text/number formats.
 // Safe to run again; it never changes the data rows. Do NOT publish this tab to the web.
@@ -1435,9 +1538,9 @@ function setupLedger() {
   }
   var lastRow = sheet.getLastRow();
   var head = lastRow ? sheet.getRange(1, 1, 1, LEDGER_HEADER.length).getValues()[0].map(cellText) : [];
-  // An older tab (15 columns before the customers, 17 before the orders, 18 before the pack size): the missing columns are added at the END;
+  // An older tab (15 columns before the customers, 17 before the orders, 18 before the pack size, 19 before the product version): the missing columns are added at the END;
   // data rows are kept. Accepted when the first N columns match an older header and the rest are empty.
-  var older = [LEDGER_HEADER_V1, LEDGER_HEADER_V2, LEDGER_HEADER_V3].some(function (k) {
+  var older = [LEDGER_HEADER_V1, LEDGER_HEADER_V2, LEDGER_HEADER_V3, LEDGER_HEADER_V4].some(function (k) {
     return head.slice(0, k.length).join('\n') === k.join('\n') && head.slice(k.length).every(function (h) { return h === ''; });
   });
   if (lastRow > 1 && head.join('\n') !== LEDGER_HEADER.join('\n') && !older) {
@@ -1484,4 +1587,274 @@ function setupCustomers() {
   }
   ss.setActiveSheet(ss.getSheets()[0]);
   return 'OK: «' + CUSTOMER_SHEET + '» is tab ' + sheet.getIndex() + ' of ' + ss.getNumSheets() + '; products tab is «' + ss.getSheets()[0].getName() + '». Do not publish it to the web.';
+}
+
+// ---- Product versions: the «تاریخچه محصولات» tab (owner approved 2026-11-07, SCD type 2) ----
+// One row per version of a product. Columns: versionId (<id>-v<n>), productId, name, category, price (digits only),
+// unit, soldOut (yes/no), valid_from, valid_to (Tehran time, 'yyyy-MM-dd HH:mm:ss'; valid_to empty while current),
+// is_current (yes/no). The last known name|price|unit|soldOut of a product is simply its CURRENT row, so the products
+// tab needs no extra column and stays exactly as it is. The tab is private: the 3rd/4th tab, never first, never published.
+
+var HISTORY_SHEET = 'تاریخچه محصولات';
+var HISTORY_HEADER = ['versionId', 'productId', 'name', 'category', 'price', 'unit', 'soldOut', 'valid_from', 'valid_to', 'is_current'];
+var HISTORY_MAX_ROWS = 20000;     // when full, no new version rows are added (nothing is deleted)
+var HISTORY_TRIGGER = 'hourlyVersioning';
+
+// The four tracked fields of a products-tab row or a history row, cleaned for comparing.
+function trackedOf_(r) {
+  var sold = cellText(r.soldOut).toLowerCase() === 'yes' ? 'yes' : 'no';
+  return {
+    name: cellText(r.name),
+    price: toAsciiDigits(cellText(r.price)).replace(/,/g, ''),
+    unit: cellText(r.unit),
+    soldOut: sold
+  };
+}
+function sameTracked_(a, b) {
+  return a.name === b.name && a.price === b.price && a.unit === b.unit && a.soldOut === b.soldOut;
+}
+
+// History tab values (rows 2..) → objects {row, versionId, productId, name, category, price, unit, soldOut,
+// valid_from, valid_to, current}. `row` is the sheet row number.
+function histFromValues_(values) {
+  return values.map(function (v, k) {
+    var o = { row: k + 2 };
+    HISTORY_HEADER.forEach(function (h, i) { o[h] = cellText(v[i]); });
+    o.current = o.is_current.toLowerCase() === 'yes';
+    return o;
+  });
+}
+// A history object → the cells of its row (text is formula-escaped like every other written cell).
+function histRow_(o) {
+  return [sheetText_(o.versionId), sheetText_(o.productId), sheetText_(o.name), sheetText_(o.category), o.price, sheetText_(o.unit),
+    o.soldOut, o.valid_from, o.valid_to, o.current ? 'yes' : 'no'];
+}
+
+// The pure heart: compares the products tab rows with the history objects and says what to change.
+// `products` = readSheetRows rows, `hist` = histFromValues_ objects, `now` = the time text for valid_from / valid_to.
+// It changes the history objects in memory and returns {dirty: [existing objects that changed], added: [new objects], notes: [text]}.
+// - a product with no current version gets one (v1, or the next number after an ended one);
+// - tracked fields changed → the current version is closed (valid_to = now, is_current = no) and a new one starts;
+// - category changed → the category is updated on EVERY history row of that product, no new version;
+// - a product that is gone (deleted by hand or in the admin) → its current version is closed, the history stays;
+// - several current rows of one id → the newest valid_from stays current, the others are closed;
+// - rows with problems (validateRows) and repeated ids (the 2nd one on) are skipped, never versioned;
+// - history rows without versionId or productId are ignored; non-current rows (even hand-edited) are never touched
+//   (only their category follows the product).
+function planVersions_(products, hist, now) {
+  var dirty = [], added = [], notes = [];
+  function mark(o) { if (!o.isNew && dirty.indexOf(o) < 0) dirty.push(o); }
+  function close(o) { o.current = false; o.is_current = 'no'; if (!o.valid_to) o.valid_to = now; mark(o); }
+
+  var bad = {};
+  validateRows(products).forEach(function (i) { bad[i.row] = true; });
+  var byId = Object.create(null), order = [];
+  products.forEach(function (r) {
+    if (isBlankRow(r)) return;
+    var id = cellText(r.id);
+    if (!id) return;
+    if (byId[id]) { notes.push('duplicate id «' + id + '» (row ' + r.row + ') skipped'); return; }
+    byId[id] = r; order.push(id);
+  });
+
+  var hBy = Object.create(null), hOrder = [], used = Object.create(null);
+  hist.forEach(function (h) {
+    if (!h.versionId || !h.productId) { notes.push('history row ' + h.row + ' has no versionId or productId, ignored'); return; }
+    used[h.versionId] = true;
+    if (!hBy[h.productId]) { hBy[h.productId] = []; hOrder.push(h.productId); }
+    hBy[h.productId].push(h);
+  });
+
+  var ids = order.slice();
+  hOrder.forEach(function (id) { if (!byId[id]) ids.push(id); });
+  ids.forEach(function (id) {
+    var list = hBy[id] || [];
+    var row = byId[id];
+    var cur = null;
+    list.forEach(function (h) { if (h.current && (!cur || h.valid_from >= cur.valid_from)) cur = h; });
+    list.forEach(function (h) {
+      if (h.current && h !== cur) { close(h); notes.push('two current versions of «' + id + '»: ' + h.versionId + ' closed'); }
+    });
+    if (!row) { if (cur) close(cur); return; }
+    if (bad[row.row]) return;
+
+    var t = trackedOf_(row);
+    var fresh = null;
+    if (!cur || !sameTracked_(cur, t)) {
+      if (cur) close(cur);
+      var n = list.length;
+      list.forEach(function (h) {
+        var m = /-v(\d+)$/.exec(h.versionId);
+        if (m && parseInt(m[1], 10) > n) n = parseInt(m[1], 10);
+      });
+      n += 1;
+      while (used[id + '-v' + n]) n += 1;
+      fresh = { isNew: true, row: 0, versionId: id + '-v' + n, productId: id, name: t.name, category: cellText(row.category),
+        price: t.price, unit: t.unit, soldOut: t.soldOut, valid_from: now, valid_to: '', is_current: 'yes', current: true };
+      used[fresh.versionId] = true;
+      added.push(fresh);
+    }
+    var cat = cellText(row.category);
+    list.forEach(function (h) { if (h.category !== cat) { h.category = cat; mark(h); } });
+  });
+  return { dirty: dirty, added: added, notes: notes };
+}
+
+// 'yyyy-MM-dd HH:mm:ss' (Tehran, Gregorian) → the Persian day 'yyyy-mm-dd' (the same shape as a ledger date), or ''.
+function jalaliDayOf_(t) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(cellText(t));
+  if (!m) return '';
+  var j = toJalali_(parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10));
+  return j.y + '-' + (j.m < 10 ? '0' : '') + j.m + '-' + (j.d < 10 ? '0' : '') + j.d;
+}
+
+// history objects → {productId: [{id, from, day, current}]}, each list sorted by valid_from (oldest first).
+function versionMapOf_(hist) {
+  var map = Object.create(null);
+  hist.forEach(function (h) {
+    if (!h.versionId || !h.productId) return;
+    (map[h.productId] = map[h.productId] || []).push({ id: h.versionId, from: h.valid_from, day: jalaliDayOf_(h.valid_from), current: h.current, row: h.row });
+  });
+  Object.keys(map).forEach(function (k) {
+    map[k].sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : a.row - b.row; });
+  });
+  return map;
+}
+
+// The versionId of a product valid on a Persian sale day 'yyyy-mm-dd': the newest version that started on or before
+// that day (a version that started on the sale day itself counts). No such version → the current one → ''.
+function versionFor_(map, productId, day) {
+  var list = map && map[productId];
+  if (!list || !list.length) return '';
+  var pick = '';
+  list.forEach(function (v) { if (v.day && v.day <= day) pick = v.id; });
+  if (pick) return pick;
+  var current = '';
+  list.forEach(function (v) { if (v.current) current = v.id; });
+  return current;
+}
+
+// The «تاریخچه محصولات» tab, checked: {sheet} or {message} (missing, first tab, or a broken header).
+function historySheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = typeof ss.getSheetByName === 'function' ? ss.getSheetByName(HISTORY_SHEET) : null;
+  if (!sheet) return { message: MSG.noHistory };
+  if (sheet.getIndex() === 1) return { message: MSG.historyFirst };
+  var head = sheet.getRange(1, 1, 1, HISTORY_HEADER.length).getValues()[0].map(cellText);
+  if (head.join('\n') !== HISTORY_HEADER.join('\n')) return { message: MSG.historyHeader };
+  return { sheet: sheet };
+}
+function historyValues_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  return sheet.getRange(2, 1, last - 1, HISTORY_HEADER.length).getValues();
+}
+
+// ledger helper: the version map of every product ({} when the tab is missing or broken).
+function versionMap_() {
+  try {
+    var t = historySheet_();
+    if (!t.sheet) return {};
+    return versionMapOf_(histFromValues_(historyValues_(t.sheet)));
+  } catch (e) { return {}; }
+}
+
+function tehranNow_() {
+  return Utilities.formatDate(new Date(nowMs_()), 'Asia/Tehran', 'yyyy-MM-dd HH:mm:ss');
+}
+
+// Compares the products tab with the history tab and writes the difference (history tab only; the products tab is
+// only read). The CALLER holds the script lock. Returns {ok:true, changes, notes} or {ok:false, message} (skipped).
+// Skipped (nothing written) when the history tab is missing/broken, the products columns are broken, or the products
+// tab looks empty while versions exist (so a glitch can never close every version).
+function captureVersions_() {
+  var t = historySheet_();
+  if (!t.sheet) return { ok: false, message: t.message };
+  var data = readSheetRows();
+  if (data.issues.length) return { ok: false, message: MSG.sheetProblems };
+  var hist = histFromValues_(historyValues_(t.sheet));
+  var live = productRows(data.rows);
+  if (!live.length && hist.some(function (h) { return h.current; })) return { ok: false, message: 'products tab is empty, nothing changed' };
+
+  var plan = planVersions_(data.rows, hist, tehranNow_());
+  var sheet = t.sheet;
+  plan.dirty.forEach(function (h) {
+    sheet.getRange(h.row, 1, 1, HISTORY_HEADER.length).setValues([histRow_(h)]);
+  });
+  if (plan.added.length) {
+    if (hist.length + plan.added.length > HISTORY_MAX_ROWS) {
+      plan.notes.push('history tab is full, new versions not written');
+      plan.added = [];
+    } else {
+      var at = sheet.getLastRow() + 1;
+      var need = at + plan.added.length - 1;
+      if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), Math.max(100, need - sheet.getMaxRows()));
+      var range = sheet.getRange(at, 1, plan.added.length, HISTORY_HEADER.length);
+      range.setNumberFormats(plan.added.map(function () { return HISTORY_HEADER.map(function () { return '@'; }); }));
+      range.setValues(plan.added.map(histRow_));
+    }
+  }
+  return { ok: true, changes: plan.dirty.length + plan.added.length, notes: plan.notes };
+}
+
+// captureVersions_ for the admin actions (the lock is already held there): best effort. A problem here never stops
+// a product or ledger save; the hourly job tries again.
+function captureQuiet_() {
+  try { return captureVersions_(); } catch (e) { return { ok: false, message: 'capture failed' }; }
+}
+
+// The hourly time trigger (installed by setupVersioning): turns hand edits in the products tab into versions.
+// Takes the script lock itself; if the admin is busy it simply skips this hour.
+function hourlyVersioning() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return 'BUSY';
+  try {
+    var r = captureVersions_();
+    return r.ok ? 'OK: ' + r.changes + ' change(s)' + (r.notes.length ? '; ' + r.notes.join('; ') : '') : 'SKIPPED: ' + r.message;
+  } finally { lock.releaseLock(); }
+}
+
+// Run this ONCE in the Apps Script editor after pasting Code.gs (and allow the new permission it asks for):
+// makes the «تاریخچه محصولات» tab (or fixes its place and header) right after «مشتری‌ها» (or «خرید و فروش»), before
+// «log», never first; gives every product that has none its first version (v1, valid from now); and installs
+// exactly ONE hourly trigger for hourlyVersioning (older copies of it are removed first). Safe to run again; it
+// never changes existing history rows. Do NOT publish this tab to the web.
+function setupVersioning() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss.getNumSheets() < 1) return 'ERROR: the products tab is missing';
+  var first = ss.getSheets()[0];
+  if (first.getName() === HISTORY_SHEET) return 'ERROR: «' + HISTORY_SHEET + '» is the first tab; the products tab must be first';
+  var sheet = ss.getSheetByName(HISTORY_SHEET);
+  var anchor = ss.getSheetByName(CUSTOMER_SHEET) || ss.getSheetByName(LEDGER_SHEET);
+  if (!sheet) sheet = ss.insertSheet(HISTORY_SHEET, anchor ? anchor.getIndex() : 1);   // 0-based: right after the anchor
+  var lastRow = sheet.getLastRow();
+  var head = lastRow ? sheet.getRange(1, 1, 1, HISTORY_HEADER.length).getValues()[0].map(cellText) : [];
+  if (lastRow > 1 && head.join('\n') !== HISTORY_HEADER.join('\n')) {
+    ss.setActiveSheet(ss.getSheets()[0]);
+    return 'ERROR: row 1 of «' + HISTORY_SHEET + '» is not the expected header and the tab has data; fix it by hand';
+  }
+  sheet.getRange(1, 1, 1, HISTORY_HEADER.length).setValues([HISTORY_HEADER]).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), HISTORY_HEADER.length).setNumberFormat('@');
+  var mine = sheet.getIndex();
+  var after = anchor ? anchor.getIndex() : 1;
+  if (mine < after) after -= 1;
+  var target = Math.max(2, after + 1);
+  if (mine !== target) {
+    ss.setActiveSheet(sheet);
+    ss.moveActiveSheet(target);
+  }
+  ss.setActiveSheet(ss.getSheets()[0]);
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_WAIT_MS)) return 'ERROR: busy, run setupVersioning again';
+  var cap;
+  try { cap = captureVersions_(); } finally { lock.releaseLock(); }
+
+  ScriptApp.getProjectTriggers().forEach(function (tr) {
+    if (tr.getHandlerFunction() === HISTORY_TRIGGER) ScriptApp.deleteTrigger(tr);
+  });
+  ScriptApp.newTrigger(HISTORY_TRIGGER).timeBased().everyHours(1).create();
+  return 'OK: «' + HISTORY_SHEET + '» is tab ' + sheet.getIndex() + ' of ' + ss.getNumSheets() + '; products tab is «' + ss.getSheets()[0].getName() +
+    '»; ' + (cap.ok ? cap.changes + ' version row(s) written' : 'versions not written: ' + cap.message) + '; hourly trigger installed. Do not publish the history tab to the web.';
 }

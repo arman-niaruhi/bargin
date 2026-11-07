@@ -125,6 +125,7 @@
     lBadName: 'توی اسم و فامیل فقط حروف انگلیسی، فاصله، - و \' قبوله.',
     lNeedChannel: 'بگو فروش از کجا بود: سایت یا حضوری.',
     lReused: 'این مشتری از قبل بود ({n})؛ همونو استفاده کردیم',
+    lMerged: 'به سفارش {n} همون روز اضافه شد 🌿',
     lOldServer: 'برای ثبت فروش، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، setupCustomers، نسخه‌ی جدید).',
     // multi-product orders (TODO: bargin-content to review the wording)
     lNewOrderBtn: 'سفارش جدید',
@@ -147,6 +148,7 @@
     oPack: 'وزن هر بسته',   // TODO: bargin-content to review the wording
     oPackHint: 'اختیاری، مثلاً ۵۰۰ گرم',
     lLongPack: 'وزن هر بسته حداکثر ۲۰ حرف.',
+    lOldServer4: 'برای ثبت نسخه‌ی قیمت محصول، اول Apps Script رو به‌روز کن (Code.gs تازه، setupVersioning، setupLedger، نسخه‌ی جدید).',
     lOldServer3: 'برای ثبت وزن هر بسته، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، نسخه‌ی جدید).',
     oOtherName: 'اسم محصول',
     oOtherRemove: 'حذف این مورد',
@@ -186,6 +188,7 @@
   var ledgerLoaded = false;
   var ledgerFilter = 'all';
   var lEdit = { orderId: null, rowId: '' };   // the open order form: an order number, or an old single row's id
+  var ledgerVersion = false;  // the server fills productVersion (an older Apps Script would leave it empty)
   var ledgerPack = false;     // the server knows the pack size (an older Apps Script would silently drop it)
   var ledgerOrders = false;   // the server knows orders (an old Apps Script does not send `orders`)
   var LEDGER_MAX_LINES = 50;  // lines in one order (same as Code.gs)
@@ -870,12 +873,14 @@
       customersReady = Array.isArray(r.customers) && !r.customersMessage;
       ledgerOrders = r.orders === true;
       ledgerPack = r.packSize === true;
+      ledgerVersion = r.productVersion === true;
       ledgerLoaded = true;
       renderLedger();
       if (r.customersMessage) setStatus(r.customersMessage, 'err');
       else if (!Array.isArray(r.customers)) setStatus(TEXT.lOldServer, 'err');
       else if (!ledgerOrders) setStatus(TEXT.lOldServer2, 'err');
       else if (!ledgerPack) setStatus(TEXT.lOldServer3, 'err');
+      else if (!ledgerVersion) setStatus(TEXT.lOldServer4, 'err');
       else if (!keepMessage) setStatus('');
     }, function (err) {
       setBusy(false);
@@ -1501,6 +1506,7 @@
     });
     if (!ledgerOrders) add(TEXT.lOldServer2);
     else if (!ledgerPack) add(TEXT.lOldServer3);
+    else if (!ledgerVersion) add(TEXT.lOldServer4);
     if (entry.type === 'sell' && !customersReady) add(TEXT.lOldServer);
     else if (entry.type === 'sell') {
       if (entry.newCustomer) {
@@ -1529,6 +1535,7 @@
         closeLedgerForm();
         var done = wasEdit ? TEXT.lUpdated : TEXT.lSaved;
         if (r.reusedCustomer) done = fill(TEXT.lReused, { n: toFa(r.reusedCustomer) }) + '. ' + done;
+        if (r.mergedInto) done = fill(TEXT.lMerged, { n: toFa(r.mergedInto) });
         setStatus(done, 'ok');
         return loadLedger(true);
       }

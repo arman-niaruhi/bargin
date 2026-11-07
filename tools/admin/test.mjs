@@ -269,7 +269,7 @@ const fakeSheet = {
   getRange: () => ({ getValues: () => { sheetLog.touched++; return [gs.HEADER.map(() => "")]; }, setValues: () => { sheetLog.touched++; sheetLog.writes++; } }),
   deleteRow: (n) => { sheetLog.touched++; sheetLog.writes++; sheetLog.deleted.push(n); }
 };
-gs.SpreadsheetApp = { getActiveSpreadsheet: () => { sheetLog.touched++; return { getSheets: () => [fakeSheet], getName: () => "x" }; } };
+gs.SpreadsheetApp = { getActiveSpreadsheet: () => { sheetLog.touched++; return { getSheets: () => [fakeSheet], getSheetByName: () => null, getName: () => "x" }; } };
 gs.ContentService = { MimeType: { JSON: "JSON" }, createTextOutput: (s) => ({ s, setMimeType() { return this; } }) };
 const post = (obj) => JSON.parse(gs.doPost({ postData: { contents: typeof obj === "string" ? obj : JSON.stringify(obj) } }).s);
 const ALLOWED = Array.from(gs.ALLOWED_EMAILS);
@@ -512,8 +512,8 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(j) the stubbed Session service was never used", world.sessionUsed === 0);
   const m = JSON.parse(read("tools/admin/appsscript.json"));
   check("(j) appsscript.json: V8, Asia/Tehran, web app as the deployer, anonymous access", m.runtimeVersion === "V8" && m.timeZone === "Asia/Tehran" && m.webapp.executeAs === "USER_DEPLOYING" && m.webapp.access === "ANYONE_ANONYMOUS");
-  check("(j) appsscript.json: scopes are only spreadsheets and send_mail",
-    m.oauthScopes.slice().sort().join() === ["https://www.googleapis.com/auth/script.send_mail", "https://www.googleapis.com/auth/spreadsheets"].sort().join(), m.oauthScopes.join());
+  check("(j) appsscript.json: scopes are only spreadsheets, send_mail and scriptapp (the hourly trigger)",
+    m.oauthScopes.slice().sort().join() === ["https://www.googleapis.com/auth/script.send_mail", "https://www.googleapis.com/auth/script.scriptapp", "https://www.googleapis.com/auth/spreadsheets"].sort().join(), m.oauthScopes.join());
 }
 {
   const adm = read("admin/admin.js") + read("admin/index.html") + read("products.js");
@@ -872,11 +872,11 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const p1 = gs.planLedgerRow_(good({ productName: "fake name" }), prods, ctx);
   const ghormeh = prods.find((r) => r.id === "sabzi-ghormeh").name;
   check("(n) plan: a good entry becomes one row in LEDGER_HEADER order",
-    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "zahra ahmadi", "", OWNER, "1", "سایت", "", ""]), JSON.stringify(p1));
+    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "zahra ahmadi", "", OWNER, "1", "سایت", "", "", ""]), JSON.stringify(p1));
   check("(n) plan: the product name comes from the products tab, never from the page", p1.row[5] === ghormeh && !JSON.stringify(p1.row).includes("fake name"));
-  check("(n) LEDGER_HEADER has the 19 columns: the 15 old ones, customerId and channel, orderId, then packSize at the END",
-    L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by,customerId,channel,orderId,packSize" &&
-    Array.from(gs.LEDGER_HEADER_V1).join() === L.slice(0, 15).join() && Array.from(gs.LEDGER_HEADER_V2).join() === L.slice(0, 17).join() && gs.LEDGER_FORMATS.length === 19);
+  check("(n) LEDGER_HEADER has the 20 columns: the 15 old ones, customerId and channel, orderId, packSize, then productVersion at the END",
+    L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by,customerId,channel,orderId,packSize,productVersion" &&
+    Array.from(gs.LEDGER_HEADER_V1).join() === L.slice(0, 15).join() && Array.from(gs.LEDGER_HEADER_V2).join() === L.slice(0, 17).join() && gs.LEDGER_FORMATS.length === 20);
   const unknown = gs.planLedgerRow_(good({ productId: "no-such" }), prods, ctx);
   const blankP = gs.planLedgerRow_(good({ productId: "" }), prods.concat([{ row: 99, id: "", name: "" }]), ctx);
   check("(n) plan: an unknown or empty product id is refused", unknown.row === null && unknown.issues[0].field === "productId" && blankP.issues[0].field === "productId");
@@ -951,6 +951,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
       const rng = {
         getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, k) => { const row = sh.rows[r - 1 + i]; return row && row[c - 1 + k] !== undefined ? row[c - 1 + k] : ""; })),
         setValues: (v) => { if (r + nr - 1 > sh.maxRows) throw new Error("outside"); v.forEach((row, i) => { const t = sh.rows[r - 1 + i] || (sh.rows[r - 1 + i] = []); row.forEach((x, k) => { t[c - 1 + k] = x; }); }); sh.writes = (sh.writes || 0) + 1; return rng; },
+        setValue: (v) => { const t = sh.rows[r - 1] || (sh.rows[r - 1] = []); t[c - 1] = v; sh.writes = (sh.writes || 0) + 1; return rng; },
         setNumberFormats: (f) => { sh.formats.push(["row", r, f[0].join("|")]); return rng; },
         setNumberFormat: (f) => { sh.formats.push(["col", c, f]); return rng; },
         setFontWeight: () => rng
@@ -964,6 +965,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     const sheets = order.map((n) => n === "products" ? mk("products", [gs.HEADER.slice(), ...fileRows.map((r) => gs.HEADER.map((h) => r[h]))])
       : n === "ledger" ? mk("خرید و فروش", ledgerRows || [L.slice()])
       : n === "customers" ? mk("مشتری‌ها", custRows || [CH.slice(), ["1", "zahra", "ahmadi", "2026-11-07 09:00:00", OWNER]])
+      : n === "history" ? mk("تاریخچه محصولات", [Array.from(gs.HISTORY_HEADER)])
       : mk("log", [gs.LOG_HEADER.slice()]));
     book = {
       sheets, active: null,
@@ -1011,7 +1013,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(n) save: id, time and email come from the server, never from the page (Tehran time, session email)",
     r1[0] !== "L" + "b".repeat(32) && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(r1[1]) && r1[1] !== "1999" && r1[14] === OWNER && r1[11] === 1350000, JSON.stringify(r1));
   check("(n) save: the row gets its cell formats first (text for the date, numbers for qty and toman)",
-    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@|@|@|0|@"));
+    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@|@|@|0|@|@"));
   check("(n) save: the products tab is only read, never written", !productsTab().writes);
   const a2 = add({ date: "1405-08-20", type: "buy", qty: "2.5", qtyUnit: "kg", price: "1.2", priceUnit: "million", party: "آقای رضایی", note: "نقدی" });
   clock.t += 1000;
@@ -1022,7 +1024,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const e2 = lg.data.entries[0];
   check("(n) getLedger: keys and texts come back (type buy, kg, million, typed «1.2», row total 3,000,000)",
     e2.type === "buy" && e2.typeText === "خرید" && e2.qty === 2.5 && e2.qtyUnit === "kg" && e2.priceToman === 1200000 && e2.priceAmount === "1.2" && e2.priceUnit === "million" && e2.rowToman === 3000000 && e2.party === "آقای رضایی" && e2.note === "نقدی", JSON.stringify(e2));
-  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers,orders,packSize");
+  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers,orders,packSize,productVersion");
   const bad = add({ price: "0" });
   check("(n) save: a bad entry is refused with issues and nothing is written", bad.ok === true && bad.data.ok === false && bad.data.issues.length === 1 && ledgerTab().rows.length === 4, JSON.stringify(bad));
 
@@ -1090,7 +1092,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const msg = gs.setupLedger();
   check("(n) setupLedger makes «خرید و فروش» the 2nd tab (products first, log last), header, frozen, formats",
     book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,log" && ledgerTab().rows[0].join() === L.join() && ledgerTab().frozen === 1 &&
-    ledgerTab().formats.filter((f) => f[0] === "col").length === 19 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
+    ledgerTab().formats.filter((f) => f[0] === "col").length === 20 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
   gs.setupLedger();
   check("(n) setupLedger can run again safely", book.getSheets().length === 3 && ledgerTab().rows.length === 1 && book.getSheets()[1].name === "خرید و فروش");
   mkBook(["ledger", "products", "log"]);
@@ -1301,7 +1303,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
       check("(p) deleteLedgerOrder removes every line of that order only", dOrd.data.ok === true && dOrd.data.deleted === 3 && ledgerTab().rows.length === nBeforeDel - 3 && !ledgerTab().rows.some((r) => r[17] === 2) && ledgerTab().rows.some((r) => r[17] === 1));
       const dBad = [post({ action: "deleteLedgerOrder", session: sess, data: { orderId: 2 } }), post({ action: "deleteLedgerOrder", session: sess, data: { orderId: "x" } }), post({ action: "deleteLedgerOrder", session: sess, data: {} })];
       check("(p) deleteLedgerOrder: already gone, malformed or missing number deletes nothing", dBad.every((x) => x.data && x.data.ok === false) && ledgerTab().rows.length === nBeforeDel - 3);
-      const nextO = so(ord({}, [ln({})]));
+      const nextO = so(ord({ date: "1405-09-01" }, [ln({})]));
       check("(p) an order number is never reused after its order was deleted", nextO.data.orderId > 2 && nextO.data.orderId === Number(world.props.orderSeq));
       // session, lock
       const nos = [post({ action: "saveLedgerOrder", data: { order: ord({}), orderId: "", rowId: "" } }), post({ action: "deleteLedgerOrder", session: "f".repeat(64), data: { orderId: 1 } })];
@@ -1332,6 +1334,294 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     mkBook(["products", "ledger", "customers"], undefined, [["a", "b"], ["1", "2"]]);
     check("(o) setupCustomers never overwrites a tab with other data in it", /^ERROR/.test(gs.setupCustomers()) && custTab().rows[0].join() === "a,b");
     check("(o) PROTECTED_ACTIONS gets no new action (customers come with getLedger)", !/getCustomers/.test(read("tools/admin/Code.gs")));
+
+    // ---- (r) product versions, merging into an order, groupOldSales (owner approved 2026-11-07) ----
+    {
+      const HH = Array.from(gs.HISTORY_HEADER);
+      const ln = (o) => Object.assign({ productId: "sabzi-ghormeh", qty: "2", qtyUnit: "pack", price: "450", priceUnit: "thousand" }, o);
+      const ord = (o, lines) => Object.assign({ date: "1405-08-16", type: "sell", channel: "site", customerId: "1", note: "یادداشت", lines: lines || [ln({}), ln({ productId: "esfenaj", price: "280" })] }, o);
+      const HIST = "تاریخچه محصولات";
+      world.triggers = [];
+      gs.ScriptApp = {
+        getProjectTriggers: () => world.triggers.slice(),
+        deleteTrigger: (t) => { world.triggers = world.triggers.filter((x) => x !== t); },
+        newTrigger: (fn) => { const t = { fn, getHandlerFunction: () => fn }; const b = { timeBased: () => b, everyHours: (n) => { t.hours = n; return b; }, create: () => { world.triggers.push(t); return t; } }; return b; }
+      };
+      const histTab = () => book.getSheetByName(HIST);
+      const hrows = () => histTab().rows.slice(1);
+      const H = (r, name) => r[HH.indexOf(name)];
+      const PI = (name) => gs.HEADER.indexOf(name);
+      const prow = (id) => productsTab().rows.find((r, i) => i > 0 && r[0] === id);
+      const snapP = () => JSON.stringify(productsTab().rows);
+      const itemOf = (id, over) => { const r = prow(id); const o = {}; gs.HEADER.forEach((h, i) => { o[h] = r[i]; }); return Object.assign(o, over); };
+      const relog = () => { Object.keys(world.props).forEach((k) => { if (k !== "orderSeq" && k !== "customerSeq") delete world.props[k]; }); const a = ask(); return post({ action: "verifyCode", data: { challenge: a.r.data.challenge, code: a.code } }).data.session; };
+      const DAY = 24 * 3600 * 1000;
+      let ss = relog();
+      const saveP = (id, over, orig = id) => post({ action: "saveProduct", session: ss, data: { item: itemOf(id, over), originalId: orig } });
+      const ofId = (id) => hrows().filter((r) => H(r, "productId") === id);
+      const tabsNames = () => book.getSheets().map((x) => x.name).join();
+
+      // setupVersioning
+      mkBook(["products", "ledger", "customers", "log"]);
+      const p0 = snapP();
+      const sv = gs.setupVersioning();
+      check("(r) setupVersioning: the tab sits after «مشتری‌ها» and before log (never first), with header, frozen row, a v1 for every product",
+        tabsNames() === "products,خرید و فروش,مشتری‌ها," + HIST + ",log" && histTab().rows[0].join() === HH.join() && histTab().frozen === 1 && hrows().length === fileRows.length &&
+        hrows().every((r) => /-v1$/.test(H(r, "versionId")) && H(r, "versionId") === H(r, "productId") + "-v1" && H(r, "is_current") === "yes" && H(r, "valid_to") === "" && H(r, "valid_from") === gs.tehranNow_()), sv);
+      check("(r) setupVersioning: exactly ONE hourly trigger for hourlyVersioning", world.triggers.length === 1 && world.triggers[0].fn === "hourlyVersioning" && world.triggers[0].hours === 1);
+      check("(r) setupVersioning: the products tab (Sheet1) is not touched at all", snapP() === p0 && !productsTab().writes && productsTab().deleted.length === 0);
+      check("(r) history cells: price is plain digits and every column is text formatted", hrows().every((r) => /^\d+$/.test(H(r, "price"))) && histTab().formats.some((f) => f[0] === "col" && f[2] === "@"));
+      gs.setupVersioning(); gs.setupVersioning();
+      check("(r) setupVersioning is idempotent: same rows, still ONE trigger", hrows().length === fileRows.length && world.triggers.length === 1);
+      for (const order of [["products", "log"], ["products", "ledger", "log"], ["products", "customers", "ledger", "log"], ["products", "log", "history", "customers", "ledger"]]) {
+        mkBook(order); gs.setupVersioning();
+        const names = tabsNames(), idx = names.split(",").indexOf(HIST);
+        check("(r) the history tab is never index 1 (" + names + ")", idx >= 1 && book.getSheetByName(HIST).getIndex() >= 2 && names.split(",")[0] === "products");
+      }
+      mkBook(["products", "ledger", "customers", "log", "history"]); gs.setupVersioning();
+      check("(r) setupVersioning moves an existing tab to after «مشتری‌ها», before log", tabsNames() === "products,خرید و فروش,مشتری‌ها," + HIST + ",log");
+      mkBook(["history", "products", "ledger"]);
+      check("(r) if the history tab were first: setupVersioning refuses, the products actions refuse, nothing is written",
+        /^ERROR/.test(gs.setupVersioning()) && post({ action: "getProducts", session: ss }).error === "server" && histTab().rows.length === 1);
+      mkBook(["products", "ledger", "history"]);
+      histTab().rows[0] = ["x", "y"]; histTab().rows.push(["a", "b"]);
+      check("(r) a history tab with another header and data is never overwritten", /^ERROR/.test(gs.setupVersioning()) && histTab().rows[1].join() === "a,b" && histTab().rows[0].join() === "x,y");
+      mkBook(["products", "ledger", "customers", "log", "history"]);
+      histTab().rows[0] = ["x"];
+      saveP("sabzi-ghormeh", { price: "1" });
+      check("(r) history tab broken: product saves still work and nothing is written to it", prow("sabzi-ghormeh")[PI("price")] === "1" && histTab().rows.length === 1 && histTab().rows[0].join() === "x");
+      check("(r) hourlyVersioning/setupVersioning are not web actions", post({ action: "hourlyVersioning", session: ss }).error === "unknown_action" && post({ action: "setupVersioning", session: ss }).error === "unknown_action" && !/hourlyVersioning/.test(vm.runInContext("PROTECTED_ACTIONS.join()", gs)));
+
+      // admin saves
+      mkBook(["products", "ledger", "customers", "history", "log"]);
+      gs.setupVersioning();
+      const T0 = gs.tehranNow_();
+      clock.t += 2 * DAY; ss = relog();
+      const T1 = gs.tehranNow_();
+      const oldPrice = prow("sabzi-ghormeh")[PI("price")];
+      const r1 = saveP("sabzi-ghormeh", { price: "480000" });
+      let g = ofId("sabzi-ghormeh");
+      check("(r) admin price change: the old version is closed (valid_to = now, is_current no) and v2 starts now with the new price",
+        r1.data.ok === true && g.length === 2 && H(g[0], "versionId") === "sabzi-ghormeh-v1" && H(g[0], "is_current") === "no" && H(g[0], "valid_to") === T1 && H(g[0], "valid_from") === T0 && H(g[0], "price") === oldPrice &&
+        H(g[1], "versionId") === "sabzi-ghormeh-v2" && H(g[1], "is_current") === "yes" && H(g[1], "valid_from") === T1 && H(g[1], "valid_to") === "" && H(g[1], "price") === "480000", JSON.stringify(g));
+      check("(r) admin price change: Sheet1 holds the new price as usual and the other products are untouched", prow("sabzi-ghormeh")[PI("price")] === "480000" && ofId("nana").length === 1);
+      let n0 = hrows().length;
+      saveP("sabzi-ghormeh", { price: "480000" });
+      saveP("sabzi-ghormeh", { short: "متن تازه", details: "جزئیات تازه", recipe: "x", images: "images/x.jpg", serves: "y" });
+      check("(r) saving with no tracked change, or changing text / recipe / images only, makes NO new version", hrows().length === n0);
+      saveP("sabzi-ghormeh", { category: "دسته‌ی تازه" });
+      g = ofId("sabzi-ghormeh");
+      check("(r) category change: the category is updated on ALL history rows of that product, no new version", hrows().length === n0 && g.length === 2 && g.every((r) => H(r, "category") === "دسته‌ی تازه"));
+      saveP("sabzi-ghormeh", { soldOut: "yes" });
+      saveP("sabzi-ghormeh", { unit: "۶۰۰ گرم" });
+      saveP("sabzi-ghormeh", { name: "سبزی قورمه‌ی ویژه" });
+      g = ofId("sabzi-ghormeh");
+      check("(r) soldOut, unit and name each start a new version (v3, v4, v5); exactly one is current", g.length === 5 && g.map((r) => H(r, "versionId")).join() === "sabzi-ghormeh-v1,sabzi-ghormeh-v2,sabzi-ghormeh-v3,sabzi-ghormeh-v4,sabzi-ghormeh-v5" && g.filter((r) => H(r, "is_current") === "yes").length === 1 && H(g[4], "is_current") === "yes" && H(g[4], "soldOut") === "yes" && H(g[4], "unit") === "۶۰۰ گرم" && H(g[4], "name") === "سبزی قورمه‌ی ویژه");
+      // new product and rename of id
+      saveP("sabzi-ghormeh", { id: "ghormeh-2" }, "sabzi-ghormeh");
+      check("(r) renaming an id ends the old id's version and starts v1 for the new id", ofId("ghormeh-2").length === 1 && H(ofId("ghormeh-2")[0], "versionId") === "ghormeh-2-v1" && ofId("sabzi-ghormeh").every((r) => H(r, "is_current") === "no"));
+      const np = post({ action: "saveProduct", session: ss, data: { item: itemOf("nana", { id: "brand-new", name: "جدید", price: "5" }), originalId: "" } });
+      check("(r) a new product from the admin gets v1 at once", np.data.ok === true && ofId("brand-new").length === 1 && H(ofId("brand-new")[0], "versionId") === "brand-new-v1");
+      // delete = end the version, history stays
+      const nBefore = hrows().length;
+      const dp = post({ action: "deleteProduct", session: ss, data: { id: "esfenaj" } });
+      const ge = ofId("esfenaj");
+      check("(r) admin delete: the row leaves Sheet1, the current version is ENDED (valid_to set), the history rows stay", dp.data.ok === true && !prow("esfenaj") && hrows().length === nBefore && ge.length === 1 && H(ge[0], "is_current") === "no" && H(ge[0], "valid_to") === gs.tehranNow_());
+      saveP("nana", {}, "nana");
+      post({ action: "saveProduct", session: ss, data: { item: itemOf("nana", { id: "esfenaj", name: "اسفناج تازه" }), originalId: "" } });
+      const ge2 = ofId("esfenaj");
+      check("(r) adding the deleted id again starts the next version (v2); the old one stays closed", ge2.length === 2 && H(ge2[1], "versionId") === "esfenaj-v2" && H(ge2[0], "is_current") === "no" && H(ge2[1], "is_current") === "yes");
+
+      // hand edits: hourly job
+      mkBook(["products", "ledger", "customers", "history", "log"]);
+      gs.setupVersioning();
+      clock.t += DAY; ss = relog();
+      const p1 = snapP();
+      check("(r) hourlyVersioning with nothing changed writes nothing", /^OK: 0 change/.test(gs.hourlyVersioning()) && hrows().length === fileRows.length && snapP() === p1);
+      prow("sabzi-ash")[PI("price")] = "300000";
+      const hv = gs.hourlyVersioning();
+      let ga = ofId("sabzi-ash");
+      check("(r) hand edit of a price: the hourly job closes the old version and starts v2 (old values kept from the history row)", /^OK: 2 change/.test(hv) && ga.length === 2 && H(ga[0], "is_current") === "no" && H(ga[0], "valid_to") === gs.tehranNow_() && H(ga[0], "price") === fileRows.find((r) => r.id === "sabzi-ash").price && H(ga[1], "price") === "300000" && H(ga[1], "is_current") === "yes", hv);
+      check("(r) …and running it again changes nothing (idempotent)", /^OK: 0 change/.test(gs.hourlyVersioning()) && ofId("sabzi-ash").length === 2);
+      const nR = hrows().length;
+      prow("sabzi-ash")[PI("recipe")] = "طرز تازه"; prow("sabzi-ash")[PI("short")] = "کوتاه";
+      check("(r) hand edit of text / recipe: no new version", /^OK: 0 change/.test(gs.hourlyVersioning()) && hrows().length === nR);
+      prow("sabzi-ash")[PI("category")] = "دسته‌ی دستی";
+      gs.hourlyVersioning();
+      check("(r) hand edit of the category: updated on all history rows of that product, no new version", hrows().length === nR && ofId("sabzi-ash").every((r) => H(r, "category") === "دسته‌ی دستی"));
+      // a hand-typed new product
+      const newRow = gs.HEADER.map(() => ""); newRow[0] = "hand-new"; newRow[1] = "دستی"; newRow[2] = "سایر محصولات"; newRow[3] = "۱۲۳,۰۰۰"; newRow[4] = "کیلو"; newRow[10] = "";
+      productsTab().rows.push(newRow);
+      gs.hourlyVersioning();
+      const gh = ofId("hand-new");
+      check("(r) a hand-typed new product gets v1 (price cleaned to digits, soldOut no)", gh.length === 1 && H(gh[0], "versionId") === "hand-new-v1" && H(gh[0], "price") === "123000" && H(gh[0], "soldOut") === "no" && H(gh[0], "is_current") === "yes");
+      // a row deleted by hand
+      const idxN = productsTab().rows.findIndex((r, i) => i > 0 && r[0] === "nana");
+      productsTab().rows.splice(idxN, 1);
+      const nH = hrows().length;
+      gs.hourlyVersioning();
+      const gn = ofId("nana");
+      check("(r) a row deleted by hand: its current version is closed (valid_to = now), the history stays", gn.length === 1 && H(gn[0], "is_current") === "no" && H(gn[0], "valid_to") === gs.tehranNow_() && hrows().length === nH);
+      // duplicate ids
+      const dup = prow("jafari").slice(); dup[PI("price")] = "999";
+      productsTab().rows.push(dup);
+      const nD = hrows().length;
+      const hd = gs.hourlyVersioning();
+      check("(r) duplicate ids: the first row is used, the repeat is skipped (reported), no version is made from it", /duplicate/.test(hd) && hrows().length === nD && ofId("jafari").length === 1);
+      productsTab().rows.pop();
+      // a row with a problem is skipped until it is fixed
+      prow("zalang")[PI("price")] = "abc";
+      const nB = hrows().length;
+      gs.hourlyVersioning();
+      const okBad = hrows().length === nB && ofId("zalang").length === 1 && H(ofId("zalang")[0], "is_current") === "yes";
+      prow("zalang")[PI("price")] = "777000";
+      gs.hourlyVersioning();
+      check("(r) a Sheet1 row with a problem (bad price) is skipped, not versioned; once fixed it becomes a version", okBad && ofId("zalang").length === 2 && H(ofId("zalang")[1], "price") === "777000");
+      // hand edit of an OLD version row
+      const oldRowA = ofId("sabzi-ash")[0];
+      oldRowA[HH.indexOf("price")] = "1";
+      const curBefore = JSON.stringify(ofId("sabzi-ash")[1]);
+      gs.hourlyVersioning();
+      check("(r) a hand edit of an OLD version row is accepted: left as typed, the current version is unchanged", H(ofId("sabzi-ash")[0], "price") === "1" && JSON.stringify(ofId("sabzi-ash")[1]) === curBefore && ofId("sabzi-ash").length === 2);
+      // two current rows of one id
+      const rowsAsh = ofId("sabzi-ash");
+      rowsAsh[0][HH.indexOf("is_current")] = "yes"; rowsAsh[0][HH.indexOf("valid_to")] = "";
+      const hv2 = gs.hourlyVersioning();
+      check("(r) two current rows of one id: the newest valid_from stays current, the other is closed (reported)", ofId("sabzi-ash").filter((r) => H(r, "is_current") === "yes").length === 1 && H(ofId("sabzi-ash")[1], "is_current") === "yes" && H(ofId("sabzi-ash")[0], "valid_to") !== "" && /two current/.test(hv2));
+      // rows without ids are ignored
+      const nHx = hrows().length + 1;
+      histTab().rows.push(["", "", "x", "", "", "", "", "", "", ""]);
+      check("(r) a history row without versionId / productId is ignored (no crash, no new row)", /^OK/.test(gs.hourlyVersioning()) && hrows().length === nHx);
+      histTab().rows.pop();
+      // glitch guards
+      const keep = productsTab().rows.splice(1);
+      const cur = hrows().filter((r) => H(r, "is_current") === "yes").length;
+      const hg = gs.hourlyVersioning();
+      check("(r) an empty-looking products tab never closes every version", /^SKIPPED/.test(hg) && hrows().filter((r) => H(r, "is_current") === "yes").length === cur);
+      productsTab().rows.push(...keep);
+      const hdr = productsTab().rows[0].slice(); productsTab().rows[0][PI("price")] = "oops";
+      check("(r) a broken products header: the job skips and writes nothing", /^SKIPPED/.test(gs.hourlyVersioning()));
+      productsTab().rows[0] = hdr;
+      world.lockBusy = true; prow("jafari")[PI("price")] = "5";
+      const nL = hrows().length;
+      check("(r) hourlyVersioning with the lock busy: BUSY, nothing written", gs.hourlyVersioning() === "BUSY" && hrows().length === nL);
+      world.lockBusy = false;
+      mkBook(["products", "ledger"]);
+      check("(r) hourlyVersioning without the history tab: SKIPPED, nothing created", /^SKIPPED/.test(gs.hourlyVersioning()) && tabsNames() === "products,خرید و فروش");
+      // Sheet1 only changes through normal saves
+      mkBook(["products", "ledger", "customers", "history", "log"]);
+      const p2 = snapP();
+      gs.setupVersioning(); gs.hourlyVersioning(); gs.hourlyVersioning();
+      ss = relog();
+      post({ action: "getLedger", session: ss });
+      post({ action: "saveLedgerOrder", session: ss, data: { order: ord({}, [ln({})]), orderId: "", rowId: "" } });
+      check("(r) setup, the hourly job and ledger saves never write to Sheet1", snapP() === p2 && !productsTab().writes && productsTab().deleted.length === 0);
+
+      // ledger: productVersion
+      mkBook(["products", "ledger", "customers", "history", "log"]);
+      delete world.props.orderSeq;
+      gs.setupVersioning();
+      const D0 = gs.jalaliDayOf_(gs.tehranNow_());
+      clock.t += 2 * DAY; ss = relog();
+      saveP("sabzi-ghormeh", { price: "490000" });
+      const D2 = gs.jalaliDayOf_(gs.tehranNow_());
+      const Dbefore = gs.jalaliDayOf_(new Date(clock.t - 9 * DAY + 3.5 * 3600000).toISOString().slice(0, 19).replace("T", " "));
+      const Dlater = gs.jalaliDayOf_(new Date(clock.t + 5 * DAY + 3.5 * 3600000).toISOString().slice(0, 19).replace("T", " "));
+      const soo = (o, lines, orderId = "", rowId = "") => post({ action: "saveLedgerOrder", session: ss, data: { order: ord(o, lines), orderId, rowId } });
+      const verOf = (date, pid = "sabzi-ghormeh") => { const r = ledgerTab().rows.slice(1).find((x) => x[2] === date && x[4] === pid); return r && r[19]; };
+      soo({ date: D0 }); soo({ date: D2, customerId: "1", channel: "person" }); soo({ date: Dbefore, channel: "site" }); soo({ date: Dlater, channel: "person" });
+      check("(r) ledger line: the version valid on the sale date (a day before the change → v1, the change day or later → v2)", D0 !== D2 && verOf(D0) === "sabzi-ghormeh-v1" && verOf(D2) === "sabzi-ghormeh-v2" && verOf(Dlater) === "sabzi-ghormeh-v2", JSON.stringify([D0, D2, verOf(D0), verOf(D2), verOf(Dlater)]));
+      check("(r) ledger line: a date before every version falls back to the current version", verOf(Dbefore) === "sabzi-ghormeh-v2");
+      check("(r) ledger line: other products get their own v1, «سایر» stays empty", verOf(D0, "esfenaj") === "esfenaj-v1" && (() => { soo({ date: D0 }, [ln({ productId: gs.LEDGER_OTHER_ID, productName: "برنج" })]); return ledgerTab().rows.slice(1).find((x) => x[5] === "برنج")[19] === ""; })());
+      const lg2 = post({ action: "getLedger", session: ss });
+      check("(r) getLedger says productVersion:true and sends each line's productVersion", lg2.data.productVersion === true && lg2.data.entries.some((e) => e.productVersion === "sabzi-ghormeh-v1") && lg2.data.entries.every((e) => typeof e.productVersion === "string"));
+      const lineD0 = ledgerTab().rows.slice(1).find((x) => x[2] === D0 && x[4] === "sabzi-ghormeh");
+      const oidD0 = lineD0[17];
+      soo({ date: D0 }, [ln({ id: lineD0[0], qty: "9" })], oidD0);
+      check("(r) editing a line (same product and date) keeps its stored version even though the price changed since", ledgerTab().rows.find((x) => x[0] === lineD0[0])[19] === "sabzi-ghormeh-v1" && ledgerTab().rows.find((x) => x[0] === lineD0[0])[6] === 9);
+      soo({ date: D2 }, [ln({ id: lineD0[0], qty: "9" })], oidD0);
+      check("(r) editing the date looks the version up again", ledgerTab().rows.find((x) => x[0] === lineD0[0])[19] === "sabzi-ghormeh-v2");
+      const forged = soo({ date: Dlater, channel: "site" }, [Object.assign(ln({}), { productVersion: "evil-v9" })]);
+      check("(r) a productVersion sent by the page is ignored (server fills it)", forged.data.ok === true && !JSON.stringify(ledgerTab().rows).includes("evil-v9"));
+      const sr1 = post({ action: "saveLedgerRow", session: ss, data: { entry: { date: D0, type: "buy", productId: "sabzi-ghormeh", qty: "1", qtyUnit: "pack", price: "450", priceUnit: "thousand" }, id: "" } });
+      check("(r) saveLedgerRow (single line) fills productVersion too", sr1.data.ok === true && ledgerTab().rows[ledgerTab().rows.length - 1][19] === "sabzi-ghormeh-v1");
+      prow("sabzi-ghormeh")[PI("price")] = "555000";   // a hand edit not yet captured by the hourly job
+      soo({ date: gs.jalaliDayOf_(gs.tehranNow_()), channel: "person", customerId: "1" }, [ln({ qty: "1" })], "", "");
+      const fresh = ledgerTab().rows[ledgerTab().rows.length - 1];
+      check("(r) a ledger save first captures pending hand edits, so the new line gets the new version (v3)", fresh[19] === "sabzi-ghormeh-v3" && ofId("sabzi-ghormeh").length === 3);
+      // old lines stay empty
+      mkBook(["products", "ledger", "customers", "history"], [L.slice(), srow(1, "1", D0, "سایت", "")]);
+      gs.setupVersioning();
+      const oldLine = ledgerTab().rows[1];
+      post({ action: "saveLedgerRow", session: ss, data: { entry: { date: D0, type: "sell", productId: "sabzi-ghormeh", qty: "5", qtyUnit: "pack", price: "450", priceUnit: "thousand", customerId: "1", channel: "site" }, id: oldLine[0] } });
+      check("(r) an old line (empty productVersion) edited with the same product and date stays empty", ledgerTab().rows[1][6] === 5 && ledgerTab().rows[1][19] === "");
+      // no history tab: sales still save, version empty
+      mkBook();
+      const nh = soo({}, [ln({})]);
+      check("(r) without the history tab a sale still saves, productVersion is empty", nh.data.ok === true && ledgerTab().rows[1][19] === "");
+      // 19 -> 20 migration
+      mkBook(["products", "ledger", "customers", "log"], [L.slice(0, 19), srow(2, "1", D0, "سایت", 3).slice(0, 19)]);
+      const m19 = gs.setupLedger();
+      check("(r) setupLedger adds productVersion at the END of a 19-column tab and keeps the data row", /OK/.test(m19) && ledgerTab().rows[0].join() === L.join() && ledgerTab().rows[1].slice(0, 19).join() === srow(2, "1", D0, "سایت", 3).slice(0, 19).join() && post({ action: "getLedger", session: ss }).data.entries[0].productVersion === "");
+      check("(r) admin.js: server flag productVersion + old-script guard", /ledgerVersion = r\.productVersion === true/.test(adminSrc) && /if \(!ledgerVersion\) add\(|else if \(!ledgerVersion\) add\(/.test(adminSrc));
+
+      // ---- merge a new sale into an existing order, and groupOldSales ----
+      function srow(n, cust, date, ch, oid, type) {
+        return ["L" + n.toString(16).padStart(32, "0"), "2026-11-07 09:00:00", date, type || "فروش", "sabzi-ghormeh", "سبزی قورمه", 1, "بسته/ظرف", 450000, "450", "هزار تومان", 450000,
+          type === "خرید" ? "" : "zahra ahmadi", "", OWNER, type === "خرید" ? "" : cust, type === "خرید" ? "" : ch, oid === "" || oid === undefined ? "" : oid, "", ""];
+      }
+      const ms = (rows) => { mkBook(["products", "ledger", "customers", "log"], [L.slice(), ...rows]); delete world.props.orderSeq; ss = relog(); };
+      ms([srow(1, "1", "1405-08-16", "سایت", 12)]);
+      const mg = soo({});
+      const newRows = ledgerTab().rows.slice(2);
+      check("(r) merge: a new sale for the same customer + date + channel is added to the existing order (same number, {mergedInto: 12})",
+        mg.data.ok === true && mg.data.orderId === 12 && mg.data.mergedInto === 12 && newRows.length === 2 && newRows.every((r) => r[17] === 12) && world.props.orderSeq === undefined, JSON.stringify(mg));
+      const other = [soo({ date: "1405-08-17" }), soo({ channel: "person" }), soo({ customerId: undefined, newCustomer: { firstName: "Neda", lastName: "Rad" } })];
+      check("(r) merge: another date, another channel or a NEW customer always gets a NEW order number", other.every((x) => x.data.ok === true && !("mergedInto" in x.data) && x.data.orderId > 12) && new Set(other.map((x) => x.data.orderId)).size === 3, JSON.stringify(other));
+      const reused = soo({ customerId: undefined, newCustomer: { firstName: "Zahra", lastName: "Ahmadi" } });
+      check("(r) merge: typing a customer that already exists (reused) can merge", reused.data.mergedInto === 12 && reused.data.orderId === 12 && reused.data.reusedCustomer === "1", JSON.stringify(reused));
+      const edit12 = soo({}, [ln({ id: newRows[0][0], qty: "4" })], 12);
+      check("(r) editing an existing order is unchanged (no mergedInto, same number)", edit12.data.ok === true && edit12.data.orderId === 12 && !("mergedInto" in edit12.data));
+      const buyM = post({ action: "saveLedgerOrder", session: ss, data: { order: { date: "1405-08-16", type: "buy", party: "x", note: "", lines: [ln({ price: "10" })] }, orderId: "", rowId: "" } });
+      const buyM2 = post({ action: "saveLedgerOrder", session: ss, data: { order: { date: "1405-08-16", type: "buy", party: "x", note: "", lines: [ln({ price: "10" })] }, orderId: "", rowId: "" } });
+      check("(r) buys never merge: each buy order gets its own number", buyM.data.ok && buyM2.data.ok && !("mergedInto" in buyM.data) && !("mergedInto" in buyM2.data) && buyM.data.orderId !== buyM2.data.orderId);
+      ms([srow(1, "1", "1405-08-16", "سایت", "")]);
+      const og = soo({});
+      check("(r) merge: an old row without an order number is not a merge target (a new order is made)", og.data.ok === true && !("mergedInto" in og.data) && og.data.orderId === 1);
+      ms([srow(1, "1", "1405-08-16", "سایت", 5, "خرید")]);
+      const ob = soo({});
+      check("(r) merge: an order of BUY rows with the same date is not a target for a sale", !("mergedInto" in ob.data) && ob.data.orderId === 6);
+      check("(r) admin.js shows «به سفارش ۱۲ همون روز اضافه شد 🌿» for mergedInto", /lMerged: 'به سفارش \{n\} همون روز اضافه شد 🌿'/.test(adminSrc) && /if \(r\.mergedInto\) done = fill\(TEXT\.lMerged/.test(adminSrc));
+
+      // groupOldSales
+      const S = (n, c, d, ch, o, t) => srow(n, c, d, ch, o, t);
+      ms([S(1, "1", "1405-08-16", "سایت", ""), S(2, "1", "1405-08-16", "سایت", ""), S(3, "1", "1405-08-17", "سایت", ""), S(4, "2", "1405-08-16", "سایت", ""),
+        S(5, "1", "1405-08-16", "حضوری", ""), S(6, "3", "1405-08-16", "سایت", 7), S(7, "3", "1405-08-16", "سایت", ""), S(8, "1", "1405-08-16", "", "", "خرید"), S(9, "", "1405-08-16", "سایت", "")]);
+      ledgerTab().rows[9][15] = "";   // a sale with no customerId
+      const before = JSON.stringify(ledgerTab().rows);
+      const gos = gs.groupOldSales();
+      const oid = (n) => ledgerTab().rows[n][17];
+      check("(r) groupOldSales: rows with the same customer + date + channel share one new number; other groups get their own",
+        /^OK: 6 rows grouped into 5 orders/.test(gos) && oid(1) === 8 && oid(2) === 8 && oid(3) === 9 && oid(4) === 10 && oid(5) === 11, gos);
+      check("(r) groupOldSales: a single old row also gets an order number", oid(3) === 9 && oid(4) === 10);
+      check("(r) groupOldSales: old rows join an existing order with the same customer + date + channel (7)", oid(7) === 7 && oid(6) === 7);
+      check("(r) groupOldSales: buys and sales without a customerId are left alone", oid(8) === "" && oid(9) === "");
+      check("(r) groupOldSales: only the orderId cells change", ledgerTab().rows.every((r, i) => r.every((c, k) => k === 17 || c === JSON.parse(before)[i][k])));
+      check("(r) groupOldSales: the order sequence moves on (next new order is 12)", world.props.orderSeq === "11");
+      const after = JSON.stringify(ledgerTab().rows);
+      const again = gs.groupOldSales();
+      check("(r) groupOldSales is idempotent: the second run changes nothing", /^OK: nothing to group/.test(again) && JSON.stringify(ledgerTab().rows) === after && world.props.orderSeq === "11", again);
+      const nextAfter = soo({ date: "1405-09-09" });
+      check("(r) after groupOldSales a new order gets the next number (12)", nextAfter.data.orderId === 12);
+      ms([S(1, "1", "1405-08-16", "سایت", "")]);
+      world.lockBusy = true;
+      const gb = gs.groupOldSales();
+      world.lockBusy = false;
+      check("(r) groupOldSales with the lock busy: ERROR, nothing changed", /^ERROR/.test(gb) && ledgerTab().rows[1][17] === "");
+      mkBook(["products", "log"]);
+      check("(r) groupOldSales without the ledger tab: a clear ERROR", /^ERROR/.test(gs.groupOldSales()));
+      check("(r) groupOldSales is not a web action", post({ action: "groupOldSales", session: ss }).error === "unknown_action");
+    }
   }
 
   gs.SpreadsheetApp = oldSS;
@@ -1462,13 +1752,13 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(q) unit → packSize: «۵۰۰ گرم», «۴۰۰گرم», «۱ کیلو» are kept/normalised; «کیلو», «ظرف», empty give ''",
     cases.every(([u, w]) => ctxp.packSizeOf(u) === w), JSON.stringify(cases.map(([u]) => ctxp.packSizeOf(u))));
   const LH = Array.from(gs.LEDGER_HEADER);
-  check("(q) packSize is the LAST (19th) column", LH.length === 19 && LH[18] === "packSize" && Array.from(gs.LEDGER_HEADER_V3).length === 18);
+  check("(q) packSize is the 19th column, productVersion the LAST (20th)", LH.length === 20 && LH[18] === "packSize" && LH[19] === "productVersion" && Array.from(gs.LEDGER_HEADER_V3).length === 18 && Array.from(gs.LEDGER_HEADER_V4).length === 19);
   const O = gs.ALLOWED_EMAILS[0];
   const pr = [{ id: "sabzi-ghormeh", name: "سبزی قورمه" }];
   const cx = { id: "L" + "b".repeat(32), created: "2026-11-07 10:00:00", by: O, customers: [{ id: "1", firstName: "a", lastName: "b" }] };
   const gd = (o) => Object.assign({ date: "1405-08-16", type: "buy", productId: "sabzi-ghormeh", qty: "2", qtyUnit: "pack", price: "450", priceUnit: "thousand" }, o);
   const q1 = gs.planLedgerRow_(gd({ packSize: "  ۵۰۰   گرم " }), pr, cx);
-  check("(q) plan: packSize is cleaned (spaces) and written in column 19", q1.issues.length === 0 && q1.row.length === 19 && q1.row[18] === "۵۰۰ گرم", JSON.stringify(q1.row));
+  check("(q) plan: packSize is cleaned (spaces) and written in column 19", q1.issues.length === 0 && q1.row.length === 20 && q1.row[18] === "۵۰۰ گرم", JSON.stringify(q1.row));
   check("(q) plan: no packSize = empty cell", gs.planLedgerRow_(gd({}), pr, cx).row[18] === "");
   const q3 = gs.planLedgerRow_(gd({ packSize: "x".repeat(21) }), pr, cx);
   check("(q) plan: 21 characters is refused, 20 is fine", q3.issues.some((i) => i.field === "packSize") && gs.planLedgerRow_(gd({ packSize: "x".repeat(20) }), pr, cx).issues.length === 0);
