@@ -100,6 +100,9 @@
     .adm-pills label:focus-within { box-shadow: 0 0 0 3px rgba(47, 122, 31, .3); }
     .adm-preview { min-height: 1.6em; margin: 12px 0 0; padding: 8px 12px; border-radius: 12px; background: #fffaf0; border: 1px dashed var(--green); font-weight: 700; text-align: center; }
     .adm-preview:empty { display: none; }
+    .adm-form input + select { margin-top: 8px; }
+    .adm-form .adm-old { font-size: .9rem; color: var(--muted); margin: 6px 0 0; }
+    .adm-ledger .l-cust bdi { unicode-bidi: isolate; }
     /* ==== end «خرید و فروش» form ==== */
   </style>
 </head>
@@ -241,8 +244,38 @@
             </select>
           </div>
           <p class="adm-preview" id="l-preview" aria-live="polite"></p>
-          <label for="l-party">اسم مشتری یا فروشنده<span class="hint">اختیاری، حداکثر ۶۰ حرف</span></label>
-          <input id="l-party" type="text" autocomplete="off" maxlength="60">
+          <!-- sales only: customer + channel -->
+          <div id="l-sell-wrap" hidden>
+            <label for="l-cust-filter">مشتری<span class="hint">دنبال مشتری بگرد (اسم یا شماره)، بعد از لیست انتخابش کن</span></label>
+            <input id="l-cust-filter" type="search" dir="auto" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" aria-controls="l-customer" enterkeyhint="search">
+            <select id="l-customer" aria-label="مشتری"></select>
+            <p class="adm-old" id="l-old-name" hidden></p>
+            <div id="l-newcust-wrap" hidden>
+              <p class="adm-old">اسم و فامیل رو با حروف انگلیسی بنویس، مثلاً zahra ahmadi (با حروف کوچیک ذخیره می‌شه)</p>
+              <div class="adm-row">
+                <div>
+                  <label for="l-first">اسم (انگلیسی)<span class="hint">حداکثر ۳۰ حرف</span></label>
+                  <input id="l-first" class="ltr" dir="ltr" type="text" lang="en" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="30" placeholder="zahra">
+                </div>
+                <div>
+                  <label for="l-last">فامیل (انگلیسی)<span class="hint">حداکثر ۳۰ حرف</span></label>
+                  <input id="l-last" class="ltr" dir="ltr" type="text" lang="en" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="30" placeholder="ahmadi">
+                </div>
+              </div>
+            </div>
+            <fieldset>
+              <legend>فروش از کجا بود؟</legend>
+              <div class="adm-pills">
+                <label><input type="radio" name="l-channel" id="l-ch-site" value="site"><span>سایت</span></label>
+                <label><input type="radio" name="l-channel" id="l-ch-person" value="person"><span>حضوری</span></label>
+              </div>
+            </fieldset>
+          </div>
+          <!-- buys only -->
+          <div id="l-party-wrap" hidden>
+            <label for="l-party">اسم فروشنده<span class="hint">اختیاری، حداکثر ۶۰ حرف</span></label>
+            <input id="l-party" type="text" autocomplete="off" maxlength="60">
+          </div>
           <label for="l-note">توضیحات<span class="hint">اختیاری، حداکثر ۳۰۰ حرف</span></label>
           <textarea id="l-note" rows="2" maxlength="300"></textarea>
           <div class="adm-bar">

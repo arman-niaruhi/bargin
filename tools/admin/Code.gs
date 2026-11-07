@@ -22,6 +22,11 @@
 // buy or sell: Persian date, type, product (id + name taken from the products tab), quantity + unit, unit price in
 // toman (plus what was typed), the row's own total (qty × unit price). Rows are found by a random id, never by
 // row number. No sums or totals over rows anywhere.
+// Customers (owner approved 2026-11-07): every SALE has a customer from the private «مشتری‌ها» tab (made by
+// setupCustomers, right after «خرید و فروش», never first, never published) and a channel («سایت» / «حضوری»).
+// Customers get a whole-number id (1, 2, 3…) that is never given out twice, even after a row is deleted. Names
+// are English letters only, stored in lowercase. A new customer is added by saveLedgerRow in the same lock as the
+// sale; a name that is already on the list (case ignored) reuses that customer.
 // Style: ES2017 only, like the site (no newer syntax or methods).
 
 // The people who may log in (owner decision 2026-10-23). All of them get FULL admin access.
@@ -98,7 +103,20 @@ var MSG = {
   longNote: 'توضیحات خیلی بلنده (حداکثر ۳۰۰ حرف).',
   ledgerNotFound: 'این مورد پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
   ledgerMany: 'چند سطر با همین شناسه هست. اول توی شیت درستش کن.',
-  ledgerFull: 'جدول خرید و فروش پر شده ({n} سطر). اول چند سطر قدیمی رو توی شیت جابه‌جا کن.'
+  ledgerFull: 'جدول خرید و فروش پر شده ({n} سطر). اول چند سطر قدیمی رو توی شیت جابه‌جا کن.',
+  // مشتری‌ها (TODO: bargin-content to review)
+  noCustomers: 'تب «مشتری‌ها» هنوز ساخته نشده. توی Apps Script یه بار تابع setupCustomers رو اجرا کن.',
+  customersFirst: 'تب «مشتری‌ها» نباید اولین تب شیت باشه. یه بار تابع setupCustomers رو اجرا کن تا درست بشه.',
+  customersHeader: 'سطر اول تب «مشتری‌ها» به‌هم ریخته. تابع setupCustomers رو اجرا کن یا سرستون‌ها رو درست کن.',
+  customersFull: 'لیست مشتری‌ها پر شده ({n} نفر).',
+  needCustomer: 'مشتری رو انتخاب کن.',
+  goneCustomer: 'این مشتری توی لیست مشتری‌ها پیدا نشد. صفحه رو دوباره بارگذاری کن.',
+  needFirstName: 'اسم مشتری رو بنویس.',
+  needLastName: 'فامیل مشتری رو بنویس.',
+  longCustomerName: 'اسم و فامیل هر کدوم حداکثر ۳۰ حرف.',
+  persianCustomerName: 'اسم و فامیل مشتری رو با حروف انگلیسی بنویس، مثلاً zahra ahmadi.',
+  badCustomerName: 'توی اسم و فامیل فقط حروف انگلیسی، فاصله، - و \' قبوله.',
+  badChannel: 'بگو فروش از کجا بود: سایت یا حضوری.'
 };
 
 var PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
@@ -668,7 +686,7 @@ function productSheet() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   // The log and the buys/sells tabs must never be read or written as the products.
   var name = sheet && typeof sheet.getName === 'function' ? sheet.getName() : '';
-  if (name === LOG_SHEET || name === LEDGER_SHEET) throw new Error('WRONG_FIRST_TAB');
+  if (name === LOG_SHEET || name === LEDGER_SHEET || name === CUSTOMER_SHEET) throw new Error('WRONG_FIRST_TAB');
   return sheet;
 }
 
@@ -760,13 +778,17 @@ function deleteProduct(id) {
 // saves and deletes run under the script lock. A row is found by its random id (column A), never by row number.
 
 var LEDGER_SHEET = 'خرید و فروش';
-var LEDGER_HEADER = ['id', 'created', 'date', 'type', 'productId', 'productName', 'qty', 'qtyUnit', 'priceToman',
+// The first 15 columns (the tab as made on 2026-11-07); setupLedger adds the two new ones at the END of such a tab.
+var LEDGER_HEADER_V1 = ['id', 'created', 'date', 'type', 'productId', 'productName', 'qty', 'qtyUnit', 'priceToman',
   'priceAmount', 'priceUnit', 'rowToman', 'party', 'note', 'by'];
+// customerId + channel: filled on sales only. On a sale, party holds a copy of the customer's name at save time.
+var LEDGER_HEADER = LEDGER_HEADER_V1.concat(['customerId', 'channel']);
 // Cell formats per column: text everywhere (so 1405-08-16 never turns into a date), numbers for qty and toman.
-var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@'];
+var LEDGER_FORMATS = ['@', '@', '@', '@', '@', '@', '0.##', '@', '#,##0', '@', '@', '#,##0', '@', '@', '@', '@', '@'];
 var LEDGER_TYPES = { buy: 'خرید', sell: 'فروش' };
 var LEDGER_QTY_UNITS = { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', piece: 'عدد' };
 var LEDGER_PRICE_UNITS = { thousand: 'هزار تومان', million: 'میلیون تومان' };
+var LEDGER_CHANNELS = { site: 'سایت', person: 'حضوری' };
 var LEDGER_ID = /^L[0-9a-f]{32}$/;
 var LEDGER_PARTY_MAX = 60;
 // «سایر» (owner approved 2026-11-07): a ledger-only item that is not a shop product (e.g. «برنج», «شیشه خالی»),
@@ -779,6 +801,14 @@ var LEDGER_MAX_ROWS = 20000;     // rows in the tab; when full, new rows are ref
 var LEDGER_MAX_RETURN = 2000;    // newest rows sent to the page
 var LEDGER_YEAR_MIN = 1390;
 var LEDGER_YEAR_MAX = 1499;
+
+// The customers tab «مشتری‌ها» (sales only). Ids are whole numbers kept as text; the last id given out is also kept
+// in the script property CUSTOMER_SEQ_KEY, so a number is never given out again after its row was deleted.
+var CUSTOMER_SHEET = 'مشتری‌ها';
+var CUSTOMER_HEADER = ['id', 'firstName', 'lastName', 'created', 'by'];
+var CUSTOMER_ID = /^[1-9][0-9]{0,8}$/;
+var CUSTOMER_SEQ_KEY = 'customerSeq';
+var CUSTOMER_MAX_ROWS = 5000;
 
 // ---- shared with admin/admin.js (begin): keep both copies identical (tools/admin/test.mjs checks it) ----
 // Persian (Jalali) calendar, after the jalaali-js algorithm (breaks table, valid for years 1178-3177).
@@ -870,6 +900,20 @@ function ledgerMath_(qty, price, priceUnit) {
   if (out.qty !== null && out.unitToman !== null) out.rowToman = q.i * out.unitToman + Math.round(q.f * out.unitToman / 100);
   return out;
 }
+// A customer's first or last name (owner 2026-11-07): English letters, space, - and ' only, starting with a letter,
+// 1-30 characters after cleaning (no control characters, single spaces, trimmed), stored in lowercase.
+// Returns {value} or {error: 'need' | 'long' | 'persian' | 'bad'}.
+var CUSTOMER_NAME_MAX = 30;
+function customerName_(v) {
+  if (v === undefined || v === null) v = '';
+  if (typeof v !== 'string') return { error: 'bad' };
+  var s = v.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (s === '') return { error: 'need' };
+  if (/[\u0600-\u06ff\u0750-\u077f\ufb50-\ufdff\ufe70-\ufeff]/.test(s)) return { error: 'persian' };
+  if (s.length > CUSTOMER_NAME_MAX) return { error: 'long' };
+  if (!/^[A-Za-z][A-Za-z' -]*$/.test(s)) return { error: 'bad' };
+  return { value: s.toLowerCase() };
+}
 // ---- shared with admin/admin.js (end) ----
 
 // Text for a ledger cell: no control characters or line breaks, single spaces, trimmed. Too long = null.
@@ -890,13 +934,81 @@ function ledgerKeyOf_(map, label) {
   return key;
 }
 
+// The customer key used to find a name that is already on the list: lowercase, single spaces.
+function customerKey_(first, last) {
+  return (cellText(first) + ' ' + cellText(last)).replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// The next customer id: one more than the largest of the stored sequence and every id in column A
+// (so a deleted customer's number, or one typed by hand, is never given out again).
+function nextCustomerId_(ids, seq) {
+  var max = /^[0-9]+$/.test(cellText(seq)) ? parseInt(cellText(seq), 10) : 0;
+  ids.forEach(function (v) {
+    var t = toAsciiDigits(cellText(v));
+    if (/^[0-9]{1,9}$/.test(t) && parseInt(t, 10) > max) max = parseInt(t, 10);
+  });
+  return max + 1;
+}
+
+// The rows of the customers tab → [{id, firstName, lastName}] (rows without an id are left out).
+function customerList_(values) {
+  return values.map(function (v) {
+    return { id: toAsciiDigits(cellText(v[0])), firstName: cellText(v[1]), lastName: cellText(v[2]) };
+  }).filter(function (c) { return c.id !== ''; });
+}
+
+// The customer part of a SALE (pure): `input.customerId` (an id from the list) or `input.newCustomer`
+// {firstName, lastName}. A new name that is already on the list (case ignored) reuses that customer.
+// Returns {issues, customerId, name, reused, newCustomer}: newCustomer = {firstName, lastName} (lowercase) when a
+// new row must be added (its id is given by the caller, under the lock).
+function planCustomer_(input, customers) {
+  var out = { issues: [], customerId: '', name: '', reused: '', newCustomer: null };
+  function add(field, message) { out.issues.push({ field: field, row: null, message: message }); }
+  customers = customers || [];
+  var nc = input.newCustomer;
+  if (nc && typeof nc === 'object' && !Array.isArray(nc)) {
+    var msgs = { need: null, long: MSG.longCustomerName, persian: MSG.persianCustomerName, bad: MSG.badCustomerName };
+    var f = customerName_(nc.firstName), l = customerName_(nc.lastName);
+    if (f.error) add('firstName', f.error === 'need' ? MSG.needFirstName : msgs[f.error]);
+    if (l.error && !(f.error && f.error === l.error && f.error !== 'need')) add('lastName', l.error === 'need' ? MSG.needLastName : msgs[l.error]);
+    if (out.issues.length) return out;
+    var key = customerKey_(f.value, l.value);
+    for (var i = 0; i < customers.length; i++) {
+      if (customerKey_(customers[i].firstName, customers[i].lastName) === key) {
+        out.customerId = customers[i].id;
+        out.reused = customers[i].id;
+        out.name = cellText(customers[i].firstName) + ' ' + cellText(customers[i].lastName);
+        return out;
+      }
+    }
+    out.newCustomer = { firstName: f.value, lastName: l.value };
+    out.name = f.value + ' ' + l.value;
+    return out;
+  }
+  var cid = typeof input.customerId === 'string' || typeof input.customerId === 'number' ? toAsciiDigits(String(input.customerId).trim()) : '';
+  if (!cid) { add('customerId', MSG.needCustomer); return out; }
+  for (var k = 0; k < customers.length; k++) {
+    if (CUSTOMER_ID.test(cid) && customers[k].id === cid) {
+      out.customerId = cid;
+      out.name = cellText(customers[k].firstName) + ' ' + cellText(customers[k].lastName);
+      return out;
+    }
+  }
+  add('customerId', MSG.goneCustomer);
+  return out;
+}
+
 // Checks one entry from the form and builds its sheet row (pure: no sheet calls).
-// `input` = {date, type, productId, qty, qtyUnit, price, priceUnit, party, note} as typed.
+// `input` = {date, type, productId, qty, qtyUnit, price, priceUnit, party, note} as typed; a SALE also has
+// channel ('site' | 'person') and customerId or newCustomer (see planCustomer_; ctx.customers = the list).
+// On a sale, party is the customer's name (a copy) and the typed party is ignored; on a buy the customer and
+// channel are left empty. Returns also `customer` (planCustomer_'s result) for a sale.
 // `products` = the products tab rows ({id, name, ...}). `ctx` = {id, created, by, keep}: `keep` is the stored
 // {productId, productName} of the row being edited, so an old row whose product was deleted can still be edited
 // as long as its product is left unchanged. The product name always comes from the products tab, never from the page,
 // except for the reserved LEDGER_OTHER_ID («سایر»), whose name is input.productName (required, max 60, cleaned).
-// Returns {issues: [{field, message}], row: [LEDGER_HEADER order]}; row is null when there are issues.
+// Returns {issues: [{field, message}], row: [LEDGER_HEADER order]}; row is null when there are issues. For a new
+// customer the row's customerId cell is '' and the caller fills it in.
 function planLedgerRow_(input, products, ctx) {
   var issues = [];
   function add(field, message) { issues.push({ field: field, row: null, message: message }); }
@@ -934,17 +1046,28 @@ function planLedgerRow_(input, products, ctx) {
   else if (math.tooBig) add('price', MSG.priceTooBig);
   else if (math.unitToman === null) add('price', MSG.badLedgerPrice);
 
-  var party = ledgerText_(input.party, LEDGER_PARTY_MAX);
-  if (party === null) add('party', MSG.longParty);
+  var party = '', channel = '', customer = null;
+  if (type === 'sell') {
+    channel = ledgerKey_(LEDGER_CHANNELS, input.channel);
+    if (!channel) add('channel', MSG.badChannel);
+    customer = planCustomer_(input, ctx.customers);
+    customer.issues.forEach(function (x) { issues.push(x); });
+    party = customer.name;
+  } else {
+    party = ledgerText_(input.party, LEDGER_PARTY_MAX);
+    if (party === null) add('party', MSG.longParty);
+  }
   var note = ledgerText_(input.note, LEDGER_NOTE_MAX);
   if (note === null) add('note', MSG.longNote);
 
   if (issues.length) return { issues: issues, row: null };
   return {
     issues: [],
+    customer: customer,
     row: [ctx.id, ctx.created, date, LEDGER_TYPES[type], sheetText_(pid), sheetText_(pname), math.qty,
       LEDGER_QTY_UNITS[qtyUnit], math.unitToman, math.priceText, LEDGER_PRICE_UNITS[priceUnit], math.rowToman,
-      sheetText_(party), sheetText_(note), cellText(ctx.by)]
+      sheetText_(party), sheetText_(note), cellText(ctx.by),
+      customer ? customer.customerId : '', channel ? LEDGER_CHANNELS[channel] : '']
   };
 }
 
@@ -967,7 +1090,8 @@ function ledgerEntry_(v) {
     qty: num(v[6]), qtyUnit: ledgerKeyOf_(LEDGER_QTY_UNITS, cellText(v[7])), qtyUnitText: cellText(v[7]),
     priceToman: num(v[8]), priceAmount: cellText(v[9]),
     priceUnit: ledgerKeyOf_(LEDGER_PRICE_UNITS, cellText(v[10])), priceUnitText: cellText(v[10]),
-    rowToman: num(v[11]), party: cellText(v[12]), note: cellText(v[13]), by: cellText(v[14])
+    rowToman: num(v[11]), party: cellText(v[12]), note: cellText(v[13]), by: cellText(v[14]),
+    customerId: toAsciiDigits(cellText(v[15])), channel: ledgerKeyOf_(LEDGER_CHANNELS, cellText(v[16])), channelText: cellText(v[16])
   };
 }
 
@@ -981,6 +1105,22 @@ function ledgerSheet_() {
   return { sheet: sheet };
 }
 
+// The «مشتری‌ها» tab, checked: {sheet} or {message} (missing, first tab, or a broken header).
+function customersSheet_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CUSTOMER_SHEET);
+  if (!sheet) return { message: MSG.noCustomers };
+  if (sheet.getIndex() === 1) return { message: MSG.customersFirst };
+  var head = sheet.getRange(1, 1, 1, CUSTOMER_HEADER.length).getValues()[0].map(cellText);
+  if (head.join('\n') !== CUSTOMER_HEADER.join('\n')) return { message: MSG.customersHeader };
+  return { sheet: sheet };
+}
+
+function customerValues_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  return sheet.getRange(2, 1, last - 1, CUSTOMER_HEADER.length).getValues();
+}
+
 // The data rows of the tab (row 1 is the header), as arrays.
 function ledgerValues_(sheet) {
   var last = sheet.getLastRow();
@@ -989,7 +1129,9 @@ function ledgerValues_(sheet) {
 }
 
 // Action getLedger: the newest LEDGER_MAX_RETURN rows (by date, then time entered), newest first.
-// Returns {ok:true, entries, more} or {ok:false, message} (e.g. setupLedger not run yet).
+// Also the customers list (for the sale form): customers = [{id, firstName, lastName}], or [] plus
+// customersMessage when the «مشتری‌ها» tab is missing or broken (buys still work then).
+// Returns {ok:true, entries, more, customers[, customersMessage]} or {ok:false, message} (e.g. setupLedger not run yet).
 function getLedger() {
   assertSession_();
   var t = ledgerSheet_();
@@ -1000,12 +1142,18 @@ function getLedger() {
     if (a.created !== b.created) return a.created < b.created ? 1 : -1;
     return 0;
   });
-  return { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN };
+  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [] };
+  var c = customersSheet_();
+  if (c.sheet) out.customers = customerList_(customerValues_(c.sheet));
+  else out.customersMessage = c.message;
+  return out;
 }
 
 // Action saveLedgerRow (under the lock): `entry` from the form; `id` = the row's id when editing, '' for a new row.
 // A new row gets a random id, the Tehran time and the admin's email; an edit keeps id, time and email.
-// Returns {ok:true, id, updated} or {ok:false, issues} / {ok:false, message}.
+// A sale with a new customer first adds the customer (next id, lowercase names) and then writes the row, all in
+// the same lock; nothing is written when the entry has issues.
+// Returns {ok:true, id, updated, customerId, reusedCustomer} or {ok:false, issues} / {ok:false, message}.
 function saveLedgerRow(entry, id) {
   assertSession_();
   var t = ledgerSheet_();
@@ -1032,15 +1180,39 @@ function saveLedgerRow(entry, id) {
       by: sessionEmail_
     };
   }
+  var isSale = !!entry && typeof entry === 'object' && entry.type === 'sell';
+  var cust = null, custValues = [];
+  if (isSale) {
+    cust = customersSheet_();
+    if (!cust.sheet) return { ok: false, message: cust.message };
+    custValues = customerValues_(cust.sheet);
+    ctx.customers = customerList_(custValues);
+  }
   var plan = planLedgerRow_(entry, data.rows, ctx);
   if (plan.issues.length) return { ok: false, issues: plan.issues };
+
+  var c = plan.customer;
+  if (c && c.newCustomer) {
+    if (custValues.length >= CUSTOMER_MAX_ROWS) return { ok: false, message: fill(MSG.customersFull, { n: CUSTOMER_MAX_ROWS }) };
+    var props = PropertiesService.getScriptProperties();
+    var cid = String(nextCustomerId_(custValues.map(function (v) { return v[0]; }), props.getProperty(CUSTOMER_SEQ_KEY)));
+    var crow = cust.sheet.getLastRow() + 1;
+    if (crow > cust.sheet.getMaxRows()) cust.sheet.insertRowsAfter(cust.sheet.getMaxRows(), 100);
+    var crange = cust.sheet.getRange(crow, 1, 1, CUSTOMER_HEADER.length);
+    crange.setNumberFormats([CUSTOMER_HEADER.map(function () { return '@'; })]);
+    crange.setValues([[cid, sheetText_(c.newCustomer.firstName), sheetText_(c.newCustomer.lastName),
+      Utilities.formatDate(new Date(nowMs_()), 'Asia/Tehran', 'yyyy-MM-dd HH:mm:ss'), cellText(sessionEmail_)]]);
+    props.setProperty(CUSTOMER_SEQ_KEY, cid);
+    c.customerId = cid;
+    plan.row[15] = cid;
+  }
 
   var row = target || sheet.getLastRow() + 1;
   if (row > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 100);
   var range = sheet.getRange(row, 1, 1, LEDGER_HEADER.length);
   range.setNumberFormats([LEDGER_FORMATS]);
   range.setValues([plan.row]);
-  return { ok: true, id: ctx.id, updated: !!target };
+  return { ok: true, id: ctx.id, updated: !!target, customerId: c ? c.customerId : '', reusedCustomer: c ? c.reused : '' };
 }
 
 // Action deleteLedgerRow (under the lock, after the owner confirmed on the page): deletes the ONE row whose
@@ -1071,7 +1243,10 @@ function setupLedger() {
   }
   var lastRow = sheet.getLastRow();
   var head = lastRow ? sheet.getRange(1, 1, 1, LEDGER_HEADER.length).getValues()[0].map(cellText) : [];
-  if (lastRow > 1 && head.join('\n') !== LEDGER_HEADER.join('\n')) {
+  // A tab made before the customers (15 columns): the two new columns are added at the END; data rows are kept.
+  var v1 = head.slice(0, LEDGER_HEADER_V1.length).join('\n') === LEDGER_HEADER_V1.join('\n') &&
+    head.slice(LEDGER_HEADER_V1.length).every(function (h) { return h === ''; });
+  if (lastRow > 1 && head.join('\n') !== LEDGER_HEADER.join('\n') && !v1) {
     ss.setActiveSheet(ss.getSheets()[0]);
     return 'ERROR: row 1 of «' + LEDGER_SHEET + '» is not the expected header and the tab has data; fix it by hand';
   }
@@ -1084,4 +1259,35 @@ function setupLedger() {
   }
   ss.setActiveSheet(ss.getSheets()[0]);
   return 'OK: «' + LEDGER_SHEET + '» is tab ' + sheet.getIndex() + ' of ' + ss.getNumSheets() + '; products tab is «' + ss.getSheets()[0].getName() + '». Do not publish it to the web.';
+}
+
+// Run this ONCE in the Apps Script editor after setupLedger: makes the «مشتری‌ها» tab (or fixes its place and header)
+// right after «خرید و فروش» (so «log» stays last), never first. Bold frozen header, text format in every column.
+// Safe to run again; it never changes the data rows. Do NOT publish this tab to the web.
+function setupCustomers() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss.getNumSheets() < 1) return 'ERROR: the products tab is missing';
+  var sheet = ss.getSheetByName(CUSTOMER_SHEET);
+  var ledger = ss.getSheetByName(LEDGER_SHEET);
+  if (!sheet) sheet = ss.insertSheet(CUSTOMER_SHEET, ledger ? ledger.getIndex() : 1);   // 0-based: right after
+  var lastRow = sheet.getLastRow();
+  var head = lastRow ? sheet.getRange(1, 1, 1, CUSTOMER_HEADER.length).getValues()[0].map(cellText) : [];
+  if (lastRow > 1 && head.join('\n') !== CUSTOMER_HEADER.join('\n')) {
+    ss.setActiveSheet(ss.getSheets()[0]);
+    return 'ERROR: row 1 of «' + CUSTOMER_SHEET + '» is not the expected header and the tab has data; fix it by hand';
+  }
+  sheet.getRange(1, 1, 1, CUSTOMER_HEADER.length).setValues([CUSTOMER_HEADER]).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), CUSTOMER_HEADER.length).setNumberFormat('@');
+  // Target place: right after «خرید و فروش» (2nd tab when it is missing), counted without this tab.
+  var mine = sheet.getIndex();
+  var after = ledger ? ledger.getIndex() : 1;
+  if (mine < after) after -= 1;
+  var target = Math.max(2, after + 1);
+  if (mine !== target) {
+    ss.setActiveSheet(sheet);
+    ss.moveActiveSheet(target);
+  }
+  ss.setActiveSheet(ss.getSheets()[0]);
+  return 'OK: «' + CUSTOMER_SHEET + '» is tab ' + sheet.getIndex() + ' of ' + ss.getNumSheets() + '; products tab is «' + ss.getSheets()[0].getName() + '». Do not publish it to the web.';
 }

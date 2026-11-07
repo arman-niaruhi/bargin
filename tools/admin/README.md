@@ -133,11 +133,46 @@ description (300). Rows can be added, edited and deleted (delete asks first). **
   never publish it to the web.**
 - Columns: `id` (random, `L` + 32 hex; edit and delete find the row by it, never by row number), `created` (Tehran time),
   `date` (`1405-08-16`, text), `type` (خرید / فروش), `productId`, `productName`, `qty`, `qtyUnit`, `priceToman` (unit
-  price), `priceAmount` + `priceUnit` (as typed), `rowToman`, `party`, `note`, `by` (the admin's email).
+  price), `priceAmount` + `priceUnit` (as typed), `rowToman`, `party`, `note`, `by` (the admin's email), then
+  `customerId` and `channel` (سایت / حضوری; both on sales only). On a sale `party` is a copy of the customer's name;
+  on a buy it is the optional «اسم فروشنده». Sales saved before the customers list keep their old typed `party`; editing
+  one asks for a customer and a channel first (the old name is shown as «اسم قبلی: …»).
+- Running `setupLedger` on a tab made before the customers (15 columns) adds `customerId` and `channel` at the end of
+  row 1; it never changes the data rows.
+
+## Customers («مشتری‌ها» tab, owner approved 2026-11-07)
+- Every **sale** needs a customer and a channel («سایت» / «حضوری»). In the form the customer is picked from a
+  dropdown (with a search box above it, by name or number) or with «+ مشتری جدید» (first and last name, **English
+  letters only**, space, `-` and `'`, 1–30 characters each). Names are **stored in lowercase** and shown as stored,
+  e.g. «۱۲ — zahra ahmadi». A new name that is already on the list (case ignored) reuses that customer and the page
+  says «این مشتری از قبل بود (۱۲)؛ همونو استفاده کردیم». Buys have no customer.
+- Tab **`مشتری‌ها`**, made by **`setupCustomers`** right after «خرید و فروش» (products first, `log` last). Columns:
+  `id` (1, 2, 3…), `firstName`, `lastName`, `created` (Tehran time), `by` (the admin's email). **Private: never publish
+  it to the web.** The customer row and the sale are written in the same lock.
+- Numbers are never given out twice: the next id is one more than the larger of the script property `customerSeq` and
+  the largest id in the tab, so deleting a row by hand never frees its number. There is no edit/delete screen for
+  customers (owner's choice); fix a typo by hand in the tab (keep it lowercase, don't change the `id`).
 - Same security as the products: session checked in `handleRequest_` and again in each function (`assertSession_`),
   saves and deletes under the lock, every check done again on the server, `= + - @` at the start get an apostrophe,
   at most 20,000 rows (then new rows are refused; nothing is deleted). Do not edit the header row by hand; if it gets
   broken the page says so and `setupLedger` fixes it (when the tab has no other data).
+
+## Owner's checklist: deploy the customers update (once; do the Apps Script steps 1–5 BEFORE the new page goes live)
+1. **Extensions → Apps Script.** Open `Code.gs`, select everything, delete it, paste the new `tools/admin/Code.gs`,
+   press **Save**.
+2. Pick **`setupLedger`** → **Run**. The log says `OK: «خرید و فروش» is tab 2 of N…`; row 1 of «خرید و فروش» now ends
+   with `customerId`, `channel`. Your old rows stay as they are.
+3. Pick **`setupCustomers`** → **Run**. The log says `OK: «مشتری‌ها» is tab 3 of N…`.
+4. Pick **`setupLog`** → **Run** (keeps **log** as the last tab). Check the order: products, خرید و فروش, مشتری‌ها, log.
+5. **Deploy → Manage deployments →** pencil **→ Version: New version → Deploy**, with "Execute as: **Me**" and "Who has
+   access: **Anyone**". The URL stays the same.
+6. **File → Share → Publish to web:** still the **products tab only** (not "Entire document"); otherwise press
+   **Republish** with the products tab.
+7. Try it: `/admin/` → «خرید و فروش» → «ثبت خرید یا فروش جدید» → فروش → «+ مشتری جدید», save a test sale, check
+   both tabs in the Sheet, then delete the test sale (and the test customer row by hand, if you like).
+Why this order: an old Apps Script would save a sale from the new page without its customer and channel. After step 5
+and before the page is pushed, the old page can still save buys, but the new script refuses its sales (no channel or
+customer), so nothing half-filled is ever stored. Products are not affected at any point.
 
 ## Owner's checklist: deploy the log + «خرید و فروش» together (once, after the code is pushed)
 1. **Extensions → Apps Script.** Open `Code.gs`, select everything, delete it, and paste the new `tools/admin/Code.gs`.
@@ -162,6 +197,7 @@ description (300). Rows can be added, edited and deleted (delete asks first). **
 - Do not run `clasp` against the live project without the owner's OK.
 - Tests: `node tools/admin/test.mjs` (CSV and checks, plus the login with stubbed CacheService, LockService, MailApp,
   PropertiesService, Utilities, Session and a fake clock, plus the activity log: `logEvent`, `setupLog` and `log.js`, plus the
-  «خرید و فروش» tab: `ledgerMath_`, `ledgerDate_`, `planLedgerRow_`, save / edit / delete, `setupLedger`).
-- The calendar, number parsing and row total are in a block shared by `Code.gs` and `admin/admin.js` (marked
+  «خرید و فروش» tab: `ledgerMath_`, `ledgerDate_`, `planLedgerRow_`, save / edit / delete, `setupLedger`, plus the customers: `customerName_`, `nextCustomerId_`,
+  `planCustomer_`, new / reused customers, the 15→17 column migration, `setupCustomers`).
+- The calendar, number parsing, row total and customer-name check are in a block shared by `Code.gs` and `admin/admin.js` (marked
   `shared with admin/admin.js`); keep both copies identical, the tests check it.

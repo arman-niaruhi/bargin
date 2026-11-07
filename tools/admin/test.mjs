@@ -866,14 +866,17 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
 
   // planLedgerRow_ (pure)
   const prods = fileRows.map((r) => ({ ...r }));
-  const ctx = { id: "L" + "a".repeat(32), created: "2026-11-07 10:00:00", by: OWNER };
-  const good = (o) => Object.assign({ date: "1405-08-16", type: "sell", productId: "sabzi-ghormeh", qty: "3", qtyUnit: "pack", price: "450", priceUnit: "thousand", party: "", note: "" }, o);
+  const CUST = [{ id: "1", firstName: "zahra", lastName: "ahmadi" }, { id: "12", firstName: "Ali", lastName: "O'Neil-Smith" }];
+  const ctx = { id: "L" + "a".repeat(32), created: "2026-11-07 10:00:00", by: OWNER, customers: CUST };
+  const good = (o) => Object.assign({ date: "1405-08-16", type: "sell", productId: "sabzi-ghormeh", qty: "3", qtyUnit: "pack", price: "450", priceUnit: "thousand", party: "", note: "", channel: "site", customerId: "1" }, o);
   const p1 = gs.planLedgerRow_(good({ productName: "fake name" }), prods, ctx);
   const ghormeh = prods.find((r) => r.id === "sabzi-ghormeh").name;
   check("(n) plan: a good entry becomes one row in LEDGER_HEADER order",
-    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "", "", OWNER]), JSON.stringify(p1));
+    p1.issues.length === 0 && JSON.stringify(Array.from(p1.row)) === JSON.stringify([ctx.id, ctx.created, "1405-08-16", "فروش", "sabzi-ghormeh", ghormeh, 3, "بسته/ظرف", 450000, "450", "هزار تومان", 1350000, "zahra ahmadi", "", OWNER, "1", "سایت"]), JSON.stringify(p1));
   check("(n) plan: the product name comes from the products tab, never from the page", p1.row[5] === ghormeh && !JSON.stringify(p1.row).includes("fake name"));
-  check("(n) LEDGER_HEADER has the 15 columns incl. rowToman", L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by");
+  check("(n) LEDGER_HEADER has the 17 columns: the 15 old ones, then customerId and channel at the END",
+    L.join() === "id,created,date,type,productId,productName,qty,qtyUnit,priceToman,priceAmount,priceUnit,rowToman,party,note,by,customerId,channel" &&
+    Array.from(gs.LEDGER_HEADER_V1).join() === L.slice(0, 15).join() && gs.LEDGER_FORMATS.length === 17);
   const unknown = gs.planLedgerRow_(good({ productId: "no-such" }), prods, ctx);
   const blankP = gs.planLedgerRow_(good({ productId: "" }), prods.concat([{ row: 99, id: "", name: "" }]), ctx);
   check("(n) plan: an unknown or empty product id is refused", unknown.row === null && unknown.issues[0].field === "productId" && blankP.issues[0].field === "productId");
@@ -888,14 +891,14 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     ["", "خرید", "BUY", "constructor"].every((t) => gs.planLedgerRow_(good({ type: t }), prods, ctx).row === null) &&
     ["", "kilo", "__proto__"].every((u) => gs.planLedgerRow_(good({ qtyUnit: u }), prods, ctx).row === null) &&
     gs.planLedgerRow_(good({ type: "buy", qtyUnit: "kg" }), prods, ctx).row[3] === "خرید");
-  const inj = gs.planLedgerRow_(good({ party: "=HYPERLINK(\"http://x\")", note: "+1 -2\nline\u0000two" }), prods, ctx);
+  const inj = gs.planLedgerRow_(good({ type: "buy", party: "=HYPERLINK(\"http://x\")", note: "+1 -2\nline\u0000two" }), prods, ctx);
   check("(n) plan: formula injection in name/description gets an apostrophe; control characters and line breaks become spaces",
     inj.row[12].startsWith("'=") && inj.row[13] === "'+1 -2 line two", JSON.stringify([inj.row[12], inj.row[13]]));
   check("(n) plan: name over 60 / description over 300 characters is refused (60 / 300 are fine)",
-    gs.planLedgerRow_(good({ party: "ب".repeat(61) }), prods, ctx).issues.some((i) => i.field === "party") &&
+    gs.planLedgerRow_(good({ type: "buy", party: "ب".repeat(61) }), prods, ctx).issues.some((i) => i.field === "party") &&
     gs.planLedgerRow_(good({ note: "ب".repeat(301) }), prods, ctx).issues.some((i) => i.field === "note") &&
-    gs.planLedgerRow_(good({ party: "ب".repeat(60), note: "ب".repeat(300) }), prods, ctx).issues.length === 0 &&
-    gs.planLedgerRow_(good({ party: 5 }), prods, ctx).row === null);
+    gs.planLedgerRow_(good({ type: "buy", party: "ب".repeat(60), note: "ب".repeat(300) }), prods, ctx).issues.length === 0 &&
+    gs.planLedgerRow_(good({ type: "buy", party: 5 }), prods, ctx).row === null);
   const many = gs.planLedgerRow_({}, prods, ctx);
   check("(n) plan: an empty entry lists every missing field", ["date", "type", "productId", "qty", "qtyUnit", "priceUnit"].every((f) => many.issues.some((i) => i.field === f)), many.issues.map((i) => i.field).join());
   // «سایر»: a ledger-only item with a typed name (reserved productId)
@@ -956,9 +959,12 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     }
   });
   let book;
-  const mkBook = (order = ["products", "ledger", "log"], ledgerRows) => {
+  const CH = Array.from(gs.CUSTOMER_HEADER);
+  const mkBook = (order = ["products", "ledger", "customers", "log"], ledgerRows, custRows) => {
     const sheets = order.map((n) => n === "products" ? mk("products", [gs.HEADER.slice(), ...fileRows.map((r) => gs.HEADER.map((h) => r[h]))])
-      : n === "ledger" ? mk("خرید و فروش", ledgerRows || [L.slice()]) : mk("log", [gs.LOG_HEADER.slice()]));
+      : n === "ledger" ? mk("خرید و فروش", ledgerRows || [L.slice()])
+      : n === "customers" ? mk("مشتری‌ها", custRows || [CH.slice(), ["1", "zahra", "ahmadi", "2026-11-07 09:00:00", OWNER]])
+      : mk("log", [gs.LOG_HEADER.slice()]));
     book = {
       sheets, active: null,
       getSheets() { return this.sheets.slice(); },
@@ -1005,7 +1011,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(n) save: id, time and email come from the server, never from the page (Tehran time, session email)",
     r1[0] !== "L" + "b".repeat(32) && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(r1[1]) && r1[1] !== "1999" && r1[14] === OWNER && r1[11] === 1350000, JSON.stringify(r1));
   check("(n) save: the row gets its cell formats first (text for the date, numbers for qty and toman)",
-    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@"));
+    ledgerTab().formats.some((f) => f[0] === "row" && f[1] === 2 && f[2] === "@|@|@|@|@|@|0.##|@|#,##0|@|@|#,##0|@|@|@|@|@"));
   check("(n) save: the products tab is only read, never written", !productsTab().writes);
   const a2 = add({ date: "1405-08-20", type: "buy", qty: "2.5", qtyUnit: "kg", price: "1.2", priceUnit: "million", party: "آقای رضایی", note: "نقدی" });
   clock.t += 1000;
@@ -1016,7 +1022,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const e2 = lg.data.entries[0];
   check("(n) getLedger: keys and texts come back (type buy, kg, million, typed «1.2», row total 3,000,000)",
     e2.type === "buy" && e2.typeText === "خرید" && e2.qty === 2.5 && e2.qtyUnit === "kg" && e2.priceToman === 1200000 && e2.priceAmount === "1.2" && e2.priceUnit === "million" && e2.rowToman === 3000000 && e2.party === "آقای رضایی" && e2.note === "نقدی", JSON.stringify(e2));
-  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more");
+  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers");
   const bad = add({ price: "0" });
   check("(n) save: a bad entry is refused with issues and nothing is written", bad.ok === true && bad.data.ok === false && bad.data.issues.length === 1 && ledgerTab().rows.length === 4, JSON.stringify(bad));
 
@@ -1041,7 +1047,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const del = (id) => post({ action: "deleteLedgerRow", session: sess, data: { id } });
   const target = a3.data.id;
   const rowOf = ledgerTab().rows.findIndex((r) => r[0] === target) + 1;
-  ledgerTab().rows.splice(1, 0, ["L" + "d".repeat(32)].concat(Array(14).fill("x")));   // a row added above it: rows shift
+  ledgerTab().rows.splice(1, 0, ["L" + "d".repeat(32)].concat(Array(16).fill("x")));   // a row added above it: rows shift
   const d1 = del(target);
   check("(n) delete: the ONE row with that id is deleted even after rows shifted (found by id, not by row number)",
     d1.ok && d1.data.ok === true && ledgerTab().deleted[0] === rowOf + 1 && !ledgerTab().rows.some((r) => r[0] === target), JSON.stringify([d1, ledgerTab().deleted]));
@@ -1084,7 +1090,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const msg = gs.setupLedger();
   check("(n) setupLedger makes «خرید و فروش» the 2nd tab (products first, log last), header, frozen, formats",
     book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,log" && ledgerTab().rows[0].join() === L.join() && ledgerTab().frozen === 1 &&
-    ledgerTab().formats.filter((f) => f[0] === "col").length === 15 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
+    ledgerTab().formats.filter((f) => f[0] === "col").length === 17 && /tab 2 of 3/.test(msg) && /products/.test(msg), msg);
   gs.setupLedger();
   check("(n) setupLedger can run again safely", book.getSheets().length === 3 && ledgerTab().rows.length === 1 && book.getSheets()[1].name === "خرید و فروش");
   mkBook(["ledger", "products", "log"]);
@@ -1100,6 +1106,133 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const keepMsg = gs.setupLedger();
   check("(n) setupLedger never overwrites a tab with other data in it", /^ERROR/.test(keepMsg) && ledgerTab().rows[0].join() === "a,b");
 
+
+  // ---- (o) customers «مشتری‌ها» and the sale channel (owner approved 2026-11-07) ----
+  {
+    const cn = (v) => gs.customerName_(v);
+    check("(o) name: English letters are kept and stored in lowercase («Zahra» → zahra, «O'NEIL-Smith» → o'neil-smith, spaces cleaned)",
+      cn("Zahra").value === "zahra" && cn("O'NEIL-Smith").value === "o'neil-smith" && cn("  Van   Damme ").value === "van damme" && cn("a\nb").value === "a b" && cn("A".repeat(30)).value === "a".repeat(30));
+    const persian = ["زهرا", "Zahra۱", "علی Ali", "\u064dAli", "ﺯﻫﺮا"];
+    check("(o) name: Persian/Arabic letters or digits get the Persian-letter error", persian.every((v) => cn(v).error === "persian"), JSON.stringify(persian.map(cn)));
+    const bad = ["zahra2", "=cmd", "-x", "'x", " -abc", "Zähra", "a_b", "a.b", "@x", "+1", 5, {}, []];
+    check("(o) name: digits, other symbols, a leading - or ' and formula starts (= + - @) are refused", bad.every((v) => cn(v).error === "bad"), JSON.stringify(bad.map(cn)));
+    check("(o) name: empty is «need»; over 30 characters is «long»", cn("").error === "need" && cn("   ").error === "need" && cn(undefined).error === "need" && cn("A".repeat(31)).error === "long" && gs.CUSTOMER_NAME_MAX === 30);
+    check("(o) duplicate key ignores case and extra spaces", gs.customerKey_("ZAHRA", "  Ahmadi ") === gs.customerKey_("zahra", "ahmadi") && gs.customerKey_("zahra", "ahmadi") === "zahra ahmadi");
+    const nx = (ids, seq) => gs.nextCustomerId_(ids, seq);
+    check("(o) next id: 1 for an empty list; one more than the largest of the stored sequence and every id",
+      nx([], null) === 1 && nx(["1", "2", "3"], "3") === 4 && nx(["1", "2"], "3") === 4 && nx(["1", "5"], null) === 6 && nx(["1"], "9") === 10 && nx(["۷", "x", "", "2.5"], "") === 8 && nx([4, "3"], "junk") === 5);
+
+    const sale = (o) => good(Object.assign({ customerId: undefined }, o));
+    const pc = (o) => gs.planLedgerRow_(sale(o), prods, ctx);
+    const noCh = pc({ customerId: "1", channel: "" }), badCh = pc({ customerId: "1", channel: "constructor" }), person = pc({ customerId: "1", channel: "person" });
+    check("(o) sale: the channel is required («سایت» / «حضوری» only)",
+      noCh.row === null && noCh.issues[0].field === "channel" && noCh.issues[0].message === gs.MSG.badChannel && badCh.row === null && person.row[16] === "حضوری");
+    const none = pc({}), gone = pc({ customerId: "99" }), junk = pc({ customerId: "1 OR 1" });
+    check("(o) sale: a customer is required; an id that is not on the list is refused",
+      none.issues.some((i) => i.field === "customerId" && i.message === gs.MSG.needCustomer) && gone.issues.some((i) => i.message === gs.MSG.goneCustomer) && junk.row === null);
+    const byId = pc({ customerId: "۱۲", party: "=evil" });
+    check("(o) sale: a chosen customer stores its id and a copy of its name in party (the typed party is ignored)",
+      byId.issues.length === 0 && byId.row[15] === "12" && byId.row[12] === "Ali O'Neil-Smith" && byId.customer.reused === "" && !byId.customer.newCustomer, JSON.stringify(byId.row));
+    const nw = pc({ newCustomer: { firstName: "  Reza ", lastName: "KARIMI" } });
+    check("(o) sale: a new customer is planned in lowercase; its id is left for the caller",
+      nw.issues.length === 0 && JSON.stringify(nw.customer.newCustomer) === '{"firstName":"reza","lastName":"karimi"}' && nw.row[15] === "" && nw.row[12] === "reza karimi", JSON.stringify(nw));
+    const dup = pc({ newCustomer: { firstName: "ZAHRA", lastName: " ahmadi " } }), dup2 = pc({ newCustomer: { firstName: "ali", lastName: "o'neil-smith" } });
+    check("(o) sale: a new name already on the list (case ignored) reuses that customer",
+      dup.customer.reused === "1" && dup.row[15] === "1" && !dup.customer.newCustomer && dup2.customer.reused === "12" && dup2.row[12] === "Ali O'Neil-Smith");
+    const fa = pc({ newCustomer: { firstName: "زهرا", lastName: "احمدی" } }), half = pc({ newCustomer: { firstName: "Zahra", lastName: "" } }), both = pc({ newCustomer: {} });
+    check("(o) sale: Persian names are refused with ONE clear message; a missing last / first name is named",
+      fa.row === null && fa.issues.length === 1 && fa.issues[0].message === gs.MSG.persianCustomerName &&
+      half.issues.length === 1 && half.issues[0].message === gs.MSG.needLastName && both.issues.map((i) => i.message).join("|") === gs.MSG.needFirstName + "|" + gs.MSG.needLastName, JSON.stringify([fa.issues, half.issues, both.issues]));
+    const buy = gs.planLedgerRow_(good({ type: "buy", party: "آقای رضایی", channel: "site", customerId: "1", newCustomer: { firstName: "x", lastName: "y" } }), prods, ctx);
+    check("(o) buy: no customer and no channel are stored; the free-text «اسم فروشنده» is kept", buy.issues.length === 0 && buy.row[15] === "" && buy.row[16] === "" && buy.row[12] === "آقای رضایی" && buy.customer === null);
+    const old = gs.planLedgerRow_(sale({ party: "خانم احمدی" }), prods, Object.assign({ keep: { productId: "sabzi-ghormeh", productName: "x" } }, ctx));
+    check("(o) editing an OLD sale (no customer) needs a customer before it can be saved", old.row === null && old.issues.some((i) => i.field === "customerId"));
+
+    // the fake spreadsheet
+    const custTab = () => book.getSheetByName("مشتری‌ها");
+    const sl = (o, id = "") => post({ action: "saveLedgerRow", session: sess, data: { entry: sale(o), id } });
+    ({ sess } = login());
+    mkBook();
+    const c1 = sl({ newCustomer: { firstName: "Reza", lastName: "Karimi" } });
+    const crow = custTab().rows[2];
+    check("(o) save: a new customer gets the next number, lowercase names, Tehran time and the admin's email; the sale points to it",
+      c1.data.ok === true && c1.data.customerId === "2" && c1.data.reusedCustomer === "" && crow.slice(0, 3).join() === "2,reza,karimi" && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(crow[3]) && crow[4] === OWNER &&
+      ledgerTab().rows[1][15] === "2" && ledgerTab().rows[1][16] === "سایت" && ledgerTab().rows[1][12] === "reza karimi" && world.props.customerSeq === "2", JSON.stringify([c1, crow, ledgerTab().rows[1]]));
+    check("(o) save: the customer row is text-formatted", custTab().formats.some((f) => f[0] === "row" && f[1] === 3 && f[2] === "@|@|@|@|@"));
+    const c2 = sl({ newCustomer: { firstName: "REZA", lastName: "karimi " } });
+    check("(o) save: the same name again (other case) reuses customer 2 and adds no customer row",
+      c2.data.ok === true && c2.data.reusedCustomer === "2" && c2.data.customerId === "2" && custTab().rows.length === 3 && ledgerTab().rows[2][15] === "2");
+    custTab().rows.splice(2, 1);   // customer 2 deleted by hand in the Sheet
+    const c3 = sl({ newCustomer: { firstName: "Sara", lastName: "Mousavi" } });
+    check("(o) a deleted customer's number is never given out again (3, not 2)", c3.data.customerId === "3" && custTab().rows[2][0] === "3");
+    delete world.props.customerSeq;
+    const c4 = sl({ newCustomer: { firstName: "Mina", lastName: "Rad" } });
+    check("(o) without the stored sequence the next id still comes from the largest id in the tab", c4.data.customerId === "4" && world.props.customerSeq === "4");
+    const nRows = [custTab().rows.length, ledgerTab().rows.length];
+    const bads = [sl({ price: "0", newCustomer: { firstName: "New", lastName: "One" } }), sl({ newCustomer: { firstName: "زهرا", lastName: "Ahmadi" } }), sl({ channel: "", newCustomer: { firstName: "New", lastName: "Two" } }), sl({ customerId: "2" })];
+    check("(o) an entry with any issue writes NO customer and NO ledger row",
+      bads.every((x) => x.data.ok === false && x.data.issues.length) && custTab().rows.length === nRows[0] && ledgerTab().rows.length === nRows[1], JSON.stringify(bads.map((x) => x.data)));
+    world.lockBusy = true;
+    const lk = sl({ newCustomer: { firstName: "Lock", lastName: "Test" } });
+    world.lockBusy = false;
+    check("(o) lock busy: BUSY, no customer and no row written", lk.error === "BUSY" && custTab().rows.length === nRows[0] && ledgerTab().rows.length === nRows[1]);
+    const gl = post({ action: "getLedger", session: sess });
+    const ent = gl.data.entries.find((e) => e.id === c1.data.id);
+    check("(o) getLedger also sends the customers, and each sale's customerId and channel",
+      gl.data.ok && JSON.stringify(gl.data.customers.map((c) => c.id + ":" + c.firstName + " " + c.lastName)) === JSON.stringify(["1:zahra ahmadi", "3:sara mousavi", "4:mina rad"]) &&
+      ent.customerId === "2" && ent.channel === "site" && ent.channelText === "سایت" && !("customersMessage" in gl.data), JSON.stringify(gl.data.customers));
+    // edit: an existing sale can switch customer; type → buy clears the customer
+    const ed1 = sl({ customerId: "3", channel: "person" }, c1.data.id);
+    const r1x = ledgerTab().rows.find((r) => r[0] === c1.data.id);
+    check("(o) edit: a sale can switch to another customer and channel", ed1.data.ok && r1x[15] === "3" && r1x[16] === "حضوری" && r1x[12] === "sara mousavi");
+    const ed2 = post({ action: "saveLedgerRow", session: sess, data: { entry: good({ type: "buy", party: "بازار", customerId: "3", channel: "site" }), id: c1.data.id } });
+    const r1y = ledgerTab().rows.find((r) => r[0] === c1.data.id);
+    check("(o) edit: switching a sale to a buy empties customerId and channel", ed2.data.ok && r1y[15] === "" && r1y[16] === "" && r1y[12] === "بازار");
+    // customers tab missing / first / broken
+    mkBook(["products", "ledger", "log"]);
+    const g2 = post({ action: "getLedger", session: sess });
+    const s2 = sl({ customerId: "1" });
+    const b2 = post({ action: "saveLedgerRow", session: sess, data: { entry: good({ type: "buy" }), id: "" } });
+    check("(o) no «مشتری‌ها» tab: the list still loads (with a setupCustomers message), sales are refused, buys still work",
+      g2.data.ok === true && g2.data.customers.length === 0 && /setupCustomers/.test(g2.data.customersMessage) && s2.data.ok === false && /setupCustomers/.test(s2.data.message) && b2.data.ok === true && book.getSheets().length === 3);
+    mkBook(["products", "ledger", "customers"], undefined, [["id", "x"]]);
+    check("(o) a broken «مشتری‌ها» header: sales refused, nothing written", sl({ customerId: "1" }).data.ok === false && custTab().rows.length === 1 && ledgerTab().rows.length === 1);
+    mkBook(["customers", "products", "ledger"]);
+    check("(o) if «مشتری‌ها» were the first tab: products actions refuse it, sales refuse too",
+      post({ action: "getProducts", session: sess }).error === "server" && post({ action: "saveLedgerRow", session: sess, data: { entry: sale({ customerId: "1" }), id: "" } }).error === "server" && custTab().rows.length === 2);
+    // setupLedger: the 15 → 17 column migration
+    const oldHead = L.slice(0, 15);
+    const oldRow = ["L" + "9".repeat(32), "2026-11-07 09:00:00", "1405-08-16", "فروش", "sabzi-ghormeh", "سبزی قورمه", 1, "بسته/ظرف", 450000, "450", "هزار تومان", 450000, "خانم احمدی", "", OWNER];
+    mkBook(["products", "ledger", "customers", "log"], [oldHead.slice(), oldRow.slice()]);
+    const before17 = post({ action: "getLedger", session: sess });
+    const mig = gs.setupLedger();
+    const after17 = post({ action: "getLedger", session: sess });
+    check("(o) setupLedger adds customerId + channel at the END of an old 15-column tab and keeps every data row",
+      before17.data.ok === false && /OK/.test(mig) && ledgerTab().rows[0].join() === L.join() && JSON.stringify(ledgerTab().rows[1].slice(0, 15)) === JSON.stringify(oldRow) &&
+      after17.data.ok === true && after17.data.entries[0].party === "خانم احمدی" && after17.data.entries[0].customerId === "" && after17.data.entries[0].channel === "", mig);
+    mkBook(["products", "ledger"], [oldHead.slice(0, 14).concat(["oops"]), oldRow.slice()]);
+    check("(o) setupLedger still refuses a tab whose header is neither the old nor the new one", /^ERROR/.test(gs.setupLedger()) && ledgerTab().rows[0][14] === "oops");
+    // setupCustomers
+    mkBook(["products", "ledger", "log"]);
+    const sc = gs.setupCustomers();
+    check("(o) setupCustomers makes «مشتری‌ها» right after «خرید و فروش» (log stays last): header, frozen, text format",
+      book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,مشتری‌ها,log" && custTab().rows[0].join() === CH.join() && custTab().frozen === 1 && custTab().formats.some((f) => f[0] === "col" && f[2] === "@") && /tab 3 of 4/.test(sc), sc);
+    gs.setupCustomers();
+    check("(o) setupCustomers can run again safely", book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,مشتری‌ها,log" && custTab().rows.length === 1);
+    mkBook(["customers", "products", "ledger", "log"]);
+    gs.setupCustomers();
+    check("(o) setupCustomers moves the tab from first to after «خرید و فروش»", book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,مشتری‌ها,log" && custTab().rows.length === 2);
+    mkBook(["products", "log", "customers", "ledger"]);
+    gs.setupLedger(); gs.setupCustomers(); gs.setupLog();
+    check("(o) setupLedger + setupCustomers + setupLog: products, «خرید و فروش», «مشتری‌ها», log", book.getSheets().map((x) => x.name).join() === "products,خرید و فروش,مشتری‌ها,log");
+    mkBook(["products", "log"]);
+    gs.setupCustomers();
+    check("(o) setupCustomers without «خرید و فروش»: 2nd tab, never first", book.getSheets().map((x) => x.name).join() === "products,مشتری‌ها,log");
+    mkBook(["products", "ledger", "customers"], undefined, [["a", "b"], ["1", "2"]]);
+    check("(o) setupCustomers never overwrites a tab with other data in it", /^ERROR/.test(gs.setupCustomers()) && custTab().rows[0].join() === "a,b");
+    check("(o) PROTECTED_ACTIONS gets no new action (customers come with getLedger)", !/getCustomers/.test(read("tools/admin/Code.gs")));
+  }
+
   gs.SpreadsheetApp = oldSS;
 
   // the page
@@ -1108,6 +1241,10 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const newer = /\?\.|\?\?|Object\.fromEntries|replaceAll|\.at\(|\.flat\(|flatMap|matchAll|structuredClone/;
   check("(n) admin.js and Code.gs use nothing newer than ES2017", !newer.test(adminSrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(read("tools/admin/Code.gs").replace(/\/\/[^\n]*/g, "")));
   const html = read("admin/index.html");
+  check("(o) admin page: the name boxes are LTR and never auto-capitalise; the buy box is «اسم فروشنده»; channel pills; filter box + select",
+    /id="l-first"[^>]*dir="ltr"/.test(html) && /id="l-last"[^>]*dir="ltr"/.test(html) && /id="l-first"[^>]*autocapitalize="none"/.test(html) && /اسم فروشنده/.test(html) &&
+    /id="l-ch-site"/.test(html) && /id="l-ch-person"/.test(html) && /id="l-cust-filter"/.test(html) && /<select id="l-customer"/.test(html) && !/<datalist/.test(html));
+  check("(o) admin page: Latin names are bidi-isolated (FSI…PDI in options, <bdi dir=ltr> in the list)", adminSrc.includes("'\\u2068'") && adminSrc.includes("'\\u2069'") && /setAttribute\('dir', 'ltr'\)/.test(adminSrc));
   check("(n) admin page CSP is unchanged (no new script origins, no inline script)", /script-src 'self';/.test(html) && !/<script>(?!<\/)/.test(html) && /connect-src 'self' https:\/\/script\.google\.com/.test(html));
 }
 

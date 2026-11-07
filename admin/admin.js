@@ -111,6 +111,22 @@
     lOther: 'سایر',
     lNeedOtherName: 'اسم محصول رو بنویس.',
     lLongOtherName: 'اسم محصول خیلی بلنده (حداکثر ۶۰ حرف).',
+    lPickCustomer: 'مشتری رو انتخاب کن',
+    lNoCustomerMatch: 'مشتری‌ای با این اسم پیدا نشد',
+    lNewCustomer: '+ مشتری جدید',
+    lCustomerOption: '{n} — {name}',
+    lCustomerLine: 'مشتری: ',
+    lOldName: 'اسم قبلی: {name}',
+    lNeedCustomer: 'مشتری رو انتخاب کن.',
+    lNeedFirst: 'اسم مشتری رو بنویس.',
+    lNeedLast: 'فامیل مشتری رو بنویس.',
+    lLongName: 'اسم و فامیل هر کدوم حداکثر ۳۰ حرف.',
+    lPersianName: 'اسم و فامیل مشتری رو با حروف انگلیسی بنویس، مثلاً zahra ahmadi.',
+    lBadName: 'توی اسم و فامیل فقط حروف انگلیسی، فاصله، - و \' قبوله.',
+    lNeedChannel: 'بگو فروش از کجا بود: سایت یا حضوری.',
+    lReused: 'این مشتری از قبل بود ({n})؛ همونو استفاده کردیم',
+    lOldServer: 'برای ثبت فروش، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، setupCustomers، نسخه‌ی جدید).',
+    channels: { site: 'سایت', person: 'حضوری' },
     months: ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'],
     types: { buy: 'خرید', sell: 'فروش' },
     qtyUnits: { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', piece: 'عدد' },
@@ -147,6 +163,9 @@
   // Code.gs; it has non-ASCII letters, so no shop product can have it.
   var LEDGER_OTHER_ID = '*سایر*';
   var LEDGER_OTHER_MAX = 60;
+  var customers = [];      // the «مشتری‌ها» list [{id, firstName, lastName}], from getLedger
+  var NEW_CUSTOMER = '__newcust__';   // value of the «+ مشتری جدید» option (never a customer id)
+  var customersReady = false;         // the server sent the customers list (an old Apps Script does not)
   // Same cleaning as ledgerText_ in Code.gs: no control characters or line breaks, single spaces, trimmed.
   function cleanLedgerText(v) {
     return String(v || '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -241,6 +260,20 @@
     }
     if (out.qty !== null && out.unitToman !== null) out.rowToman = q.i * out.unitToman + Math.round(q.f * out.unitToman / 100);
     return out;
+  }
+  // A customer's first or last name (owner 2026-11-07): English letters, space, - and ' only, starting with a letter,
+  // 1-30 characters after cleaning (no control characters, single spaces, trimmed), stored in lowercase.
+  // Returns {value} or {error: 'need' | 'long' | 'persian' | 'bad'}.
+  var CUSTOMER_NAME_MAX = 30;
+  function customerName_(v) {
+    if (v === undefined || v === null) v = '';
+    if (typeof v !== 'string') return { error: 'bad' };
+    var s = v.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (s === '') return { error: 'need' };
+    if (/[\u0600-\u06ff\u0750-\u077f\ufb50-\ufdff\ufe70-\ufeff]/.test(s)) return { error: 'persian' };
+    if (s.length > CUSTOMER_NAME_MAX) return { error: 'long' };
+    if (!/^[A-Za-z][A-Za-z' -]*$/.test(s)) return { error: 'bad' };
+    return { value: s.toLowerCase() };
   }
   // ---- shared with admin/admin.js (end) ----
 
@@ -786,9 +819,13 @@
       }
       ledger = r.entries || [];
       ledgerMore = !!r.more;
+      customers = r.customers || [];
+      customersReady = Array.isArray(r.customers) && !r.customersMessage;
       ledgerLoaded = true;
       renderLedger();
-      if (!keepMessage) setStatus('');
+      if (r.customersMessage) setStatus(r.customersMessage, 'err');
+      else if (!Array.isArray(r.customers)) setStatus(TEXT.lOldServer, 'err');
+      else if (!keepMessage) setStatus('');
     }, function (err) {
       setBusy(false);
       onApiError(err, TEXT.lLoadFail);
@@ -841,7 +878,8 @@
     if (e.priceAmount) {
       li.appendChild(el('small', 'l-more', fill(TEXT.lTyped, { amount: decFa(e.priceAmount), unit: TEXT.priceUnits[e.priceUnit] || e.priceUnitText || '' })));
     }
-    if (e.party) li.appendChild(el('small', 'l-more', fill(TEXT.lParty, { name: e.party })));
+    if (e.type === 'sell' && (e.customerId || e.channel)) li.appendChild(customerLine(e));
+    else if (e.party) li.appendChild(el('small', 'l-more', fill(TEXT.lParty, { name: e.party })));
     if (e.note) li.appendChild(el('small', 'l-more', e.note));
 
     var actions = el('div', 'l-actions');
@@ -870,6 +908,78 @@
     no.addEventListener('click', function () { confirmBox.hidden = true; del.focus(); });
     yes.addEventListener('click', function () { deleteLedger(e.id); });
     return li;
+  }
+
+  // ---- customers (sales only) ----
+  function customerById(id) {
+    for (var i = 0; i < customers.length; i++) if (String(customers[i].id) === String(id)) return customers[i];
+    return null;
+  }
+  function customerFullName(c) { return (String(c.firstName || '') + ' ' + String(c.lastName || '')).trim(); }
+
+  // «مشتری: ۱۲ — zahra ahmadi · سایت». The Latin name sits in its own <bdi dir="ltr">, so the RTL line never
+  // mixes up its order. A sale saved before the customers list (no customerId) shows its old typed name.
+  function customerLine(e) {
+    var line = el('small', 'l-more l-cust');
+    line.appendChild(document.createTextNode(TEXT.lCustomerLine));
+    var c = e.customerId ? customerById(e.customerId) : null;
+    var name = c ? customerFullName(c) : e.party;
+    if (e.customerId) line.appendChild(document.createTextNode(toFa(e.customerId) + ' — '));
+    if (name) {
+      var b = el('bdi', '', name);
+      if (/^[A-Za-z]/.test(name)) b.setAttribute('dir', 'ltr');
+      line.appendChild(b);
+    }
+    var ch = TEXT.channels[e.channel] || e.channelText;
+    if (ch) line.appendChild(document.createTextNode(' · ' + ch));
+    return line;
+  }
+
+  // Lowercase, ASCII digits, single spaces: the filter text and the names are compared this way.
+  function customerQuery(v) {
+    return String(v || '').replace(/[۰-۹]/g, function (d) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); })
+      .replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); }).replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  // The customer dropdown, filtered by the search box (name or number). An <option> can't hold markup, so the
+  // name is wrapped in the Unicode isolate marks FSI … PDI: «۱۲ — zahra ahmadi» stays in order on the RTL page.
+  function fillCustomerOptions(keep) {
+    var sel = $('l-customer');
+    var current = keep !== undefined ? keep : sel.value;
+    var q = customerQuery($('l-cust-filter').value);
+    sel.textContent = '';
+    var list = customers.filter(function (c) {
+      if (!q) return true;
+      return String(c.id).indexOf(q) === 0 || customerQuery(customerFullName(c)).indexOf(q) >= 0;
+    });
+    list.sort(function (a, b) {
+      var x = customerQuery(customerFullName(a)), y = customerQuery(customerFullName(b));
+      return x < y ? -1 : (x > y ? 1 : Number(a.id) - Number(b.id));
+    });
+    addOption(sel, '', q && !list.length ? TEXT.lNoCustomerMatch : TEXT.lPickCustomer);
+    var found = false;
+    list.forEach(function (c) {
+      addOption(sel, String(c.id), fill(TEXT.lCustomerOption, { n: toFa(c.id), name: '\u2068' + customerFullName(c) + '\u2069' }));
+      if (String(c.id) === current) found = true;
+    });
+    addOption(sel, NEW_CUSTOMER, TEXT.lNewCustomer);
+    if (current === NEW_CUSTOMER) sel.value = NEW_CUSTOMER;
+    else if (found) sel.value = current;
+    else if (q && list.length) sel.value = String(list[0].id);
+    else sel.value = '';
+    syncCustomer();
+  }
+
+  // The name boxes are shown only while «+ مشتری جدید» is selected.
+  function syncCustomer() {
+    $('l-newcust-wrap').hidden = $('l-customer').value !== NEW_CUSTOMER;
+  }
+
+  // Sale-only fields (customer, channel) and the buy-only «اسم فروشنده» box. Hidden fields keep their values.
+  function syncType() {
+    var sell = $('l-type-sell').checked, buy = $('l-type-buy').checked;
+    $('l-sell-wrap').hidden = !sell;
+    $('l-party-wrap').hidden = !buy;
   }
 
   // ---- «خرید و فروش» form ----
@@ -927,10 +1037,11 @@
   }
 
   function syncPills() {
-    ['buy', 'sell'].forEach(function (t) {
-      var input = $('l-type-' + t);
+    ['l-type-buy', 'l-type-sell', 'l-ch-site', 'l-ch-person'].forEach(function (id) {
+      var input = $(id);
       input.parentNode.className = input.checked ? 'on' : '';
     });
+    syncType();
   }
 
   function updatePreview() {
@@ -952,13 +1063,24 @@
     else setDateFields(t.y, t.m, t.d);
     $('l-type-buy').checked = !!e && e.type === 'buy';
     $('l-type-sell').checked = !!e && e.type === 'sell';
+    $('l-ch-site').checked = !!e && e.channel === 'site';
+    $('l-ch-person').checked = !!e && e.channel === 'person';
     syncPills();
+    $('l-cust-filter').value = '';
+    $('l-first').value = '';
+    $('l-last').value = '';
+    var known = e && e.customerId && customerById(e.customerId);
+    fillCustomerOptions(known ? String(e.customerId) : '');
+    // An old sale (from before the customers list): a customer must be chosen; its old typed name is a hint.
+    var oldName = e && e.type === 'sell' && !known ? e.party || '' : '';
+    $('l-old-name').textContent = oldName ? fill(TEXT.lOldName, { name: oldName }) : '';
+    $('l-old-name').hidden = !oldName;
     fillProductOptions(e ? e.productId : '', e ? e.productName : '');
     $('l-qty').value = e && e.qty !== null ? decFa(e.qty) : '';
     $('l-qty-unit').value = e && e.qtyUnit ? e.qtyUnit : 'pack';
     $('l-price').value = e && e.priceAmount ? decFa(e.priceAmount) : '';
     $('l-price-unit').value = e && e.priceUnit ? e.priceUnit : 'thousand';
-    $('l-party').value = e ? e.party || '' : '';
+    $('l-party').value = e && (e.type !== 'sell' || !e.customerId) ? e.party || '' : '';
     $('l-note').value = e ? e.note || '' : '';
     $('l-form-title').textContent = e ? TEXT.lEditTitle : TEXT.lNewTitle;
     updatePreview();
@@ -978,7 +1100,7 @@
 
   function collectLedger() {
     var type = $('l-type-buy').checked ? 'buy' : ($('l-type-sell').checked ? 'sell' : '');
-    return {
+    var out = {
       date: $('l-year').value + '-' + pad2(parseInt($('l-month').value, 10)) + '-' + pad2(parseInt($('l-day').value, 10)),
       type: type,
       productId: $('l-product').value,
@@ -987,9 +1109,19 @@
       qtyUnit: $('l-qty-unit').value,
       price: $('l-price').value,
       priceUnit: $('l-price-unit').value,
-      party: $('l-party').value,
+      party: type === 'sell' ? '' : $('l-party').value,
       note: $('l-note').value
     };
+    if (type === 'sell') {
+      out.channel = $('l-ch-site').checked ? 'site' : ($('l-ch-person').checked ? 'person' : '');
+      if ($('l-customer').value === NEW_CUSTOMER) {
+        var f = customerName_($('l-first').value), l = customerName_($('l-last').value);
+        out.newCustomer = { firstName: f.value || $('l-first').value, lastName: l.value || $('l-last').value };
+      } else {
+        out.customerId = $('l-customer').value;
+      }
+    }
+    return out;
   }
 
   // The same checks as the server (the server checks again; it is the real guard).
@@ -1007,6 +1139,16 @@
     if (m.qty === null) add(TEXT.lBadQty);
     if (m.tooBig) add(TEXT.lTooBig);
     else if (m.unitToman === null) add(TEXT.lBadPrice);
+    if (entry.type === 'sell' && !customersReady) add(TEXT.lOldServer);
+    else if (entry.type === 'sell') {
+      if (entry.newCustomer) {
+        var msgs = { long: TEXT.lLongName, persian: TEXT.lPersianName, bad: TEXT.lBadName };
+        var f = customerName_(entry.newCustomer.firstName), l = customerName_(entry.newCustomer.lastName);
+        if (f.error) add(f.error === 'need' ? TEXT.lNeedFirst : msgs[f.error]);
+        if (l.error && !(f.error && f.error === l.error && f.error !== 'need')) add(l.error === 'need' ? TEXT.lNeedLast : msgs[l.error]);
+      } else if (!entry.customerId) add(TEXT.lNeedCustomer);
+      if (!entry.channel) add(TEXT.lNeedChannel);
+    }
     return out;
   }
 
@@ -1023,7 +1165,9 @@
     api('saveLedgerRow', { entry: entry, id: lEditId }, true).then(function (r) {
       if (r && r.ok) {
         closeLedgerForm();
-        setStatus(wasEdit ? TEXT.lUpdated : TEXT.lSaved, 'ok');
+        var done = wasEdit ? TEXT.lUpdated : TEXT.lSaved;
+        if (r.reusedCustomer) done = fill(TEXT.lReused, { n: toFa(r.reusedCustomer) }) + '. ' + done;
+        setStatus(done, 'ok');
         return loadLedger(true);
       }
       setBusy(false);
@@ -1072,7 +1216,19 @@
       syncOther();
       if (this.value === LEDGER_OTHER_ID) $('l-other-name').focus();
     });
-    ['l-type-buy', 'l-type-sell'].forEach(function (id) { $(id).addEventListener('change', syncPills); });
+    ['l-type-buy', 'l-type-sell', 'l-ch-site', 'l-ch-person'].forEach(function (id) { $(id).addEventListener('change', syncPills); });
+    $('l-cust-filter').addEventListener('input', function () { fillCustomerOptions(); });
+    $('l-customer').addEventListener('change', function () {
+      syncCustomer();
+      if (this.value !== NEW_CUSTOMER) return;
+      // Start the new name from what was typed in the search box (Latin words only).
+      var words = cleanLedgerText($('l-cust-filter').value).split(' ');
+      if (!$('l-first').value && !$('l-last').value && /^[A-Za-z]/.test(words[0] || '')) {
+        $('l-first').value = words[0];
+        $('l-last').value = words.slice(1).join(' ');
+      }
+      $('l-first').focus();
+    });
     ['l-qty', 'l-price'].forEach(function (id) { $(id).addEventListener('input', updatePreview); });
     ['l-qty-unit', 'l-price-unit'].forEach(function (id) { $(id).addEventListener('change', updatePreview); });
     var btns = document.querySelectorAll('[data-filter]');
