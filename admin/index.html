@@ -64,6 +64,28 @@
     .adm-tab:focus-visible { outline: 3px solid rgba(47, 122, 31, .35); outline-offset: 2px; }
     /* ==== end section switch ==== */
 
+    /* ==== «گزارش» (bargin-designer: polish here) ==== */
+    .rp-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 8px 0; }
+    @media (min-width: 640px) { .rp-tiles { grid-template-columns: repeat(4, 1fr); } }
+    .rp-tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 8px; }
+    .rp-tile b { display: block; font-size: 1.2rem; color: var(--green-dark); line-height: 1.5; }
+    .rp-tile span { font-size: .9rem; color: var(--muted); }
+    .rp-card h2 { font-size: 1.15rem; margin: 0 0 6px; color: var(--brown); }
+    .rp-hint { font-size: .85rem; color: var(--muted); margin: 4px 0; }
+    .rp-chart { overflow-x: auto; direction: ltr; -webkit-overflow-scrolling: touch; }
+    .rp-chart svg { display: block; max-width: none; font-family: inherit; }
+    .rp-chart text { font-family: inherit; fill: var(--text); }
+    .rp-empty { color: var(--muted); padding: 18px 0; }
+    .rp-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; margin: 8px 0 0; font-size: .9rem; }
+    .rp-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-inline-end: 5px; vertical-align: -1px; }
+    .rp-details { margin-top: 10px; text-align: right; }
+    .rp-details summary { cursor: pointer; font-weight: 700; color: var(--green-dark); min-height: 44px; display: flex; align-items: center; }
+    .rp-details > div { overflow-x: auto; }
+    .rp-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    .rp-table th, .rp-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+    .rp-table td.n, .rp-table th.n { text-align: left; white-space: nowrap; }
+    /* ==== end «گزارش» ==== */
+
     /* ==== «خرید و فروش» list (bargin-designer: polish here) ==== */
     .adm-filter { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 8px; }
     .adm-filter button { font-family: inherit; cursor: pointer; min-height: 44px; padding: 6px 18px; border-radius: 999px; border: 1px solid var(--line); background: #fffaf0; color: var(--text); font-weight: 700; }
@@ -181,6 +203,7 @@
       <div class="adm-tabs" role="group" aria-label="بخش‌ها">
         <button type="button" class="adm-tab" id="tab-products" aria-pressed="true">محصولات</button>
         <button type="button" class="adm-tab" id="tab-ledger" aria-pressed="false">خرید و فروش</button>
+        <button type="button" class="adm-tab" id="tab-report" aria-pressed="false">گزارش</button>
       </div>
       <p class="adm-status" id="status" role="status"></p>
       <div class="adm-issues" id="issues" hidden>
@@ -219,11 +242,67 @@
       </form>
       </div>
 
+      <!-- «گزارش» (sales charts). Filled by report.js; every number comes from the server (getReport). -->
+      <div id="v-report" hidden>
+        <div class="adm-bar">
+          <button type="button" class="btn btn-ghost" id="r-reload">بارگذاری دوباره</button>
+          <button type="button" class="btn btn-ghost" id="r-logout">خروج</button>
+        </div>
+        <div class="adm-filter" role="group" aria-label="بازه‌ی زمانی" id="r-periods">
+          <button type="button" data-period="month" aria-pressed="false">این ماه</button>
+          <button type="button" data-period="d90" aria-pressed="true">۳ ماه اخیر</button>
+          <button type="button" data-period="year" aria-pressed="false">امسال</button>
+          <button type="button" data-period="all" aria-pressed="false">همه</button>
+        </div>
+        <p class="adm-status" id="r-note" role="status"></p>
+        <div id="r-body" hidden>
+          <div class="rp-tiles" id="r-tiles"></div>
+
+          <section class="adm-card rp-card">
+            <h2>فروش در طول زمان</h2>
+            <div class="adm-filter rp-switch" role="group" aria-label="دسته‌بندی زمان" id="r-grains">
+              <button type="button" data-grain="day" aria-pressed="true">روزانه</button>
+              <button type="button" data-grain="week" aria-pressed="false">هفتگی</button>
+              <button type="button" data-grain="month" aria-pressed="false">ماهانه</button>
+            </div>
+            <p class="rp-hint" id="r-time-hint"></p>
+            <div class="rp-chart" id="r-time"></div>
+            <details class="rp-details"><summary>جدول اعداد</summary><div id="r-time-table"></div></details>
+          </section>
+
+          <section class="adm-card rp-card">
+            <h2>پرفروش‌ترین محصولات</h2>
+            <div class="adm-filter rp-switch" role="group" aria-label="معیار" id="r-modes">
+              <button type="button" data-mode="toman" aria-pressed="true">به تومان</button>
+              <button type="button" data-mode="count" aria-pressed="false">به تعداد</button>
+            </div>
+            <p class="rp-hint" id="r-prod-hint"></p>
+            <div class="rp-chart" id="r-prod"></div>
+            <details class="rp-details"><summary>جدول اعداد</summary><div id="r-prod-table"></div></details>
+          </section>
+
+          <section class="adm-card rp-card">
+            <h2>سایت یا حضوری؟</h2>
+            <div class="rp-chart" id="r-chan"></div>
+            <div class="rp-legend" id="r-chan-legend"></div>
+            <details class="rp-details"><summary>جدول اعداد</summary><div id="r-chan-table"></div></details>
+          </section>
+
+          <section class="adm-card rp-card">
+            <h2>بهترین مشتری‌ها</h2>
+            <div class="rp-chart" id="r-cust"></div>
+            <details class="rp-details"><summary>جدول اعداد</summary><div id="r-cust-table"></div></details>
+          </section>
+          <p class="rp-hint" id="r-used"></p>
+        </div>
+      </div>
+
       <!-- «خرید و فروش» (buys and sells). TODO: bargin-content to review the wording. -->
       <div id="v-ledger" hidden>
         <div class="adm-bar">
           <button type="button" class="btn btn-ghost" id="l-reload">بارگذاری دوباره</button>
-          <button type="button" class="btn" id="l-add">سفارش جدید</button>
+          <button type="button" class="btn" id="b-add">ثبت خرید</button>
+          <button type="button" class="btn" id="l-add">ثبت فروش</button>
           <button type="button" class="btn btn-ghost" id="l-logout">خروج</button>
         </div>
 
@@ -237,6 +316,35 @@
           <ul class="adm-ledger" id="l-list"></ul>
         </div>
 
+        <!-- the simple BUY form (owner approved 2026-11-07): date, what was bought, total paid. TODO: bargin-content to review. -->
+        <form class="adm-card adm-form" id="b-form" hidden novalidate>
+          <h2 id="b-form-title"></h2>
+          <fieldset>
+            <legend>تاریخ</legend>
+            <div class="adm-row">
+              <select id="b-day" aria-label="روز"></select>
+              <select id="b-month" class="wide" aria-label="ماه"></select>
+              <select id="b-year" aria-label="سال"></select>
+            </div>
+          </fieldset>
+          <label for="b-name">چی خریدی؟<span class="hint">حداکثر ۶۰ حرف</span></label>
+          <input id="b-name" type="text" autocomplete="off" maxlength="60">
+          <label for="b-total">مبلغ کل<span class="hint">چقدر پول دادی؟ بنویس و هزار تومان یا میلیون تومان رو انتخاب کن</span></label>
+          <div class="adm-row">
+            <input id="b-total" type="text" inputmode="decimal" autocomplete="off" maxlength="16" class="ltr" dir="ltr">
+            <select id="b-unit" aria-label="واحد مبلغ">
+              <option value="thousand">هزار تومان</option>
+              <option value="million">میلیون تومان</option>
+            </select>
+          </div>
+          <p class="adm-old" id="b-preview" aria-live="polite"></p>
+          <p class="adm-old" id="b-old-note" hidden></p>
+          <div class="adm-bar">
+            <button type="submit" class="btn" id="b-save">ثبت خرید</button>
+            <button type="button" class="btn btn-ghost" id="b-cancel">انصراف</button>
+          </div>
+        </form>
+
         <form class="adm-card adm-form" id="l-form" hidden novalidate>
           <h2 id="l-form-title"></h2>
           <fieldset>
@@ -247,7 +355,7 @@
               <select id="l-year" aria-label="سال"></select>
             </div>
           </fieldset>
-          <fieldset>
+          <fieldset id="l-type-wrap">
             <legend>نوع</legend>
             <div class="adm-pills">
               <label><input type="radio" name="l-type" id="l-type-buy" value="buy"><span>خرید</span></label>
@@ -321,5 +429,6 @@
 
   <script src="../products.js"></script>
   <script src="admin.js"></script>
+  <script src="report.js"></script>
 </body>
 </html>

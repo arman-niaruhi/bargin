@@ -428,7 +428,8 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     { action: "getProducts" }, { action: "getProducts", session: "" }, { action: "getProducts", session: "x".repeat(64) },
     { action: "getProducts", session: "0".repeat(64) }, { action: "saveProduct", data: { item: { id: "x", name: "x", category: "x", price: "1" }, originalId: "" } },
     { action: "deleteProduct", data: { id: "a" } }, { action: "publishCsv" }, { action: "getProducts", session: { a: 1 } },
-    { action: "getLedger" }, { action: "saveLedgerRow", data: { entry: {}, id: "" } }, { action: "deleteLedgerRow", session: "0".repeat(64), data: { id: "L" + "0".repeat(32) } }
+    { action: "getLedger" }, { action: "saveLedgerRow", data: { entry: {}, id: "" } }, { action: "deleteLedgerRow", session: "0".repeat(64), data: { id: "L" + "0".repeat(32) } },
+    { action: "saveLedgerBuy", data: { buy: {}, id: "" } }
   ];
   const res = attempts.map((a) => post(a));
   check("(h) without a valid session every protected action gives NO_SESSION", res.every((x, i) => i === 7 ? x.error === "bad_request" : x.error === "NO_SESSION"), res.map((x) => x.error).join());
@@ -494,7 +495,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(j) malformed requests give bad_request and touch nothing", bad.every((b) => post(b).error === "bad_request") && sheetLog.touched === 0);
   const names = ["evil", "constructor", "__proto__", "toString", "", 5, null, "authorizeOnce", "readSheet"];
   check("(j) unknown actions are refused", names.every((a) => post({ action: a }).error === "unknown_action") && sheetLog.touched === 0);
-  check("(j) the action lists are exactly the expected ones", vm.runInContext("PUBLIC_ACTIONS.join()", gs) === "requestCode,verifyCode,logout,logEvent" && vm.runInContext("PROTECTED_ACTIONS.join()", gs) === "getProducts,saveProduct,deleteProduct,publishCsv,getLedger,saveLedgerRow,deleteLedgerRow,saveLedgerOrder,deleteLedgerOrder");
+  check("(j) the action lists are exactly the expected ones", vm.runInContext("PUBLIC_ACTIONS.join()", gs) === "requestCode,verifyCode,logout,logEvent" && vm.runInContext("PROTECTED_ACTIONS.join()", gs) === "getProducts,saveProduct,deleteProduct,publishCsv,getLedger,saveLedgerRow,deleteLedgerRow,saveLedgerOrder,deleteLedgerOrder,saveLedgerBuy,getReport");
   const g = JSON.parse(gs.doGet().s);
   check("(j) doGet returns only harmless JSON", g.ok === true && Object.keys(g).join() === "ok,service");
   const throwing = gs.handleRequest_(JSON.stringify({ action: "getProducts", session: "s" }), { requireSession: () => true, publicActions: {}, actions: { getProducts: () => { throw new Error("sheet down"); } } });
@@ -1024,7 +1025,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const e2 = lg.data.entries[0];
   check("(n) getLedger: keys and texts come back (type buy, kg, million, typed «1.2», row total 3,000,000)",
     e2.type === "buy" && e2.typeText === "خرید" && e2.qty === 2.5 && e2.qtyUnit === "kg" && e2.priceToman === 1200000 && e2.priceAmount === "1.2" && e2.priceUnit === "million" && e2.rowToman === 3000000 && e2.party === "آقای رضایی" && e2.note === "نقدی", JSON.stringify(e2));
-  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers,orders,packSize,productVersion");
+  check("(n) getLedger: no sum or total over rows is sent", !("total" in lg.data) && !("sum" in lg.data) && Object.keys(lg.data).join() === "ok,entries,more,customers,orders,packSize,productVersion,simpleBuy");
   const bad = add({ price: "0" });
   check("(n) save: a bad entry is refused with issues and nothing is written", bad.ok === true && bad.data.ok === false && bad.data.issues.length === 1 && ledgerTab().rows.length === 4, JSON.stringify(bad));
 
@@ -1190,6 +1191,60 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     const ed2 = post({ action: "saveLedgerRow", session: sess, data: { entry: good({ type: "buy", party: "بازار", customerId: "3", channel: "site" }), id: c1.data.id } });
     const r1y = ledgerTab().rows.find((r) => r[0] === c1.data.id);
     check("(o) edit: switching a sale to a buy empties customerId and channel", ed2.data.ok && r1y[15] === "" && r1y[16] === "" && r1y[12] === "بازار");
+    // ---- the simple buy (saveLedgerBuy, owner approved 2026-11-07) ----
+    mkBook();
+    const sb = (b, id = "") => post({ action: "saveLedgerBuy", session: sess, data: { buy: Object.assign({ date: "1405-08-16", name: "برنج طارم", total: "1200", totalUnit: "thousand" }, b), id } });
+    const sbRows = () => ledgerTab().rows.slice(1);
+    const s1 = sb({});
+    const r1s = sbRows()[0];
+    check("(s) simple buy: saved as ONE row, type خرید, «سایر» id, typed name, qty 1 «عدد», total in priceToman and rowToman, typed amount kept, nothing else",
+      s1.ok === true && s1.data.ok === true && sbRows().length === 1 && r1s[3] === "خرید" && r1s[4] === gs.LEDGER_OTHER_ID && r1s[5] === "برنج طارم" && r1s[6] === 1 && r1s[7] === "عدد" &&
+      r1s[8] === 1200000 && r1s[9] === "1200" && r1s[10] === "هزار تومان" && r1s[11] === 1200000 && r1s[12] === "" && r1s[13] === "" && r1s[15] === "" && r1s[16] === "" && r1s[17] === "" && r1s[18] === "" && r1s[19] === "" && r1s[14] === OWNER && /^L[0-9a-f]{32}$/.test(r1s[0]), JSON.stringify([s1, r1s]));
+    const sNoName = sb({ name: "   " }), sNoName2 = sb({ name: undefined }), sLong = sb({ name: "x".repeat(61) }), sOk60 = sb({ name: "ن".repeat(60) });
+    check("(s) simple buy: the name is required and at most 60 characters (spaces cleaned first); 60 is fine",
+      sNoName.data.ok === false && sNoName.data.issues[0].field === "productName" && sNoName2.data.ok === false && sLong.data.ok === false && sLong.data.issues[0].field === "productName" && sOk60.data.ok === true && sbRows().length === 2, JSON.stringify([sNoName, sLong]));
+    const sSp = sb({ name: "  برنج    ایرانی \n " });
+    check("(s) simple buy: the name is cleaned (single spaces, trimmed)", sSp.data.ok === true && sbRows()[2][5] === "برنج ایرانی");
+    const sF = [sb({ name: "=HYPERLINK(\"http://x\",\"y\")" }), sb({ name: "+1" }), sb({ name: "-2" }), sb({ name: "@sum" })];
+    const fRows = sbRows().slice(3);
+    check("(s) simple buy: a name starting with = + - @ is escaped with an apostrophe (never a formula)", sF.every((x) => x.data.ok === true) && fRows.every((r) => r[5].startsWith("'")) && fRows[0][5].startsWith("'="), JSON.stringify(fRows.map((r) => r[5])));
+    const sm = sb({ name: "گوشت", total: "1.5", totalUnit: "million" }), sp = sb({ name: "نخ", total: "۷۵٫۵", totalUnit: "thousand" });
+    const smr = sbRows()[7], spr = sbRows()[8];
+    check("(s) simple buy: the total typed in thousand or million (Persian digits accepted) → whole toman in priceToman and rowToman",
+      sm.data.ok && smr[8] === 1500000 && smr[11] === 1500000 && smr[9] === "1.5" && smr[10] === "میلیون تومان" && sp.data.ok && spr[8] === 75500 && spr[11] === 75500, JSON.stringify([smr, spr]));
+    const sBad = [sb({ total: "0" }), sb({ total: "" }), sb({ total: "abc" }), sb({ total: "1.2345" }), sb({ totalUnit: "toman" }), sb({ total: "99999999999", totalUnit: "million" }), sb({ date: "1405-13-40" })];
+    check("(s) simple buy: a zero, empty, text, too-precise or huge total, a bad unit or a bad date is refused and nothing is written",
+      sBad.every((x) => x.data.ok === false && x.data.issues.length >= 1) && sbRows().length === 9 && sBad[0].data.issues[0].message === gs.MSG.badBuyTotal, JSON.stringify(sBad.map((x) => x.data.issues && x.data.issues[0].field)));
+    const idKeep = s1.data.id;
+    const se = sb({ name: "برنج هاشمی", total: "2", totalUnit: "million", date: "1405-08-20" }, idKeep);
+    const er = ledgerTab().rows.find((r) => r[0] === idKeep);
+    check("(s) simple buy: an edit keeps the id, the entered time and the email, changes name / total / date, and adds no row",
+      se.data.ok === true && se.data.updated === true && se.data.id === idKeep && sbRows().length === 9 && er[5] === "برنج هاشمی" && er[11] === 2000000 && er[2] === "1405-08-20" && er[1] === r1s[1] && er[14] === OWNER, JSON.stringify(er));
+    const sBadId = [sb({}, "Lnope"), sb({}, "L" + "9".repeat(32))];
+    check("(s) simple buy: editing an unknown or malformed id is refused", sBadId.every((x) => x.data.ok === false && x.data.message === gs.MSG.ledgerNotFound) && sbRows().length === 9);
+    // sales are unaffected; a sale or an order line cannot be rewritten as a simple buy
+    const sale1 = post({ action: "saveLedgerRow", session: sess, data: { entry: good({}), id: "" } });
+    const ordr = post({ action: "saveLedgerOrder", session: sess, data: { order: { date: "1405-08-16", type: "buy", party: "", note: "", lines: [{ productId: "sabzi-ghormeh", qty: "1", qtyUnit: "pack", price: "450", priceUnit: "thousand", packSize: "" }, { productId: "esfenaj", qty: "2", qtyUnit: "pack", price: "300", priceUnit: "thousand", packSize: "" }] }, orderId: "", rowId: "" } });
+    const before = JSON.stringify(ledgerTab().rows);
+    const asBuy1 = sb({}, sale1.data.id), inOrder = ledgerTab().rows.find((r) => r[17] === ordr.data.orderId && r[3] === "خرید");
+    const asBuy2 = sb({}, inOrder[0]);
+    check("(s) sales are unaffected: a normal sale still saves with customer and channel", sale1.data.ok === true && ledgerTab().rows.find((r) => r[0] === sale1.data.id)[3] === "فروش" && ledgerTab().rows.find((r) => r[0] === sale1.data.id)[15] === "1");
+    check("(s) simple buy: a sale, or a buy line inside an order, is refused (nothing changes)", asBuy1.data.ok === false && asBuy2.data.ok === false && asBuy1.data.message === gs.MSG.buyNotSimple && JSON.stringify(ledgerTab().rows) === before);
+    // old buys (real product, qty, seller, note) still load and are listed unchanged
+    mkBook(undefined, [L.slice(), ["L" + "1".repeat(32), "2026-11-07 09:00:00", "1405-08-10", "خرید", "sabzi-ghormeh", "سبزی قورمه", 2.5, "کیلو", 400000, "400", "هزار تومان", 1000000, "آقای رضایی", "نقدی", OWNER, "", "", "", "۵۰۰ گرم", ""]]);
+    const lgOld = post({ action: "getLedger", session: sess });
+    const oldE = lgOld.data.entries[0];
+    check("(s) an old buy still loads with all its fields; getLedger says simpleBuy:true", lgOld.data.simpleBuy === true && oldE.type === "buy" && oldE.productId === "sabzi-ghormeh" && oldE.qty === 2.5 && oldE.party === "آقای رضایی" && oldE.note === "نقدی" && oldE.rowToman === 1000000);
+    const oe = sb({ name: "قورمه قدیمی", total: "1000" }, oldE.id);
+    const orow = ledgerTab().rows[1];
+    check("(s) an old single buy can be re-saved as a simple buy: only name and total stay (qty 1 «عدد», seller / note / pack size empty), same id",
+      oe.data.ok === true && ledgerTab().rows.length === 2 && orow[0] === oldE.id && orow[4] === gs.LEDGER_OTHER_ID && orow[5] === "قورمه قدیمی" && orow[6] === 1 && orow[7] === "عدد" && orow[12] === "" && orow[13] === "" && orow[18] === "" && orow[19] === "");
+    check("(s) without a session saveLedgerBuy gives NO_SESSION", post({ action: "saveLedgerBuy", data: { buy: {}, id: "" } }).error === "NO_SESSION");
+    let sbThrew = false; try { gs.saveLedgerBuy({}, ""); } catch (e) { sbThrew = true; }
+    check("(s) calling saveLedgerBuy directly, outside a checked request, throws (assertSession_)", sbThrew);
+    check("(s) the server says simpleBuy: true; admin.js refuses to save a buy without it (old-script guard) and the sale form is not changed",
+      /simpleBuy: true/.test(read("tools/admin/Code.gs")) && /ledgerSimpleBuy = r\.simpleBuy === true/.test(adminSrc) && /if \(!ledgerSimpleBuy\) add\(TEXT\.bOldServer\)/.test(adminSrc) && /code === 'unknown_action' \? TEXT\.bOldServer/.test(adminSrc));
+    check("(s) admin.js: the page sends only date, name, total and unit to saveLedgerBuy", /api\('saveLedgerBuy', \{ buy: buy, id: bEdit\.id \}, true\)/.test(adminSrc) && /name: cleanLedgerText\(\$\('b-name'\)\.value\), total: \$\('b-total'\)\.value, totalUnit: \$\('b-unit'\)\.value/.test(adminSrc));
     // customers tab missing / first / broken
     mkBook(["products", "ledger", "log"]);
     const g2 = post({ action: "getLedger", session: sess });
@@ -1592,6 +1647,67 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
       const ob = soo({});
       check("(r) merge: an order of BUY rows with the same date is not a target for a sale", !("mergedInto" in ob.data) && ob.data.orderId === 6);
       check("(r) admin.js shows «به سفارش ۱۲ همون روز اضافه شد 🌿» for mergedInto", /lMerged: 'به سفارش \{n\} همون روز اضافه شد 🌿'/.test(adminSrc) && /if \(r\.mergedInto\) done = fill\(TEXT\.lMerged/.test(adminSrc));
+
+      // ---- (t) «گزارش»: getReport / reportSummarize_ (owner approved 2026-11-07) ----
+      {
+        const rr = (i, date, type, pid, pname, qty, unit, toman, cust, chan, oid) => {
+          const r = new Array(20).fill("");
+          r[0] = "L" + String(i).padStart(32, "0"); r[1] = "2026-11-07 10:00:00"; r[2] = date; r[3] = type; r[4] = pid; r[5] = pname;
+          r[6] = qty; r[7] = unit; r[11] = toman; r[14] = OWNER; r[15] = cust; r[16] = chan; r[17] = oid;
+          return r;
+        };
+        const S = "فروش", B = "خرید", PK = "بسته/ظرف", KG = "کیلو";
+        const rep = (o, entriesRows) => { ms(entriesRows); return post({ action: "getReport", session: ss, data: o }); };
+        const rows0 = [
+          rr(1, "1405-08-10", S, "a", "سبزی قورمه", 2, PK, 900000, "1", "سایت", 7),
+          rr(2, "1405-08-10", S, "b", "نعنا", 2.5, KG, 600000, "1", "سایت", 7),     // same order 7: ONE order, two lines
+          rr(3, "1405-08-12", S, "a", "سبزی قورمه", 10, PK, 4500000, "2", "حضوری", 8),
+          rr(4, "1405-08-12", S, "b", "نعنا", 1, PK, 330000, "2", "حضوری", 8),
+          rr(5, "1405-08-13", S, "a", "سبزی قورمه", 1, PK, 450000, "", "", ""),    // old row: no customer, no channel, no order number
+          rr(6, "1405-08-14", B, "a", "سبزی قورمه", 5, PK, 2000000, "", "", ""),   // a buy: never counted
+          rr(7, "1405-08-14", S, "a", "سبزی قورمه", 1, PK, "", "3", "سایت", 9),    // no total: skipped
+          rr(8, "", S, "a", "سبزی قورمه", 1, PK, 1000, "3", "سایت", 10),            // no date: skipped
+          rr(9, "1405-07-01", S, "a", "سبزی قورمه", 1, PK, 111, "4", "سایت", 11)   // outside the period below
+        ];
+        const r1 = rep({ from: "1405-08-01", to: "1405-08-30" }, rows0);
+        const sm = r1.data && r1.data.summary;
+        check("(t) getReport: answers ok with report:true and a summary", r1.ok && r1.data.ok === true && r1.data.report === true && !!sm, JSON.stringify(r1).slice(0, 200));
+        check("(t) report: buys are never counted (money, orders, products)", sm.totals.toman === 900000 + 600000 + 4500000 + 330000 + 450000 && sm.rows.buysIgnored === 1 && sm.rows.used === 5);
+        check("(t) report: an order with two lines is ONE order; a row without an order number is its own order (3 orders)", sm.totals.orders === 3 && sm.byDay.length === 3 && sm.byDay[0].orders === 1 && sm.byDay[0].toman === 1500000, JSON.stringify(sm.byDay));
+        check("(t) report: old rows without a channel go to «نامشخص»; site and person are kept apart",
+          sm.byChannel.unknown.toman === 450000 && sm.byChannel.unknown.orders === 1 && sm.byChannel.site.toman === 1500000 && sm.byChannel.site.orders === 1 && sm.byChannel.person.toman === 4830000 && sm.byChannel.person.orders === 1, JSON.stringify(sm.byChannel));
+        check("(t) report: a sale without a total or a date is skipped and counted (not guessed); out-of-period sales are not counted",
+          sm.rows.skipped.noTotal === 1 && sm.rows.skipped.noDate === 1 && !JSON.stringify(sm).includes("111"));
+        const pa = sm.byProduct.find((p) => p.id === "a"), pb = sm.byProduct.find((p) => p.id === "b");
+        check("(t) report: quantities are kept per unit and never mixed (packs and kilos apart)", pa.qty.pack === 13 && pa.qty.kg === 0 && pb.qty.pack === 1 && pb.qty.kg === 2.5 && pb.toman === 930000 && sm.byProduct[0].id === "a", JSON.stringify(sm.byProduct));
+        check("(t) report: customers counted once each; top customers by money, a sale without a customer id is left out; names come from the list",
+          sm.totals.customers === 2 && sm.topCustomers.length === 2 && sm.topCustomers[0].id === "2" && sm.topCustomers[0].toman === 4830000 && sm.topCustomers[0].orders === 1 && sm.topCustomers[1].orders === 1 && sm.topCustomers[1].name === "zahra ahmadi", JSON.stringify(sm.topCustomers));
+        const r0 = rep({ from: "1406-01-01", to: "1406-01-30" }, rows0);
+        check("(t) report: an empty period gives zeros and empty lists, not an error", r0.data.ok === true && r0.data.summary.totals.toman === 0 && r0.data.summary.totals.orders === 0 && r0.data.summary.byDay.length === 0 && r0.data.summary.byProduct.length === 0 && r0.data.summary.topCustomers.length === 0 && r0.data.summary.rows.used === 0);
+        const rAll = rep({ from: "", to: "" }, rows0);
+        check("(t) report: empty from/to = everything", rAll.data.summary.rows.used === 6 && rAll.data.summary.totals.toman === sm.totals.toman + 111);
+        const bad = [rep({ from: "x", to: "" }, rows0), rep({ from: "1405-08-30", to: "1405-08-01" }, rows0), rep({ from: 5, to: "" }, rows0), rep({ from: "1405-13-01", to: "" }, rows0)];
+        check("(t) report: a bad or reversed range is refused with a message", bad.every((x) => x.data.ok === false && typeof x.data.message === "string" && x.data.message.length > 0), JSON.stringify(bad));
+        // more than 2000 rows are ALL counted (getLedger only sends the newest 2000)
+        const many = [];
+        for (let i = 1; i <= 2600; i++) many.push(rr(i, "1405-08-" + String(1 + (i % 28)).padStart(2, "0"), S, "a", "سبزی قورمه", 1, PK, 1000, String(1 + (i % 5)), "سایت", i));
+        const rm = rep({ from: "", to: "" }, many);
+        const gl = post({ action: "getLedger", session: ss });
+        check("(t) report: 2600 rows are all counted (the ledger list only sends 2000)", rm.data.summary.rows.used === 2600 && rm.data.summary.totals.toman === 2600000 && rm.data.summary.totals.orders === 2600 && gl.data.entries.length === 2000 && gl.data.more === true, String(rm.data.summary.rows.used));
+        // read-only
+        ms(rows0);
+        const w0 = ledgerTab().writes || 0, cw = book.getSheetByName("مشتری‌ها").writes || 0;
+        post({ action: "getReport", session: ss, data: { from: "", to: "" } });
+        check("(t) report: getReport writes nothing (no setValues on any tab) and takes no lock", (ledgerTab().writes || 0) === w0 && (book.getSheetByName("مشتری‌ها").writes || 0) === cw && !/getReport: function \(d\) \{ return withLock_/.test(read("tools/admin/Code.gs")));
+        const nos = post({ action: "getReport", data: { from: "", to: "" } }), nos2 = post({ action: "getReport", session: "f".repeat(64), data: {} });
+        let thr = false;
+        try { gs.getReport({ from: "", to: "" }); } catch (e) { thr = true; }
+        check("(t) report: without a session getReport gives NO_SESSION; called directly it throws (assertSession_)", nos.error === "NO_SESSION" && nos2.error === "NO_SESSION" && thr);
+        mkBook(["products", "customers", "log"]);
+        const noTab = post({ action: "getReport", session: ss, data: {} });
+        check("(t) report: no «خرید و فروش» tab → a message, no crash", noTab.data.ok === false && typeof noTab.data.message === "string");
+        check("(t) report: the answer carries the capability flag report:true", /report: true, summary:/.test(read("tools/admin/Code.gs")));
+      }
     }
   }
 
@@ -1743,6 +1859,63 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const cg = read("tools/admin/Code.gs");
   const ncLine = cg.split("\n").find((l) => l.includes("toAsciiDigits(input).replace("));
   check("(q) normalizeCode_ writes its invisible characters as escapes; no BOM or bidi mark is left in Code.gs; Persian digits still work", !!ncLine && !/[\u200c\u200e\u200f\ufeff]/.test(ncLine) && /\\u200C\\u200F\\u200E/.test(ncLine) && !/[\ufeff\u200e\u200f]/.test(cg) && gs.normalizeCode_("۱۲۳ ۴۵۶") === "123456" && gs.normalizeCode_("12\u200c3\u200f4\u200e56") === "123456");
+}
+// ---- (t) «گزارش» page code: admin/report.js (owner approved 2026-11-07) ----
+{
+  const rsrc = read("admin/report.js"), html = read("admin/index.html"), adm = read("admin/admin.js");
+  const win = { barginAdmin: { jalCal_: gs.jalCal_, toJalali_: gs.toJalali_, months: ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"] } };
+  const ctxr = { window: win, document: { getElementById: () => null }, Intl, Date, Math, Object, String };
+  vm.runInNewContext(rsrc, ctxr);
+  const U = win.barginReport.util;
+  const p2 = (n) => String(n).padStart(2, "0");
+  // Saturday weeks against known dates (2026-11-07 = Saturday = 1405-08-16)
+  check("(t) weeks start on Saturday: 1405-08-16 (Sat) → itself, Fri 1405-08-22 → 1405-08-16, Sat 1405-08-23 → itself", U.weekStartKey("1405-08-16") === "1405-08-16" && U.weekStartKey("1405-08-22") === "1405-08-16" && U.weekStartKey("1405-08-23") === "1405-08-23");
+  check("(t) weeks: Friday 1405-08-15 → Saturday 1405-08-09", U.weekStartKey("1405-08-15") === "1405-08-09");
+  check("(t) weeks cross a month: 1405-08-01 (Fri) → 1405-07-25; and a year: 1404-12-29 (Fri) → 1404-12-23, 1405-01-01 (Sat) → itself, 1405-01-03 → 1405-01-01",
+    U.weekStartKey("1405-08-01") === "1405-07-25" && U.weekStartKey("1404-12-29") === "1404-12-23" && U.weekStartKey("1405-01-01") === "1405-01-01" && U.weekStartKey("1405-01-03") === "1405-01-01");
+  let allSat = true;
+  for (let i = 0; i < 400; i++) { const k = U.addDays("1404-01-01", i), w = U.weekStartKey(k), d = U.dayDiff(w, k); if (d < 0 || d > 6 || U.weekStartKey(w) !== w) allSat = false; }
+  check("(t) weeks: 400 days in a row each map to a start 0-6 days before, and a start maps to itself", allSat);
+  check("(t) addDays crosses month and year ends (Mehr has 30 days, Esfand 1404 has 29)", U.addDays("1405-07-30", 1) === "1405-08-01" && U.addDays("1404-12-29", 1) === "1405-01-01" && U.addDays("1405-01-01", -1) === "1404-12-29" && U.addDays("1405-06-31", 1) === "1405-07-01");
+  const T = "1405-08-16";
+  const rg = (p) => U.rangeFor(p, T);
+  check("(t) «این ماه» = day 1 of the Persian month to today; «امسال» = 1 Farvardin to today; «همه» = no limit",
+    rg("month").from === "1405-08-01" && rg("month").to === T && rg("year").from === "1405-01-01" && rg("year").to === T && rg("all").from === "" && rg("all").to === "");
+  check("(t) «۳ ماه اخیر» = the last 90 days counted from today (90 days including today): 1405-05-19 … 1405-08-16", rg("d90").from === "1405-05-19" && rg("d90").to === T && U.dayDiff(rg("d90").from, T) === 89);
+  check("(t) the 90-day range crosses a year end (today 1405-01-10 → 1404-10-10) and Esfand correctly", U.rangeFor("d90", "1405-01-10").from === "1404-10-10" && U.dayDiff("1404-10-10", "1405-01-10") === 89);
+  check("(t) today comes from the Tehran clock, not the computer's zone (2026-11-06 22:00 UTC is already 1405-08-16 there)", U.todayKey(new Date(Date.UTC(2026, 10, 6, 22, 0, 0))) === "1405-08-16" && U.todayKey(new Date(Date.UTC(2026, 10, 7, 12, 0, 0))) === "1405-08-16" && U.todayKey(new Date(Date.UTC(2026, 10, 7, 21, 0, 0))) === "1405-08-17");
+  // number formatting
+  const fm = [[1200000, "۱٫۲ میلیون"], [2000000, "۲ میلیون"], [450000, "۴۵۰ هزار"], [1500, "۱٫۵ هزار"], [800, "۸۰۰"], [0, "۰"], [2500000000, "۲٫۵ میلیارد"], [12345678, "۱۲٫۳ میلیون"]];
+  check("(t) compact money in Persian digits: «۱٫۲ میلیون», «۴۵۰ هزار», «۲٫۵ میلیارد», «۰»", fm.every(([n, t]) => U.fmtMoney(n) === t), JSON.stringify(fm.map(([n]) => U.fmtMoney(n))));
+  check("(t) quantities per unit, never mixed: «۱۲ بسته + ۲٫۵ کیلو»; a single unit; nothing = «—»",
+    U.fmtQty({ pack: 12, kg: 2.5, g: 0, piece: 0 }) === "۱۲ بسته + ۲٫۵ کیلو" && U.fmtQty({ pack: 0, kg: 0, g: 300, piece: 4 }) === "۳۰۰ گرم + ۴ عدد" && U.fmtQty({ pack: 0, kg: 0, g: 0, piece: 0 }) === "—");
+  const pl = [{ id: "x", name: "الف", toman: 100, lines: 1, qty: { pack: 0, kg: 9, g: 0, piece: 0 } }, { id: "y", name: "ب", toman: 50, lines: 3, qty: { pack: 5, kg: 0, g: 0, piece: 0 } }, { id: "z", name: "ج", toman: 900, lines: 2, qty: { pack: 5, kg: 1, g: 0, piece: 0 } }];
+  check("(t) products ranked by packs (kilos never added to packs); ties by sale lines", U.rankByCount(pl).map((p) => p.id).join() === "y,z,x");
+  const nine = Array.from({ length: 10 }, (_, i) => ({ id: "p" + i, name: "م" + i, toman: 1000 - i, lines: 1, qty: { pack: 10 - i, kg: i ? 0 : 1, g: 0, piece: 0 } }));
+  const top = U.productRows(nine, "toman");
+  check("(t) top 8 products plus «بقیه» (the other two summed per unit)", top.rows.length === 9 && top.rows[8].rest === true && top.rows[8].toman === 992 + 991 && top.rows[8].qty.pack === 2 + 1 && U.productRows(nine.slice(0, 8), "toman").rows.length === 8);
+  // series
+  const byDay = [{ d: "1405-08-10", toman: 5, orders: 1 }, { d: "1405-08-13", toman: 7, orders: 2 }, { d: "1405-08-16", toman: 1, orders: 1 }];
+  const wk = U.buildSeries(byDay, "week", "", "");
+  check("(t) weekly series: Sat 08-09 holds 08-10 and 08-13 (12), Sat 08-16 holds 08-16 (1); empty weeks are filled with zero",
+    wk.length === 2 && wk[0].key === "1405-08-09" && wk[0].toman === 12 && wk[0].orders === 3 && wk[1].key === "1405-08-16" && U.buildSeries(byDay, "day", "1405-08-09", "1405-08-17").length === 9 && U.buildSeries(byDay, "day", "1405-08-09", "1405-08-17")[0].toman === 0);
+  const mo = U.buildSeries([{ d: "1405-07-30", toman: 3, orders: 1 }, { d: "1405-09-02", toman: 4, orders: 1 }], "month", "", "");
+  check("(t) monthly series uses Persian months and fills the empty month between (Mehr, Aban, Azar)", mo.length === 3 && mo[1].toman === 0 && U.labelOf(mo[1].key, "month") === "آبان" && U.labelOf("1405-08-16", "day") === "۱۶");
+  check("(t) an empty period gives an empty series", U.buildSeries([], "day", "", "").length === 0);
+  // the page code itself
+  const newer = /\?\.|\?\?|Object\.fromEntries|replaceAll|\.at\(|\.flat\(|flatMap|matchAll|structuredClone|\/[gimsy]*u[gimsy]*[,;)\s]/;
+  check("(t) report.js and the whole admin use nothing newer than ES2017", !newer.test(rsrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(adm.replace(/\/\/[^\n]*/g, "")));
+  check("(t) report.js: no innerHTML / eval / document.write / libraries / network calls of its own (only barginAdmin.api)", !/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|fetch\(|XMLHttpRequest|import\(|require\(|https?:\/\//.test(rsrc.replace(/'http:\/\/www\.w3\.org\/2000\/svg'/, "")));
+  check("(t) report.js only reads: it calls getReport and no save/delete action", /api\('getReport'/.test(rsrc) && !/saveLedger|deleteLedger|saveProduct|deleteProduct|publishCsv/.test(rsrc));
+  check("(t) the page loads report.js after admin.js (script-src 'self' allows it) and has the «گزارش» tab", /<script src="admin\.js"><\/script>\s*<script src="report\.js"><\/script>/.test(html) && /id="tab-report"[^>]*>گزارش</.test(html) && /script-src 'self'/.test(html));
+  check("(t) the report has the four tiles, the three switches and the four charts with a «جدول اعداد» under each",
+    ["جمع فروش", "تعداد سفارش", "تعداد مشتری", "میانگین هر سفارش"].every((t) => rsrc.includes(t)) && ["این ماه", "۳ ماه اخیر", "امسال", "روزانه", "هفتگی", "ماهانه", "به تومان", "به تعداد", "فروش در طول زمان", "پرفروش‌ترین محصولات", "سایت یا حضوری؟", "بهترین مشتری‌ها"].every((t) => html.includes(t)) && (html.match(/<summary>جدول اعداد<\/summary>/g) || []).length === 4 && (html.match(/<details/g) || []).length >= 4);
+  check("(t) the old-server guard: an old script (unknown_action, or no report:true) shows a message; the session loss goes through onApiError (back to login)", /unknown_action/.test(rsrc) && /r\.report !== true/.test(rsrc) && /ad\.onApiError\(err/.test(rsrc) && /onApiError[\s\S]{0,200}NO_SESSION/.test(adm));
+  check("(t) the report is wiped when the login screen shows (logout / NO_SESSION), so no customer name stays in the page", /id !== 's-app' && window\.barginReport\) window\.barginReport\.reset\(\)/.test(adm) && /reset: function/.test(rsrc));
+  check("(t) channel colours: green for سایت, walnut for حضوری, tan for نامشخص", /site: '#2f7a1f', person: '#4a2c1a', unknown: '#d2ad6c'/.test(rsrc));
+  check("(t) the chart shows at most the newest 60 bars and says so", /MAX_BARS = 60/.test(rsrc) && /slice\(-MAX_BARS\)/.test(rsrc) && /more60/.test(rsrc));
+  check("(t) customer names stay in the admin: no name in the public site files, report.js has no hard-coded names", !/zahra|ahmadi/i.test(rsrc + html.slice(html.indexOf("id=\"v-report\""), html.indexOf("id=\"v-ledger\""))));
+  check("(t) deploy.yml copies the whole admin folder (so report.js goes live with it)", /cp -r[^\n]*\badmin\b/.test(read(".github/workflows/deploy.yml")));
 }
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

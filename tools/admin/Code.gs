@@ -45,7 +45,7 @@ var FAKE_SEND_DELAY_MS = 700;    // an unknown address waits about as long as a 
 // Actions that need no session: ask for a code, send the code, log out, write customer activity.
 var PUBLIC_ACTIONS = ['requestCode', 'verifyCode', 'logout', 'logEvent'];
 // Actions that need a valid session (checked once, in handleRequest_).
-var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv', 'getLedger', 'saveLedgerRow', 'deleteLedgerRow', 'saveLedgerOrder', 'deleteLedgerOrder'];
+var PROTECTED_ACTIONS = ['getProducts', 'saveProduct', 'deleteProduct', 'publishCsv', 'getLedger', 'saveLedgerRow', 'deleteLedgerRow', 'saveLedgerOrder', 'deleteLedgerOrder', 'saveLedgerBuy', 'getReport'];
 // (hourlyVersioning is NOT an action: it is only started by its time trigger.)
 
 // Limits checked before anything else happens.
@@ -92,6 +92,7 @@ var MSG = {
   manyIds: 'چند سطر با شناسه «{value}» هست. اول توی شیت درستش کن.',
   sheetProblems: 'اول مشکل‌های شیت رو درست کن، بعد ذخیره کن.',
   // «خرید و فروش» (TODO: bargin-content to review)
+  reportRange: 'بازه‌ی تاریخ درست نیست.',
   noLedger: 'تب «خرید و فروش» هنوز ساخته نشده. توی Apps Script یه بار تابع setupLedger رو اجرا کن.',
   ledgerFirst: 'تب «خرید و فروش» نباید اولین تب شیت باشه. یه بار تابع setupLedger رو اجرا کن تا درست بشه.',
   ledgerHeader: 'سطر اول تب «خرید و فروش» به‌هم ریخته. تابع setupLedger رو اجرا کن یا سرستون‌ها رو درست کن.',
@@ -113,6 +114,8 @@ var MSG = {
   tooManyLines: 'یه سفارش حداکثر {n} تا خط می‌تونه داشته باشه.',
   orderNotFound: 'این سفارش پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
   badOrder: 'سفارش درست نرسید. صفحه رو دوباره باز کن.',
+  badBuyTotal: 'مبلغ کل باید یه عدد بزرگ‌تر از صفر باشه (حداکثر سه رقم اعشار).',
+  buyNotSimple: 'این خرید جزو یه سفارش چندقلمیه یا خرید نیست؛ با فرم سفارش ویرایشش کن.',
   ledgerNotFound: 'این مورد پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
   ledgerMany: 'چند سطر با همین شناسه هست. اول توی شیت درستش کن.',
   ledgerFull: 'جدول خرید و فروش پر شده ({n} سطر). اول چند سطر قدیمی رو توی شیت جابه‌جا کن.',
@@ -677,7 +680,9 @@ function doPost(e) {
       saveLedgerRow: function (d) { return withLock_(function () { return saveLedgerRow(d.entry, d.id); }); },
       deleteLedgerRow: function (d) { return withLock_(function () { return deleteLedgerRow(d.id); }); },
       saveLedgerOrder: function (d) { return withLock_(function () { return saveLedgerOrder(d.order, d.orderId, d.rowId); }); },
-      deleteLedgerOrder: function (d) { return withLock_(function () { return deleteLedgerOrder(d.orderId); }); }
+      deleteLedgerOrder: function (d) { return withLock_(function () { return deleteLedgerOrder(d.orderId); }); },
+      saveLedgerBuy: function (d) { return withLock_(function () { return saveLedgerBuy(d.buy, d.id); }); },
+      getReport: function (d) { return getReport(d); }
     }
   });
   sessionEmail_ = '';
@@ -1199,11 +1204,92 @@ function getLedger() {
     if (a.created !== b.created) return a.created < b.created ? 1 : -1;
     return 0;
   });
-  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [], orders: true, packSize: true, productVersion: true };
+  var out = { ok: true, entries: entries.slice(0, LEDGER_MAX_RETURN), more: entries.length > LEDGER_MAX_RETURN, customers: [], orders: true, packSize: true, productVersion: true, simpleBuy: true };
   var c = customersSheet_();
   if (c.sheet) out.customers = customerList_(customerValues_(c.sheet));
   else out.customersMessage = c.message;
   return out;
+}
+
+// ---- «گزارش» (reports, owner approved 2026-11-07): read-only, SALES only ----
+var REPORT_TOP_CUSTOMERS = 10;
+var REPORT_UNITS = ['pack', 'kg', 'g', 'piece'];
+
+// Pure: ledger entries (as from ledgerEntry_) + the customers list → small summaries of the SALES between
+// `from` and `to` ('yyyy-mm-dd', '' = no limit, both ends included). Buys are never counted. A sale whose date
+// or total is missing/not a number is left out and counted in `skipped`. An order (several lines with the same
+// orderId) counts as ONE order; a row without an orderId counts as one order. Money is the stored rowToman.
+// Quantities are summed per unit and units are never mixed. Returns:
+// {from, to, rows:{used, skipped:{noDate, noTotal}, buysIgnored (buys in the period, not counted)}, totals:{toman, orders, customers},
+//  byDay:[{d, toman, orders}], byProduct:[{id, name, toman, lines, qty:{pack,kg,g,piece}}],
+//  byChannel:{site:{toman,orders}, person:{...}, unknown:{...}}, topCustomers:[{id, name, toman, orders}]}
+function reportSummarize_(entries, customers, from, to) {
+  var names = {};
+  (customers || []).forEach(function (c) { names[c.id] = (c.firstName + ' ' + c.lastName).replace(/\s+/g, ' ').trim(); });
+  var out = {
+    from: from || '', to: to || '',
+    rows: { used: 0, skipped: { noDate: 0, noTotal: 0 }, buysIgnored: 0 },
+    totals: { toman: 0, orders: 0, customers: 0 },
+    byDay: [], byProduct: [], byChannel: { site: { toman: 0, orders: 0 }, person: { toman: 0, orders: 0 }, unknown: { toman: 0, orders: 0 } },
+    topCustomers: []
+  };
+  var orderSeen = {}, days = {}, prods = {}, custs = {}, chanSeen = { site: {}, person: {}, unknown: {} }, daySeen = {}, custSeen = {};
+  (entries || []).forEach(function (e) {
+    if (!e || e.id === '') return;
+    var date = typeof e.date === 'string' && /^\d{4}-\d\d-\d\d$/.test(e.date) ? e.date : '';
+    if (e.type === 'sell' && !date) { out.rows.skipped.noDate += 1; return; }
+    if ((from && date < from) || (to && date > to)) return;
+    if (e.type !== 'sell') { if (e.type === 'buy' && date) out.rows.buysIgnored += 1; return; }
+    if (typeof e.rowToman !== 'number' || !isFinite(e.rowToman) || e.rowToman < 0) { out.rows.skipped.noTotal += 1; return; }
+    var key = typeof e.orderId === 'number' ? 'o' + e.orderId : 'r' + e.id;
+    var toman = e.rowToman;
+    out.rows.used += 1;
+    out.totals.toman += toman;
+    if (!orderSeen[key]) { orderSeen[key] = true; out.totals.orders += 1; }
+    var day = days[date] || (days[date] = { d: date, toman: 0, orders: 0 });
+    day.toman += toman;
+    if (!daySeen[date + key]) { daySeen[date + key] = true; day.orders += 1; }
+    var ch = e.channel === 'site' || e.channel === 'person' ? e.channel : 'unknown';
+    out.byChannel[ch].toman += toman;
+    if (!chanSeen[ch][key]) { chanSeen[ch][key] = true; out.byChannel[ch].orders += 1; }
+    var pid = e.productId !== '' ? e.productId : e.productName;
+    var p = prods[pid] || (prods[pid] = { id: e.productId, name: e.productName || e.productId, toman: 0, lines: 0, qty: { pack: 0, kg: 0, g: 0, piece: 0 } });
+    p.toman += toman;
+    p.lines += 1;
+    if (REPORT_UNITS.indexOf(e.qtyUnit) >= 0 && typeof e.qty === 'number' && isFinite(e.qty) && e.qty > 0) p.qty[e.qtyUnit] += e.qty;
+    if (e.customerId !== '') {
+      var c = custs[e.customerId] || (custs[e.customerId] = { id: e.customerId, name: names[e.customerId] || '', toman: 0, orders: 0 });
+      c.toman += toman;
+      if (!custSeen[e.customerId + key]) { custSeen[e.customerId + key] = true; c.orders += 1; }
+    }
+  });
+  Object.keys(days).sort().forEach(function (d) { out.byDay.push(days[d]); });
+  Object.keys(prods).forEach(function (k) {
+    REPORT_UNITS.forEach(function (u) { prods[k].qty[u] = Math.round(prods[k].qty[u] * 100) / 100; });
+    out.byProduct.push(prods[k]);
+  });
+  out.byProduct.sort(function (a, b) { return b.toman - a.toman || (a.name < b.name ? -1 : 1); });
+  var list = Object.keys(custs).map(function (k) { return custs[k]; });
+  out.totals.customers = list.length;
+  list.sort(function (a, b) { return b.toman - a.toman || b.orders - a.orders || (a.id - b.id); });
+  out.topCustomers = list.slice(0, REPORT_TOP_CUSTOMERS);
+  return out;
+}
+
+// Action getReport (read-only): data = {from, to} Persian dates 'yyyy-mm-dd' (either may be '' = no limit).
+// Reads ALL ledger rows (not only the newest 2000). Returns {ok:true, report:true, summary} or {ok:false, message}.
+function getReport(data) {
+  assertSession_();
+  var from = data && data.from !== undefined && data.from !== null ? data.from : '';
+  var to = data && data.to !== undefined && data.to !== null ? data.to : '';
+  if (typeof from !== 'string' || typeof to !== 'string' || (from !== '' && ledgerDate_(from) !== from) || (to !== '' && ledgerDate_(to) !== to) || (from && to && from > to)) return { ok: false, message: MSG.reportRange };
+  var t = ledgerSheet_();
+  if (!t.sheet) return { ok: false, message: t.message };
+  var entries = ledgerValues_(t.sheet).map(ledgerEntry_);
+  var customers = [];
+  var c = customersSheet_();
+  if (c.sheet) customers = customerList_(customerValues_(c.sheet));
+  return { ok: true, report: true, summary: reportSummarize_(entries, customers, from, to) };
 }
 
 // Action saveLedgerRow (under the lock): `entry` from the form; `id` = the row's id when editing, '' for a new row.
@@ -1273,6 +1359,36 @@ function saveLedgerRow(entry, id) {
   range.setNumberFormats([LEDGER_FORMATS]);
   range.setValues([plan.row]);
   return { ok: true, id: ctx.id, updated: !!target, customerId: c ? c.customerId : '', reusedCustomer: c ? c.reused : '' };
+}
+
+// Action saveLedgerBuy (under the lock; owner approved 2026-11-07): the SIMPLE buy = one item, one total.
+// `buy` = {date, name, total, totalUnit} (totalUnit 'thousand' | 'million'); `id` = the row's id when editing, '' for new.
+// It is stored as one ordinary ledger row: type خرید, productId LEDGER_OTHER_ID, productName = the typed name
+// (required, max 60, cleaned, formula-escaped), qty 1, qtyUnit «عدد», priceToman = rowToman = the total, priceAmount /
+// priceUnit as typed, no seller, note, pack size, order number or product version. Everything else is checked by
+// saveLedgerRow / planLedgerRow_. Only a single buy row (no order number) can be saved this way; a sale or a row
+// inside an order is refused. Returns what saveLedgerRow returns.
+function saveLedgerBuy(buy, id) {
+  assertSession_();
+  if (!buy || typeof buy !== 'object' || Array.isArray(buy)) return { ok: false, message: MSG.badOrder };
+  if (id !== undefined && id !== null && id !== '') {
+    if (typeof id !== 'string' || !LEDGER_ID.test(id)) return { ok: false, message: MSG.ledgerNotFound };
+    var t = ledgerSheet_();
+    if (!t.sheet) return { ok: false, message: t.message };
+    var values = ledgerValues_(t.sheet);
+    var found = findLedgerRow_(values.map(function (v) { return v[0]; }), id);
+    if (!found.row) return { ok: false, message: found.error === 'many' ? MSG.ledgerMany : MSG.ledgerNotFound };
+    var old = values[found.row - 2];
+    if (ledgerKeyOf_(LEDGER_TYPES, cellText(old[3])) !== 'buy' || orderIdOf_(old[17]) !== null) return { ok: false, message: MSG.buyNotSimple };
+  }
+  var res = saveLedgerRow({
+    date: buy.date, type: 'buy', productId: LEDGER_OTHER_ID, productName: buy.name,
+    qty: '1', qtyUnit: 'piece', price: buy.total, priceUnit: buy.totalUnit
+  }, id || '');
+  if (res && res.issues) {
+    res.issues.forEach(function (x) { if (x.field === 'price' && x.message === MSG.badLedgerPrice) x.message = MSG.badBuyTotal; });
+  }
+  return res;
 }
 
 // Action deleteLedgerRow (under the lock, after the owner confirmed on the page): deletes the ONE row whose

@@ -157,6 +157,18 @@
     oLineIssue: '«{name}»: {msg}',
     oNeedPrice: 'قیمت این خط رو هم بنویس.',
     lOldServer2: 'برای ثبت سفارش، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، نسخه‌ی جدید).',
+    // the simple buy (owner approved 2026-11-07; TODO: bargin-content to review the wording)
+    bNewBtn: 'ثبت خرید',
+    bNewTitle: 'خرید جدید',
+    bEditTitle: 'ویرایش خرید',
+    bTotalLine: 'مبلغ کل: {total} تومان',
+    bPreview: 'یعنی {total} تومان',
+    bNeedName: 'بنویس چی خریدی.',
+    bLongName: 'اسم خیلی بلنده (حداکثر ۶۰ حرف).',
+    bBadTotal: 'مبلغ کل باید یه عدد بزرگ‌تر از صفر باشه (حداکثر سه رقم اعشار).',
+    bNeedTotal: 'مبلغ کل رو بنویس.',
+    bOldNote: 'این یه خرید قدیمیه. اگه ذخیره‌ش کنی فقط اسم و مبلغ کل می‌مونه؛ تعداد، فروشنده و توضیحات پاک می‌شن.',
+    bOldServer: 'برای ثبت خرید ساده، اول Apps Script رو به‌روز کن (Code.gs تازه، نسخه‌ی جدید).',
     channels: { site: 'سایت', person: 'حضوری' },
     months: ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'],
     types: { buy: 'خرید', sell: 'فروش' },
@@ -190,6 +202,8 @@
   var lEdit = { orderId: null, rowId: '' };   // the open order form: an order number, or an old single row's id
   var ledgerVersion = false;  // the server fills productVersion (an older Apps Script would leave it empty)
   var ledgerPack = false;     // the server knows the pack size (an older Apps Script would silently drop it)
+  var ledgerSimpleBuy = false; // the server knows the simple buy (an old Apps Script would refuse saveLedgerBuy)
+  var bEdit = { id: '' };      // the open simple-buy form: the row's id when editing
   var ledgerOrders = false;   // the server knows orders (an old Apps Script does not send `orders`)
   var LEDGER_MAX_LINES = 50;  // lines in one order (same as Code.gs)
   var oModels = [];        // the product lines of the open order form
@@ -376,6 +390,7 @@
   var SCREENS = ['s-setup', 's-login', 's-code', 's-app'];
   function show(id) {
     SCREENS.forEach(function (s) { $(s).hidden = s !== id; });
+    if (id !== 's-app' && window.barginReport) window.barginReport.reset();   // no report data stays on the login screen
   }
   function setStatus(text, kind) {
     var el = $('status');
@@ -389,7 +404,7 @@
   }
   function setBusy(on) {
     busy = on;
-    ['reload', 'add-new', 'download', 'save', 'delete', 'confirm-yes', 'l-reload', 'l-add', 'l-save'].forEach(function (id) { $(id).disabled = on; });
+    ['reload', 'add-new', 'download', 'save', 'delete', 'confirm-yes', 'l-reload', 'l-add', 'b-add', 'b-save', 'l-save'].forEach(function (id) { $(id).disabled = on; });
     var yes = document.querySelectorAll('.l-yes');
     for (var i = 0; i < yes.length; i++) yes[i].disabled = on;
   }
@@ -841,8 +856,10 @@
     view = v;
     $('v-products').hidden = v !== 'products';
     $('v-ledger').hidden = v !== 'ledger';
+    $('v-report').hidden = v !== 'report';
     $('tab-products').setAttribute('aria-pressed', String(v === 'products'));
     $('tab-ledger').setAttribute('aria-pressed', String(v === 'ledger'));
+    $('tab-report').setAttribute('aria-pressed', String(v === 'report'));
     showIssues([]);
     setStatus('');
   }
@@ -853,6 +870,13 @@
     if (ledgerLoaded) return;
     if (loaded) { loadLedger(); return; }
     load().then(function () { if (getSession() && view === 'ledger') loadLedger(); });
+  }
+
+  // The «گزارش» tab: the code is in report.js (loaded after this file); it gets a few helpers from here.
+  function openReportView() {
+    if (busy || view === 'report') return;
+    showView('report');
+    if (window.barginReport) window.barginReport.open();
   }
 
   function loadLedger(keepMessage) {
@@ -874,6 +898,7 @@
       ledgerOrders = r.orders === true;
       ledgerPack = r.packSize === true;
       ledgerVersion = r.productVersion === true;
+      ledgerSimpleBuy = r.simpleBuy === true;
       ledgerLoaded = true;
       renderLedger();
       if (r.customersMessage) setStatus(r.customersMessage, 'err');
@@ -881,6 +906,7 @@
       else if (!ledgerOrders) setStatus(TEXT.lOldServer2, 'err');
       else if (!ledgerPack) setStatus(TEXT.lOldServer3, 'err');
       else if (!ledgerVersion) setStatus(TEXT.lOldServer4, 'err');
+      else if (!ledgerSimpleBuy) setStatus(TEXT.bOldServer, 'err');
       else if (!keepMessage) setStatus('');
     }, function (err) {
       setBusy(false);
@@ -998,6 +1024,7 @@
 
   // An old single entry (before orders): shown as it was; its edit opens the order form as a one-line order.
   function ledgerItem(e) {
+    if (isSimpleBuy(e)) return simpleBuyItem(e);
     var li = el('li');
     var top = el('div', 'l-top');
     top.appendChild(el('span', 'l-date', dateFa(e.date)));
@@ -1025,8 +1052,103 @@
     if (e.type === 'sell' && (e.customerId || e.channel)) li.appendChild(customerLine(e));
     else if (e.party) li.appendChild(el('small', 'l-more', fill(TEXT.lParty, { name: e.party })));
     if (e.note) li.appendChild(el('small', 'l-more', e.note));
-    addActions(li, function () { openLedgerForm({ single: e }); }, TEXT.lConfirm, function () { deleteLedger(e.id); });
+    addActions(li, function () { if (e.type === 'buy') openBuyForm(e); else openLedgerForm({ single: e }); }, TEXT.lConfirm, function () { deleteLedger(e.id); });
     return li;
+  }
+
+  // ---- the simple buy (owner approved 2026-11-07): date, what was bought, total paid ----
+  // A buy saved by the simple form: one item named by hand, qty 1 «عدد», no seller, note or pack size.
+  function isSimpleBuy(e) {
+    return e.type === 'buy' && e.productId === LEDGER_OTHER_ID && e.qty === 1 && e.qtyUnit === 'piece' && !e.party && !e.note &&
+      !e.packSize && e.rowToman !== null && e.rowToman === e.priceToman && (e.orderId === null || e.orderId === undefined);
+  }
+  function simpleBuyItem(e) {
+    var li = el('li');
+    var top = el('div', 'l-top');
+    top.appendChild(el('span', 'l-date', dateFa(e.date)));
+    top.appendChild(el('span', 'tag t-buy', TEXT.types.buy));
+    li.appendChild(top);
+    li.appendChild(el('div', 'l-prod', e.productName || ''));
+    var sum = el('div', 'l-sum');
+    sum.appendChild(el('bdi', '', fill(TEXT.bTotalLine, { total: groupFa(e.rowToman) })));
+    li.appendChild(sum);
+    addActions(li, function () { openBuyForm(e); }, TEXT.lConfirm, function () { deleteLedger(e.id); });
+    return li;
+  }
+  // toman → {price, unit} as typed in the form («۱٫۲» + million, or «۱۲۰۰» + thousand).
+  function typedTotal(toman) {
+    if (toman >= 1000000 && toman % 1000 === 0) return { price: String(+(toman / 1000000).toFixed(3)), unit: 'million' };
+    return { price: String(+(toman / 1000).toFixed(3)), unit: 'thousand' };
+  }
+  function refreshBuyPreview() {
+    var m = ledgerMath_(1, $('b-total').value, $('b-unit').value);
+    $('b-preview').textContent = m.rowToman !== null ? fill(TEXT.bPreview, { total: groupFa(m.rowToman) }) : '';
+  }
+  // e = a stored single buy to edit, or null for a new one.
+  function openBuyForm(e) {
+    if (busy) return;
+    bEdit = { id: e ? e.id : '' };
+    showIssues([]);
+    var parts = e ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(e.date) : null;
+    var t = todayJ();
+    if (parts) setDateFields(parseInt(parts[1], 10), parseInt(parts[2], 10), parseInt(parts[3], 10), 'b-');
+    else setDateFields(t.y, t.m, t.d, 'b-');
+    var simple = !!e && isSimpleBuy(e);
+    var typed = e ? (simple && e.priceAmount ? { price: String(e.priceAmount), unit: e.priceUnit === 'million' ? 'million' : 'thousand' }
+      : (e.rowToman !== null ? typedTotal(e.rowToman) : { price: '', unit: 'thousand' })) : { price: '', unit: 'thousand' };
+    $('b-name').value = e ? e.productName || '' : '';
+    $('b-total').value = typed.price;
+    $('b-unit').value = typed.unit;
+    $('b-old-note').textContent = e && !simple ? TEXT.bOldNote : '';
+    $('b-old-note').hidden = !(e && !simple);
+    refreshBuyPreview();
+    $('b-form-title').textContent = e ? TEXT.bEditTitle : TEXT.bNewTitle;
+    $('b-save').textContent = TEXT.bNewBtn;
+    $('b-form').hidden = false;
+    $('l-form').hidden = true;
+    $('l-list-card').hidden = true;
+    setStatus(ledgerSimpleBuy ? '' : TEXT.bOldServer, ledgerSimpleBuy ? '' : 'err');
+    $('b-form').scrollIntoView();
+    $('b-name').focus();
+  }
+  function buyIssues(b) {
+    var out = [];
+    function add(m) { out.push({ row: null, message: m }); }
+    if (!ledgerDate_(b.date)) add(TEXT.lNeedDate);
+    if (!b.name) add(TEXT.bNeedName);
+    else if (b.name.length > LEDGER_OTHER_MAX) add(TEXT.bLongName);
+    var m = ledgerMath_(1, b.total, b.totalUnit);
+    if (m.tooBig) add(TEXT.lTooBig);
+    else if (m.unitToman === null) add(String(b.total).trim() === '' ? TEXT.bNeedTotal : TEXT.bBadTotal);
+    if (!ledgerSimpleBuy) add(TEXT.bOldServer);
+    return out;
+  }
+  function saveBuy(ev) {
+    ev.preventDefault();
+    if (busy) return;
+    var buy = {
+      date: $('b-year').value + '-' + pad2(parseInt($('b-month').value, 10)) + '-' + pad2(parseInt($('b-day').value, 10)),
+      name: cleanLedgerText($('b-name').value), total: $('b-total').value, totalUnit: $('b-unit').value
+    };
+    var issues = buyIssues(buy);
+    if (issues.length) { setStatus(TEXT.lSaveBlocked, 'err'); showIssues(issues); return; }
+    var wasEdit = !!bEdit.id;
+    setBusy(true);
+    setStatus(TEXT.saving);
+    showIssues([]);
+    api('saveLedgerBuy', { buy: buy, id: bEdit.id }, true).then(function (r) {
+      if (r && r.ok) {
+        closeLedgerForm();
+        setStatus(wasEdit ? TEXT.lUpdated : TEXT.lSaved, 'ok');
+        return loadLedger(true);
+      }
+      setBusy(false);
+      setStatus(TEXT.lSaveBlocked, 'err');
+      showIssues((r && r.issues) || (r && r.message ? [{ row: null, message: r.message }] : []));
+    }, function (err) {
+      setBusy(false);
+      onApiError(err, err && err.code === 'unknown_action' ? TEXT.bOldServer : undefined);
+    });
   }
 
   // ---- customers (sales only) ----
@@ -1109,9 +1231,10 @@
     sel.appendChild(op);
   }
 
-  function rebuildDays() {
-    var y = parseInt($('l-year').value, 10), m = parseInt($('l-month').value, 10);
-    var sel = $('l-day');
+  function rebuildDays(pfx) {
+    pfx = typeof pfx === 'string' ? pfx : 'l-';
+    var y = parseInt($(pfx + 'year').value, 10), m = parseInt($(pfx + 'month').value, 10);
+    var sel = $(pfx + 'day');
     var keep = parseInt(sel.value, 10) || 1;
     var max = jalaliMonthDays_(y, m);
     sel.textContent = '';
@@ -1119,17 +1242,18 @@
     sel.value = String(Math.min(keep, max));
   }
 
-  function setDateFields(y, m, d) {
-    var ys = $('l-year');
+  function setDateFields(y, m, d, pfx) {
+    pfx = typeof pfx === 'string' ? pfx : 'l-';
+    var ys = $(pfx + 'year');
     var t = todayJ();
     ys.textContent = '';
     var from = Math.min(LEDGER_YEAR_MIN, y), to = Math.max(t.y + 1, y);
     for (var k = to; k >= from; k--) addOption(ys, String(k), toFa(k));
     ys.value = String(y);
-    $('l-month').value = String(m);
-    $('l-day').value = String(d);
-    rebuildDays();
-    $('l-day').value = String(Math.min(d, jalaliMonthDays_(y, m)));
+    $(pfx + 'month').value = String(m);
+    $(pfx + 'day').value = String(d);
+    rebuildDays(pfx);
+    $(pfx + 'day').value = String(Math.min(d, jalaliMonthDays_(y, m)));
   }
 
   function syncPills() {
@@ -1417,7 +1541,8 @@
     if (parts) setDateFields(parseInt(parts[1], 10), parseInt(parts[2], 10), parseInt(parts[3], 10));
     else setDateFields(t.y, t.m, t.d);
     $('l-type-buy').checked = !!e && e.type === 'buy';
-    $('l-type-sell').checked = !!e && e.type === 'sell';
+    $('l-type-sell').checked = !e || e.type === 'sell';   // a new order here is a sale (buys have their own form)
+    $('l-type-wrap').hidden = !e;
     $('l-ch-site').checked = !!e && e.channel === 'site';
     $('l-ch-person').checked = !!e && e.channel === 'person';
     syncPills();
@@ -1438,6 +1563,7 @@
     applyDefaults();
     $('l-form-title').textContent = lEdit.orderId !== null ? fill(TEXT.lEditOrder, { n: toFa(lEdit.orderId) }) : (e ? TEXT.lEditTitle : TEXT.lNewOrder);
     $('l-form').hidden = false;
+    $('b-form').hidden = true;
     $('l-list-card').hidden = true;
     setStatus(products.length ? '' : TEXT.lNoProducts, products.length ? '' : 'err');
     $('l-form').scrollIntoView();
@@ -1448,7 +1574,9 @@
     lEdit = { orderId: null, rowId: '' };
     oModels = [];
     oOthers = [];
+    bEdit = { id: '' };
     $('l-form').hidden = true;
+    $('b-form').hidden = true;
     $('l-list-card').hidden = false;
   }
 
@@ -1590,6 +1718,7 @@
     TEXT.months.forEach(function (name, i) { addOption($('l-month'), String(i + 1), name); });
     $('tab-products').addEventListener('click', function () { if (!busy && view !== 'products') showView('products'); });
     $('tab-ledger').addEventListener('click', openLedgerView);
+    $('tab-report').addEventListener('click', openReportView);
     $('l-reload').addEventListener('click', function () {
       if (busy) return;
       closeLedgerForm();
@@ -1597,11 +1726,19 @@
       load(true).then(function () { if (getSession()) loadLedger(); });
     });
     $('l-add').addEventListener('click', function () { openLedgerForm(null); });
+    TEXT.months.forEach(function (name, i) { addOption($('b-month'), String(i + 1), name); });
+    $('b-add').addEventListener('click', function () { openBuyForm(null); });
+    $('b-form').addEventListener('submit', saveBuy);
+    $('b-cancel').addEventListener('click', function () { closeLedgerForm(); showIssues([]); setStatus(''); });
+    $('b-year').addEventListener('change', function () { rebuildDays('b-'); });
+    $('b-month').addEventListener('change', function () { rebuildDays('b-'); });
+    $('b-total').addEventListener('input', refreshBuyPreview);
+    $('b-unit').addEventListener('change', refreshBuyPreview);
     $('l-logout').addEventListener('click', logout);
     $('l-form').addEventListener('submit', saveLedger);
     $('l-cancel').addEventListener('click', function () { closeLedgerForm(); showIssues([]); setStatus(''); });
-    $('l-year').addEventListener('change', rebuildDays);
-    $('l-month').addEventListener('change', rebuildDays);
+    $('l-year').addEventListener('change', function () { rebuildDays('l-'); });
+    $('l-month').addEventListener('change', function () { rebuildDays('l-'); });
     ['l-type-buy', 'l-type-sell', 'l-ch-site', 'l-ch-person'].forEach(function (id) { $(id).addEventListener('change', syncPills); });
     ['l-type-buy', 'l-type-sell'].forEach(function (id) { $(id).addEventListener('change', applyDefaults); });
     $('o-search').addEventListener('input', applyFilter);
@@ -1683,6 +1820,13 @@
     $('email').value = getEmail();
     if (getSession()) { onLoggedIn(); } else { show('s-login'); }
   }
+
+  // What report.js may use (nothing that writes to the Sheet).
+  window.barginAdmin = {
+    api: api, onApiError: onApiError, setStatus: setStatus, logout: logout, getSession: getSession,
+    toFa: toFa, fill: fill, months: TEXT.months,
+    toJalali_: toJalali_, jalCal_: jalCal_, g2d_: g2d_, jalaliMonthDays_: jalaliMonthDays_
+  };
 
   init();
 })();
