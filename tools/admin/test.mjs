@@ -89,7 +89,7 @@ check("(a) CRLF build has no bare LF", crlfOut.replace(/\r\n/g, "").indexOf("\n"
 check("(a) CRLF build has no bare CR", crlfOut.replace(/\r\n/g, "").indexOf("\r") === -1);
 check("(a) buildCsv(rows, LF) still writes LF when asked (parameter kept)", !lfOut.includes("\r"));
 check("(a) EOL constant in Code.gs is CRLF", gs.EOL === "\r\n", JSON.stringify(gs.EOL));
-check("(a) publishCsv passes EOL to buildCsv (Publish path)", /buildCsv\(data\.rows,\s*EOL\)/.test(read("tools/admin/Code.gs")));
+check("(a) publishCsv passes EOL to buildCsv (Publish path)", /buildCsv\(data\.rows,\s*EOL(, true)?\)/.test(read("tools/admin/Code.gs")));
 check("(a) output starts with UTF-8 BOM", crlfOut.charCodeAt(0) === 0xfeff && lfOut.charCodeAt(0) === 0xfeff);
 check("(a) header order is id,name,category,price,unit,serves,short,details,recipe,images,soldOut",
   lfOut.replace(/^\ufeff/, "").split("\n")[0] === "id,name,category,price,unit,serves,short,details,recipe,images,soldOut");
@@ -1707,6 +1707,113 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
         const noTab = post({ action: "getReport", session: ss, data: {} });
         check("(t) report: no «خرید و فروش» tab → a message, no crash", noTab.data.ok === false && typeof noTab.data.message === "string");
         check("(t) report: the answer carries the capability flag report:true", /report: true, summary:/.test(read("tools/admin/Code.gs")));
+      }
+
+      // ---- (u) raw price: private «قیمت اولیه محصولات» tab (owner approved 2026-11-07) ----
+      {
+        const RAWN = "قیمت اولیه محصولات", RH = Array.from(gs.RAW_HEADER);
+        const rawTab = () => book.getSheetByName(RAWN);
+        const rawRows = () => rawTab().rows.slice(1);
+        const getP = () => post({ action: "getProducts", session: ss });
+        const rowOf = (id) => getP().data.rows.find((r) => r.id === id);
+        ss = relog();
+        mkBook(["products", "ledger", "customers", "log"]);
+        gs.setupVersioning();
+        const p0 = snapP();
+        const sr = gs.setupRawPrices();
+        check("(u) setupRawPrices: private tab after «تاریخچه محصولات», before log, never first; header + text formats; products tab untouched",
+          tabsNames() === "products,خرید و فروش,مشتری‌ها," + HIST + "," + RAWN + ",log" && rawTab().rows[0].join() === RH.join() && rawTab().frozen === 1 && snapP() === p0 && /^OK/.test(sr), sr);
+        gs.setupRawPrices();
+        check("(u) setupRawPrices is safe to run again (one tab, same header)", book.getSheets().filter((x) => x.name === RAWN).length === 1 && rawRows().length === 0);
+        for (const order of [["products", "log"], ["products", "ledger", "log"], ["products", "customers", "ledger", "log", "history"]]) {
+          mkBook(order); gs.setupRawPrices();
+          const idx = tabsNames().split(",").indexOf(RAWN);
+          check("(u) the raw tab is never the first tab (" + tabsNames() + ")", idx >= 1 && tabsNames().split(",")[0] === "products");
+        }
+        mkBook(["products", "ledger", "customers", "log"]); gs.setupVersioning(); gs.setupRawPrices();
+
+        // math
+        const rm = (t, u) => gs.rawMath_(t, u);
+        check("(u) rawMath_: «280» هزار = 280,000; «1.2» میلیون = 1,200,000; Persian digits and «,» are read",
+          rm("280", "thousand").toman === 280000 && rm("1.2", "million").toman === 1200000 && rm("۲۸۰", "thousand").toman === 280000 && rm("۱,۲۰۰", "thousand").toman === 1200000);
+        check("(u) rawMath_: empty / spaces / undefined / null mean «not set»", ["", "  ", undefined, null].every((v) => rm(v, "thousand").empty === true));
+        check("(u) rawMath_: 0, negative, text, 4 decimals, objects and a bad or missing unit are refused; too big is refused",
+          ["0", "-5", "abc", "1.2345", {}, ["1"]].every((v) => rm(v, "thousand").error) && ["", "billion", "constructor", undefined].every((u) => rm("1", u).error) && rm("10001", "million").error);
+
+        // getProducts: admin-only, merged in
+        ss = relog();
+        const g0 = getP();
+        check("(u) getProducts: rawReady true, every row has empty raw fields when nothing is set", g0.data.rawReady === true && g0.data.rows.every((r) => r.rawToman === "" && r.rawPrice === ""));
+        const sv1 = saveP("sabzi-ghormeh", { rawPrice: "280", rawUnit: "thousand" });
+        check("(u) saveProduct with a raw price: ok, one row in the private tab with toman, typed, unit, time and the admin email",
+          sv1.data.ok === true && rawRows().length === 1 && rawRows()[0][0] === "sabzi-ghormeh" && rawRows()[0][1] === 280000 && rawRows()[0][2] === "280" && rawRows()[0][3] === "thousand" && rawRows()[0][5] === OWNER, JSON.stringify([sv1, rawRows()]));
+        const r1 = rowOf("sabzi-ghormeh");
+        check("(u) getProducts returns the raw price for that product only", r1.rawToman === 280000 && r1.rawPrice === "280" && r1.rawUnit === "thousand" && rowOf("esfenaj").rawToman === "");
+        check("(u) the products tab got NO raw price: still the 11 public columns, same cell values",
+          productsTab().rows[0].join() === gs.HEADER.join() && !JSON.stringify(productsTab().rows).includes("280000,") && productsTab().rows.every((r) => r.length <= 11));
+        // update + clear
+        saveP("sabzi-ghormeh", { rawPrice: "0.3", rawUnit: "million" });
+        check("(u) editing the raw price updates the same row (no second row)", rawRows().length === 1 && rawRows()[0][1] === 300000 && rawRows()[0][3] === "million");
+        saveP("sabzi-ghormeh", { rawPrice: "" });
+        check("(u) an empty raw price removes the row (optional)", rawRows().length === 0 && rowOf("sabzi-ghormeh").rawToman === "");
+        const noKey = saveP("esfenaj", {}); const ik = itemOf("esfenaj", {}); delete ik.rawPrice;
+        saveP("sabzi-ghormeh", { rawPrice: "100", rawUnit: "thousand" });
+        post({ action: "saveProduct", session: ss, data: { item: Object.assign(itemOf("sabzi-ghormeh", {}), { short: "x" }), originalId: "sabzi-ghormeh" } });
+        check("(u) a save without the rawPrice key leaves the stored raw price alone; saving a product with no raw price needs no raw tab", rawRows().length === 1 && noKey.data.ok === true);
+        // bad values
+        const w0 = rawTab().writes || 0, pw = productsTab().writes || 0;
+        const badR = saveP("esfenaj", { rawPrice: "abc", rawUnit: "thousand" });
+        const badU = saveP("esfenaj", { rawPrice: "5", rawUnit: "billion" });
+        check("(u) bad raw price / unit: refused with a message, NOTHING written (product row unchanged too)",
+          badR.data.ok === false && badR.data.issues[0].message === gs.MSG.badRaw && badU.data.ok === false && (rawTab().writes || 0) === w0 && (productsTab().writes || 0) === pw && rawRows().length === 1);
+        // id rename follows, delete removes
+        saveP("sabzi-ghormeh", { id: "sabzi-ghormeh-2" }, "sabzi-ghormeh");
+        check("(u) renaming a product's id moves its raw price to the new id", rawRows().length === 1 && rawRows()[0][0] === "sabzi-ghormeh-2" && rowOf("sabzi-ghormeh-2").rawToman === 100000);
+        saveP("sabzi-ghormeh-2", { id: "sabzi-ghormeh-3", rawPrice: "150", rawUnit: "thousand" }, "sabzi-ghormeh-2");
+        check("(u) renaming and changing the price together: one row, new id, new price", rawRows().length === 1 && rawRows()[0][0] === "sabzi-ghormeh-3" && rawRows()[0][1] === 150000);
+        post({ action: "deleteProduct", session: ss, data: { id: "sabzi-ghormeh-3" } });
+        check("(u) deleting a product deletes its raw price row", rawRows().length === 0);
+        // formula escaping
+        mkBook(["products", "ledger", "customers", "log"]); gs.setupVersioning(); gs.setupRawPrices();
+        saveP("esfenaj", { id: "=bad", rawPrice: "5", rawUnit: "thousand" }, "esfenaj");
+        check("(u) the id written to the private tab is formula-escaped like every other cell", rawRows().length === 1 && rawRows()[0][0].startsWith("'="));
+        // CSV download
+        mkBook(["products", "ledger", "customers", "log"]); gs.setupVersioning(); gs.setupRawPrices();
+        saveP("esfenaj", { rawPrice: "200", rawUnit: "thousand" });
+        const csvOut = post({ action: "publishCsv", session: ss }).data;
+        const recs = rawParse(csvOut.csv);
+        const firstLine = csvOut.csv.replace(/^\uFEFF/, "").split("\r\n")[0];
+        check("(u) admin CSV download: the 11 public columns plus «rawPrice» last; 200000 on esfenaj, empty elsewhere",
+          firstLine === gs.HEADER.join() + ",rawPrice" && recs.length === fileRows.length && recs.find((r) => r.id === "esfenaj").rawPrice === "200000" && recs.filter((r) => r.rawPrice !== "").length === 1, firstLine);
+        check("(u) buildCsv without the flag is still the exact public 11-column file (no rawPrice, even if rows carry rawToman)",
+          !gs.buildCsv(getP().data.rows, "\r\n").includes("rawPrice") && gs.buildCsv(getP().data.rows, "\r\n") === gs.buildCsv(fileRows.map((r) => ({ ...r })), "\r\n"));
+        check("(u) data/products.csv (public backup) and app.js / products.js / index / product pages know nothing about a raw price",
+          !/raw/i.test(read("data/products.csv").split("\n")[0]) && !/rawPrice|rawToman|قیمت اولیه/.test(read("app.js") + read("products.js") + read("index.html") + read("product.html") + read("cart.js") + read("data/products.csv")));
+        // without the tab
+        mkBook(["products", "ledger", "customers", "log"]);
+        const noTab = getP();
+        const noSet = saveP("esfenaj", { rawPrice: "5", rawUnit: "thousand" });
+        const noEmpty = saveP("esfenaj", { rawPrice: "", rawUnit: "thousand" });
+        check("(u) without the tab: products still load (rawReady false); setting a raw price says to run setupRawPrices; leaving it empty still saves",
+          noTab.data.rawReady === false && noTab.data.rows.length === fileRows.length && noSet.data.ok === false && noSet.data.issues[0].message === gs.MSG.noRaw && noEmpty.data.ok === true);
+        mkBook(["products", "ledger", "customers", "log"]); gs.setupRawPrices(); rawTab().rows[0][0] = "x";
+        check("(u) a broken raw tab header blocks setting a price but not loading products", getP().data.rawReady === false && saveP("esfenaj", { rawPrice: "5", rawUnit: "thousand" }).data.ok === false);
+        // a raw tab can never be read as the products
+        mkBook(["products", "ledger", "customers", "log"]); gs.setupRawPrices();
+        book.sheets.unshift(book.sheets.splice(book.sheets.indexOf(rawTab()), 1)[0]);
+        check("(u) if the raw tab were the first tab the products actions refuse (WRONG_FIRST_TAB)", getP().error === "server");
+        // no session
+        mkBook(["products", "ledger", "customers", "log"]); gs.setupRawPrices();
+        const nosess = post({ action: "getProducts" });
+        let thr = false; try { gs.getProducts(); } catch (e) { thr = true; }
+        check("(u) without a session the raw prices are never returned (NO_SESSION; direct call throws)", nosess.error === "NO_SESSION" && thr && !JSON.stringify(nosess).includes("raw"));
+        check("(u) PROTECTED_ACTIONS gets no new action; setupRawPrices is not an action", !/setupRawPrices/.test(vm.runInContext("PROTECTED_ACTIONS.join()", gs) + vm.runInContext("PUBLIC_ACTIONS.join()", gs)));
+        // admin page
+        const adm2 = read("admin/admin.js");
+        check("(u) admin page: price and raw price are in one row, raw has the هزار/میلیون select; the profit line is live (aria-live)",
+          /price-row/.test(adm2) && /f-rawPrice/.test(adm2) && /f-rawUnit/.test(adm2) && /id = 'f-profit'/.test(adm2) && /قیمت اولیه \(خام\)/.test(adm2) && /سود: \{n\} تومان/.test(adm2));
+        check("(u) admin page: HEADER (public columns) is unchanged in admin.js and Code.gs",
+          /var HEADER = \['id', 'name', 'category', 'price', 'unit', 'serves', 'short', 'details', 'recipe', 'images', 'soldOut'\];/.test(adm2) && gs.HEADER.join() === "id,name,category,price,unit,serves,short,details,recipe,images,soldOut");
       }
     }
   }

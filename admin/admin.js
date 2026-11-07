@@ -55,13 +55,22 @@
     loadFail: 'نتونستیم شیت رو بخونیم. دوباره امتحان کن.',
     network: 'به سرور وصل نشدیم. اینترنتت رو چک کن و دوباره امتحان کن.',
     serverFail: 'یه مشکلی پیش اومد. دوباره امتحان کن.',
-    csvReady: 'فایل CSV آماده شد ({n} محصول).',
+    csvReady: 'فایل CSV آماده شد ({n} محصول). ستون «rawPrice» (قیمت اولیه) آخرش هست؛ این فایل خصوصیه، توی گیت یا data نذارش.',
     csvBlocked: 'فایل ساخته نشد. اول مشکل‌ها رو درست کن.',
     newCategory: 'دسته‌بندی جدید…',
     newUnit: 'واحد جدید…',
     noUnit: 'بدون واحد',
     newCategoryHint: 'اسم دسته‌بندی جدید رو بنویس',
     newUnitHint: 'واحد جدید رو بنویس، مثلاً ۲۵۰ گرم',
+    // قیمت اولیه (خام): only here in the admin, never on the shop
+    rawLabel: 'قیمت اولیه (خام)',
+    rawHint: 'اختیاری. فقط توی مدیریت دیده می‌شه.',
+    rawUnits: { thousand: 'هزار تومان', million: 'میلیون تومان' },
+    rawBad: 'قیمت اولیه رو درست بنویس (عدد بزرگ‌تر از صفر) یا خالی بذار.',
+    rawOldServer: 'برای ذخیره‌ی قیمت اولیه، اول Apps Script رو به‌روز کن (Code.gs تازه، تابع setupRawPrices، نسخه‌ی جدید).',
+    profit: 'سود: {n} تومان',
+    listRaw: 'خام: {n}',
+    listProfit: 'سود: {n}',
     noIdEdit: 'این ردیف شناسه نداره. اول توی شیت شناسه بذار، بعد بارگذاری دوباره رو بزن.',
     fieldLabel: {
       id: 'شناسه (id)', name: 'اسم (name)', category: 'دسته‌بندی (category)', price: 'قیمت (price)',
@@ -77,7 +86,7 @@
       recipe: 'خط اول: اسم غذا. خط‌های «- » مواد. خط‌های شماره‌دار: مراحل. بقیه: نکته.',
       soldOut: 'yes یا no. خالی یعنی no.'
     },
-    // «خرید و فروش» (TODO: bargin-content to review the wording)
+    // «خرید و فروش»
     lLoading: 'در حال خوندن خرید و فروش‌ها…',
     lCount: '{n} مورد',
     lCountFiltered: '{n} مورد از {all}',
@@ -127,7 +136,7 @@
     lReused: 'این مشتری از قبل بود ({n})؛ همونو استفاده کردیم',
     lMerged: 'به سفارش {n} همون روز اضافه شد 🌿',
     lOldServer: 'برای ثبت فروش، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، setupCustomers، نسخه‌ی جدید).',
-    // multi-product orders (TODO: bargin-content to review the wording)
+    // multi-product orders
     lNewOrderBtn: 'سفارش جدید',
     lNewOrder: 'سفارش جدید',
     lEditOrder: 'ویرایش سفارش {n}',
@@ -145,7 +154,7 @@
     oQtyUnit: 'واحد',
     oPrice: 'قیمت هر واحد',
     oPriceUnit: 'تومان',
-    oPack: 'وزن هر بسته',   // TODO: bargin-content to review the wording
+    oPack: 'وزن هر بسته',
     oPackHint: 'اختیاری، مثلاً ۵۰۰ گرم',
     lLongPack: 'وزن هر بسته حداکثر ۲۰ حرف.',
     lOldServer4: 'برای ثبت نسخه‌ی قیمت محصول، اول Apps Script رو به‌روز کن (Code.gs تازه، setupVersioning، setupLedger، نسخه‌ی جدید).',
@@ -157,7 +166,7 @@
     oLineIssue: '«{name}»: {msg}',
     oNeedPrice: 'قیمت این خط رو هم بنویس.',
     lOldServer2: 'برای ثبت سفارش، اول Apps Script رو به‌روز کن (Code.gs تازه، setupLedger، نسخه‌ی جدید).',
-    // the simple buy (owner approved 2026-11-07; TODO: bargin-content to review the wording)
+    // the simple buy (owner approved 2026-11-07)
     bNewBtn: 'ثبت خرید',
     bNewTitle: 'خرید جدید',
     bEditTitle: 'ویرایش خرید',
@@ -192,6 +201,7 @@
   var resendTimer = 0;
   var loaded = false;      // the list was read at least once
   var products = [];       // rows from the sheet
+  var rawSupported = true; // false when the server is an old Code.gs without raw prices
   var editId = '';         // the id of the open product ('' = new)
   var busy = false;
   var view = 'products';   // the open section: 'products' or 'ledger'
@@ -622,6 +632,48 @@
     box.hidden = false;
   }
 
+  // ---- raw price and profit (admin only; the profit is computed, never stored) ----
+  function signedFa(n) { return n < 0 ? '\u2212' + groupFa(-n) : groupFa(n); }
+  // sale price text (plain toman) + raw toman (number) → {raw, profit|null}; null when there is no raw price
+  function profitOf(priceText, rawToman) {
+    if (typeof rawToman !== 'number' || !isFinite(rawToman)) return null;
+    var sale = parseDecimal_(String(priceText || ''), 10, 0);
+    return { raw: rawToman, profit: sale ? sale.i - rawToman : null };
+  }
+  function rawTomanOf(typed, unit) {
+    var m = ledgerMath_('1', typed, unit);
+    return m.unitToman === null ? null : m.unitToman;
+  }
+  // The second small line in the product list: «خام: ۲۸۰,۰۰۰ · سود: ۷۰,۰۰۰» (only when a raw price is set).
+  function rawLineOf(r) {
+    var raw = r.rawToman === '' || r.rawToman === undefined || r.rawToman === null ? null : Number(r.rawToman);
+    var res = raw === null ? null : profitOf(r.price, raw);
+    if (!res) return null;
+    var line = document.createElement('small');
+    line.className = 'raw-line';
+    line.appendChild(document.createTextNode(fill(TEXT.listRaw, { n: groupFa(res.raw) })));
+    if (res.profit !== null) {
+      var pr = document.createElement('span');
+      pr.className = 'profit-n' + (res.profit < 0 ? ' neg' : '');
+      pr.textContent = fill(TEXT.listProfit, { n: signedFa(res.profit) });
+      line.appendChild(document.createTextNode(' \u00b7 '));
+      line.appendChild(pr);
+    }
+    return line;
+  }
+  // The live line under the price row in the form.
+  function updateProfit() {
+    var out = $('f-profit');
+    if (!out) return;
+    var typed = $('f-rawPrice').value;
+    var raw = typed.trim() === '' ? null : rawTomanOf(typed, $('f-rawUnit').value);
+    var res = raw === null ? null : profitOf($('f-price').value, raw);
+    if (!res || res.profit === null) { out.hidden = true; out.textContent = ''; out.className = 'profit'; return; }
+    out.textContent = fill(TEXT.profit, { n: signedFa(res.profit) });
+    out.className = 'profit' + (res.profit < 0 ? ' neg' : '');
+    out.hidden = false;
+  }
+
   function renderList() {
     var ul = $('list');
     ul.textContent = '';
@@ -637,6 +689,8 @@
       var small = document.createElement('small');
       small.textContent = [r.id || TEXT.noId, r.category, r.price].filter(function (x) { return x; }).join(' · ');
       nm.appendChild(small);
+      var rawLine = rawLineOf(r);
+      if (rawLine) nm.appendChild(rawLine);
       var tag = document.createElement('span');
       var out = String(r.soldOut || '').toLowerCase() === 'yes';
       tag.className = 'tag' + (out ? ' out' : '');
@@ -658,6 +712,7 @@
     if (!keepMessage) setStatus(TEXT.loading);
     return api('getProducts', {}, true).then(function (d) {
       products = (d && d.rows) || [];
+      rawSupported = !!d && d.rawReady !== undefined;
       loaded = true;
       renderList();
       showIssues((d && d.issues) || []);
@@ -674,6 +729,7 @@
     var box = $('fields');
     box.textContent = '';
     HEADER.forEach(function (h) {
+      if (h === 'price') { buildPriceRow(box); return; }
       var label = document.createElement('label');
       label.setAttribute('for', 'f-' + h);
       label.appendChild(document.createTextNode(TEXT.fieldLabel[h]));
@@ -719,6 +775,52 @@
     });
   }
 
+  // The price and the optional raw price side by side (labels in the first grid row, boxes in the second so they
+  // line up), then the live profit line.
+  function buildPriceRow(box) {
+    function mkLabel(forId, text, hintText) {
+      var label = document.createElement('label');
+      label.setAttribute('for', forId);
+      label.appendChild(document.createTextNode(text));
+      if (hintText) {
+        var hint = document.createElement('span');
+        hint.className = 'hint';
+        hint.textContent = hintText;
+        label.appendChild(hint);
+      }
+      return label;
+    }
+    var row = document.createElement('div');
+    row.className = 'price-row';
+    var price = document.createElement('input');
+    price.type = 'text'; price.id = 'f-price'; price.autocomplete = 'off'; price.className = 'ltr';
+    price.setAttribute('inputmode', 'numeric');
+    var raw = document.createElement('input');
+    raw.type = 'text'; raw.id = 'f-rawPrice'; raw.autocomplete = 'off'; raw.className = 'ltr';
+    raw.setAttribute('inputmode', 'decimal');
+    var unit = document.createElement('select');
+    unit.id = 'f-rawUnit';
+    [['thousand', TEXT.rawUnits.thousand], ['million', TEXT.rawUnits.million]].forEach(function (o) {
+      var op = document.createElement('option');
+      op.value = o[0]; op.textContent = o[1]; unit.appendChild(op);
+    });
+    var rawBox = document.createElement('div');
+    rawBox.appendChild(raw);
+    rawBox.appendChild(unit);
+    row.appendChild(mkLabel('f-price', TEXT.fieldLabel.price, TEXT.fieldHint.price));
+    row.appendChild(mkLabel('f-rawPrice', TEXT.rawLabel, TEXT.rawHint));
+    row.appendChild(price);
+    row.appendChild(rawBox);
+    box.appendChild(row);
+    var profit = document.createElement('p');
+    profit.id = 'f-profit'; profit.className = 'profit'; profit.hidden = true;
+    profit.setAttribute('aria-live', 'polite');
+    box.appendChild(profit);
+    price.addEventListener('input', updateProfit);
+    raw.addEventListener('input', updateProfit);
+    unit.addEventListener('change', updateProfit);
+  }
+
   function syncChoice(h) {
     var isNew = $('f-' + h).value === NEW_VALUE;
     $('f-' + h + '-new').hidden = !isNew;
@@ -758,6 +860,9 @@
       if (CHOICE_FIELDS[h]) { fillChoice(h, row ? row[h] : ''); return; }
       $('f-' + h).value = row ? String(row[h] || '') : '';
     });
+    $('f-rawPrice').value = row ? String(row.rawPrice || '') : '';
+    $('f-rawUnit').value = row && row.rawUnit === 'million' ? 'million' : 'thousand';
+    updateProfit();
     if (!row) $('f-soldOut').value = 'no';
     else if (String(row.soldOut || '').toLowerCase() === 'yes') $('f-soldOut').value = 'yes';
     else $('f-soldOut').value = 'no';
@@ -785,16 +890,21 @@
       if (CHOICE_FIELDS[h] && v === NEW_VALUE) v = $('f-' + h + '-new').value;
       item[h] = CHOICE_FIELDS[h] ? String(v).trim() : v;
     });
+    item.rawPrice = $('f-rawPrice').value;
+    item.rawUnit = $('f-rawUnit').value;
     return item;
   }
 
   function save(ev) {
     ev.preventDefault();
     if (busy) return;
+    var item = collect();
+    if (item.rawPrice.trim() !== '' && !rawSupported) { setStatus(TEXT.rawOldServer, 'err'); return; }
+    if (item.rawPrice.trim() !== '' && rawTomanOf(item.rawPrice, item.rawUnit) === null) { setStatus(TEXT.rawBad, 'err'); $('f-rawPrice').focus(); return; }
     setBusy(true);
     setStatus(TEXT.saving);
     showIssues([]);
-    api('saveProduct', { item: collect(), originalId: editId }, true).then(function (r) {
+    api('saveProduct', { item: item, originalId: editId }, true).then(function (r) {
       if (r && r.ok) {
         closeForm();
         setStatus(TEXT.saved, 'ok');

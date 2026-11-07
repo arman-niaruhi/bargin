@@ -54,6 +54,15 @@
     .adm-form input[hidden] { display: none; }
     .adm-form select + input { margin-top: 8px; }
     .adm-form input:focus, .adm-form textarea:focus, .adm-form select:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(47, 122, 31, .2); }
+    .adm-form .price-row { display: grid; grid-template-columns: 1fr 1fr; column-gap: 10px; }
+    .adm-form .price-row label { margin-bottom: 4px; }
+    .adm-form .price-row > input, .adm-form .price-row select { box-sizing: border-box; min-width: 0; align-self: start; }
+    .adm-form .price-row > div { min-width: 0; }
+    .adm-form .price-row select { margin-top: 8px; }
+    .adm-form .profit { margin: 8px 0 0; font-weight: 700; color: var(--green-dark); }
+    .adm-form .profit[hidden] { display: none; }
+    .adm-form .profit.neg, .adm-list .neg { color: var(--red); }
+    .adm-list .nm small.raw-line { margin-top: 2px; }
     .adm-form .ltr { direction: ltr; text-align: left; }
     .adm-confirm { background: #fbe9e4; border: 1px dashed var(--red); border-radius: 12px; padding: 12px; margin-top: 12px; }
 

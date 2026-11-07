@@ -214,3 +214,16 @@ customer), so nothing half-filled is ever stored. Products are not affected at a
 - Each ledger line stores `productVersion` (the version valid on the sale date, else the current one); old lines stay empty.
 - Deploy steps: paste `Code.gs` + `appsscript.json` → run `setupVersioning` (allow the new permission) → run `setupLedger`
   → Deploy → New version (Execute as: Me, Anyone) → push the site/admin.
+
+## Raw price «قیمت اولیه (خام)» (owner approved 2026-11-07)
+- An optional buy/cost price per product (same pack as the sale price), shown and edited **only on `/admin/`**, next to the
+  sale price. The profit (sale − raw) is computed live, never stored.
+- It lives in the private tab **`قیمت اولیه محصولات`**, made by **`setupRawPrices`** (after `تاریخچه محصولات`, before `log`, never
+  first, never published). It is NOT a column of the products tab, because that tab is published to the web as CSV.
+  Columns: `productId`, `rawToman`, `typed`, `typedUnit` (`thousand` / `million`), `updated`, `by`. One row per product.
+- Saving a product writes or removes its row; an id change moves the row; deleting the product deletes the row.
+  `getProducts` (admin session only) merges it in. No new API action.
+- The admin «دانلود فایل CSV» file has one extra last column `rawPrice` (toman). That file is private: never copy it to
+  `data/products.csv`. The public Sheet and `data/products.csv` stay with the 11 columns.
+- Setup: paste `Code.gs` → run `setupRawPrices` once → Deploy → New version → check Publish to web = products tab only.
+  Until then the form says to run it when a raw price is typed; leaving the field empty always works.

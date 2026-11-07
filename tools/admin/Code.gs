@@ -71,7 +71,6 @@ var HEADER = ['id', 'name', 'category', 'price', 'unit', 'serves', 'short', 'det
 var EOL = '\r\n';
 
 // Persian texts shown to the owner, in one place.
-// TODO: bargin-content to review the wording.
 var MSG = {
   pageTitle: 'مدیریت محصولات برگین',
   noSession: 'نشستت تموم شده. دوباره وارد شو.',
@@ -91,7 +90,7 @@ var MSG = {
   noDeleteId: 'شناسه‌ای برای حذف داده نشده.',
   manyIds: 'چند سطر با شناسه «{value}» هست. اول توی شیت درستش کن.',
   sheetProblems: 'اول مشکل‌های شیت رو درست کن، بعد ذخیره کن.',
-  // «خرید و فروش» (TODO: bargin-content to review)
+  // «خرید و فروش»
   reportRange: 'بازه‌ی تاریخ درست نیست.',
   noLedger: 'تب «خرید و فروش» هنوز ساخته نشده. توی Apps Script یه بار تابع setupLedger رو اجرا کن.',
   ledgerFirst: 'تب «خرید و فروش» نباید اولین تب شیت باشه. یه بار تابع setupLedger رو اجرا کن تا درست بشه.',
@@ -119,7 +118,7 @@ var MSG = {
   ledgerNotFound: 'این مورد پیدا نشد؛ شاید قبلاً پاکش کردی. لیست رو دوباره بارگذاری کن.',
   ledgerMany: 'چند سطر با همین شناسه هست. اول توی شیت درستش کن.',
   ledgerFull: 'جدول خرید و فروش پر شده ({n} سطر). اول چند سطر قدیمی رو توی شیت جابه‌جا کن.',
-  // مشتری‌ها (TODO: bargin-content to review)
+  // مشتری‌ها
   noCustomers: 'تب «مشتری‌ها» هنوز ساخته نشده. توی Apps Script یه بار تابع setupCustomers رو اجرا کن.',
   customersFirst: 'تب «مشتری‌ها» نباید اولین تب شیت باشه. یه بار تابع setupCustomers رو اجرا کن تا درست بشه.',
   customersHeader: 'سطر اول تب «مشتری‌ها» به‌هم ریخته. تابع setupCustomers رو اجرا کن یا سرستون‌ها رو درست کن.',
@@ -132,7 +131,13 @@ var MSG = {
   persianCustomerName: 'اسم و فامیل مشتری رو با حروف انگلیسی بنویس، مثلاً zahra ahmadi.',
   badCustomerName: 'توی اسم و فامیل فقط حروف انگلیسی، فاصله، - و \' قبوله.',
   badChannel: 'بگو فروش از کجا بود: سایت یا حضوری.',
-  // تاریخچه محصولات (TODO: bargin-content to review)
+  // قیمت اولیه
+  noRaw: 'تب «قیمت اولیه محصولات» هنوز ساخته نشده. توی Apps Script یه بار تابع setupRawPrices رو اجرا کن.',
+  rawFirst: 'تب «قیمت اولیه محصولات» نباید اولین تب شیت باشه. یه بار تابع setupRawPrices رو اجرا کن.',
+  rawHeader: 'سطر اول تب «قیمت اولیه محصولات» به‌هم ریخته. تابع setupRawPrices رو اجرا کن یا سرستون‌ها رو درست کن.',
+  rawFull: 'تب «قیمت اولیه محصولات» پر شده ({n} سطر).',
+  badRaw: 'قیمت اولیه باید یه عدد بزرگ‌تر از صفر باشه (حداکثر سه رقم اعشار)، یا خالی بمونه.',
+  // تاریخچه محصولات
   noHistory: 'تب «تاریخچه محصولات» هنوز ساخته نشده. توی Apps Script یه بار تابع setupVersioning رو اجرا کن.',
   historyFirst: 'تب «تاریخچه محصولات» نباید اولین تب شیت باشه. یه بار تابع setupVersioning رو اجرا کن.',
   historyHeader: 'سطر اول تب «تاریخچه محصولات» به‌هم ریخته. تابع setupVersioning رو اجرا کن یا سرستون‌ها رو درست کن.'
@@ -261,15 +266,20 @@ function planSave(rows, item, originalId) {
 // Builds the CSV text: UTF-8 BOM, the header, then one line per product.
 // Empty soldOut becomes "no". Price is written as typed. `eol` is the line
 // ending for records and for line breaks inside a cell (default CRLF, like data/products.csv).
-function buildCsv(rows, eol) {
+// `withRaw` (only the admin download passes true, owner 2026-11-07): adds ONE extra last column «rawPrice» (the private
+// raw/cost price in toman, from r.rawToman, empty when not set). Without it the file is exactly the 11 public columns.
+function buildCsv(rows, eol, withRaw) {
   eol = eol || '\r\n';
-  var lines = [HEADER.join(',')];
+  var head = withRaw ? HEADER.concat(['rawPrice']) : HEADER;
+  var lines = [head.join(',')];
   productRows(rows).forEach(function (r) {
-    lines.push(HEADER.map(function (h) {
+    var cells = HEADER.map(function (h) {
       var v = cellText(r[h]).replace(/\r\n?|\n/g, eol);
       if (h === 'soldOut') v = v.toLowerCase() === 'yes' ? 'yes' : 'no';
       return csvField(v);
-    }).join(','));
+    });
+    if (withRaw) cells.push(csvField(r.rawToman === undefined || r.rawToman === null ? '' : String(r.rawToman)));
+    lines.push(cells.join(','));
   });
   return '\uFEFF' + lines.join(eol) + eol;
 }
@@ -709,7 +719,7 @@ function productSheet() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   // The log and the buys/sells tabs must never be read or written as the products.
   var name = sheet && typeof sheet.getName === 'function' ? sheet.getName() : '';
-  if (name === LOG_SHEET || name === LEDGER_SHEET || name === CUSTOMER_SHEET || name === HISTORY_SHEET) throw new Error('WRONG_FIRST_TAB');
+  if (name === LOG_SHEET || name === LEDGER_SHEET || name === CUSTOMER_SHEET || name === HISTORY_SHEET || name === RAW_SHEET) throw new Error('WRONG_FIRST_TAB');
   return sheet;
 }
 
@@ -733,21 +743,31 @@ function readSheetRows() {
   return { rows: rows, issues: issues };
 }
 
-// Action getProducts: the sheet rows and every issue found.
+// Action getProducts: the sheet rows and every issue found. Each row also carries the private raw price from the
+// «قیمت اولیه محصولات» tab (rawToman = number or '', rawPrice = as typed, rawUnit = 'thousand' | 'million'), and the
+// answer has rawReady (true when that tab is made and fine). Only admins get this: the action needs a session.
 function getProducts() {
   assertSession_();
   var data = readSheetRows();
-  if (data.issues.length) return { rows: data.rows, issues: data.issues };
-  return { rows: data.rows, issues: validateRows(data.rows) };
+  var raw = rawMap_();
+  data.rows.forEach(function (r) {
+    var e = raw.ready ? raw.map[cellText(r.id)] : null;
+    r.rawToman = e ? e.toman : '';
+    r.rawPrice = e ? e.typed : '';
+    r.rawUnit = e ? e.unit : '';
+  });
+  if (data.issues.length) return { rows: data.rows, issues: data.issues, rawReady: raw.ready };
+  return { rows: data.rows, issues: validateRows(data.rows), rawReady: raw.ready };
 }
 
 // Called by the page on «ساخت فایل». Blocked when there are issues.
-// Returns {ok:true, csv, count} or {ok:false, issues}.
+// Returns {ok:true, csv, count} or {ok:false, issues}. The csv has the private «rawPrice» column at the end (admin
+// download only; the public Sheet, SHOP.productsUrl and data/products.csv never get it).
 function publishCsv() {
   assertSession_();
   var data = getProducts();
   if (data.issues.length) return { ok: false, issues: data.issues };
-  return { ok: true, csv: buildCsv(data.rows, EOL), count: productRows(data.rows).length };
+  return { ok: true, csv: buildCsv(data.rows, EOL, true), count: productRows(data.rows).length };
 }
 
 // Called by the page on «ذخیره». `item` has the 11 columns (HEADER keys) as text.
@@ -765,6 +785,20 @@ function saveProduct(item, originalId) {
   var plan = planSave(data.rows, item || {}, originalId);
   if (plan.issues.length) return { ok: false, issues: plan.issues };
 
+  // The private raw price (optional). Checked BEFORE anything is written. rawPrice missing = leave it as it is.
+  var raw = null;
+  if (item && item.rawPrice !== undefined && item.rawPrice !== null) {
+    raw = rawMath_(item.rawPrice, item.rawUnit);
+    if (raw.error) return { ok: false, issues: [{ row: null, message: raw.error }] };
+    if (!raw.empty) {
+      var tab = rawTab_();
+      if (!tab.sheet) return { ok: false, issues: [{ row: null, message: tab.message }] };
+      if (!rawFind_(rawEntries_(tab.sheet), cellText(originalId) || cellText(item.id)) && tab.sheet.getLastRow() - 1 >= RAW_MAX_ROWS) {
+        return { ok: false, issues: [{ row: null, message: fill(MSG.rawFull, { n: String(RAW_MAX_ROWS) }) }] };
+      }
+    }
+  }
+
   var width = sheet.getLastColumn();
   var head = sheet.getRange(1, 1, 1, width).getValues()[0].map(cellText);
   var values = plan.target
@@ -778,6 +812,7 @@ function saveProduct(item, originalId) {
   });
 
   sheet.getRange(plan.row, 1, 1, width).setValues([values]);
+  saveRaw_(cellText(originalId) || cellText(item.id), cellText(item.id), raw);
   captureQuiet_();   // and this save becomes a version at once (if name, price, unit or soldOut changed)
   return { ok: true, row: plan.row, updated: !!plan.target };
 }
@@ -795,8 +830,122 @@ function deleteProduct(id) {
   if (!hits.length) return { ok: false, message: fill(MSG.notFound, { value: key }) };
   if (hits.length > 1) return { ok: false, message: fill(MSG.manyIds, { value: key }) };
   productSheet().deleteRow(hits[0].row);
+  saveRaw_(key, key, { empty: true });   // the private raw price goes with the product
   captureQuiet_();   // ends the product's current version; the history rows stay
   return { ok: true, row: hits[0].row };
+}
+
+// ---- Raw prices: the private «قیمت اولیه محصولات» tab (owner approved 2026-11-07) ----
+// The buy/cost price of a product, optional, next to its sale price on the admin page ONLY. It lives in its own private
+// tab (made by setupRawPrices; never first, never published) and NOT in the products tab, because the products tab is
+// published to the web as CSV. One row per product id. Columns: productId, rawToman (whole toman), typed (the amount as
+// typed), typedUnit ('thousand' | 'million'), updated (Tehran time), by (admin email). The profit is never stored.
+
+var RAW_SHEET = 'قیمت اولیه محصولات';
+var RAW_HEADER = ['productId', 'rawToman', 'typed', 'typedUnit', 'updated', 'by'];
+var RAW_FORMATS = ['@', '#,##0', '@', '@', '@', '@'];
+var RAW_MAX_ROWS = 5000;
+
+// The typed raw price + unit → {empty:true} (nothing typed), {error: message}, or {toman, typed, unit}.
+function rawMath_(typed, unit) {
+  if (typeof typed === 'number') typed = String(typed);
+  if (typed === undefined || typed === null) typed = '';
+  if (typeof typed !== 'string') return { error: MSG.badRaw };
+  if (typed.replace(/[\s\u200c\u200e\u200f]/g, '') === '') return { empty: true };
+  if (unit !== 'thousand' && unit !== 'million') return { error: MSG.badPriceUnit };
+  var m = ledgerMath_('1', typed, unit);
+  if (m.tooBig) return { error: MSG.priceTooBig };
+  if (m.unitToman === null) return { error: MSG.badRaw };
+  return { toman: m.unitToman, typed: m.priceText, unit: unit };
+}
+
+// The «قیمت اولیه محصولات» tab, checked: {sheet} or {message} (missing, first tab, or a broken header).
+function rawTab_() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = typeof ss.getSheetByName === 'function' ? ss.getSheetByName(RAW_SHEET) : null;
+    if (!sheet) return { message: MSG.noRaw };
+    if (sheet.getIndex() === 1) return { message: MSG.rawFirst };
+    var head = sheet.getRange(1, 1, 1, RAW_HEADER.length).getValues()[0].map(cellText);
+    if (head.join('\n') !== RAW_HEADER.join('\n')) return { message: MSG.rawHeader };
+    return { sheet: sheet };
+  } catch (e) { return { message: MSG.noRaw }; }
+}
+// The data rows → [{row, id, toman, typed, unit}] (row = sheet row number).
+function rawEntries_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  return sheet.getRange(2, 1, last - 1, RAW_HEADER.length).getValues().map(function (v, k) {
+    var n = Number(cellText(v[1]).replace(/,/g, ''));
+    return { row: k + 2, id: cellText(v[0]), toman: cellText(v[1]) !== '' && isFinite(n) ? n : '', typed: cellText(v[2]), unit: cellText(v[3]) };
+  }).filter(function (e) { return e.id !== ''; });
+}
+function rawFind_(entries, id) {
+  for (var i = 0; i < entries.length; i++) if (entries[i].id === id) return entries[i];
+  return null;
+}
+// For getProducts: {ready, map: {productId: entry}} (never throws; a missing or broken tab = not ready).
+function rawMap_() {
+  try {
+    var tab = rawTab_();
+    if (!tab.sheet) return { ready: false, map: {} };
+    var map = Object.create(null);
+    rawEntries_(tab.sheet).forEach(function (e) { if (!map[e.id]) map[e.id] = e; });
+    return { ready: true, map: map };
+  } catch (e) { return { ready: false, map: {} }; }
+}
+// Keeps the raw price tab in step with a product save or delete (the script lock is already held).
+// from = the product id before the edit, id = the id now. raw: null = leave the price as it is (an id change still
+// moves it), {empty:true} = remove it, {toman, typed, unit} = set it. No tab = nothing to do (checked before for a set).
+function saveRaw_(from, id, raw) {
+  var tab = rawTab_();
+  if (!tab.sheet) return;
+  var sheet = tab.sheet;
+  var entries = rawEntries_(sheet);
+  var mine = rawFind_(entries, from);
+  var kill = [];
+  entries.forEach(function (e) { if (e.id === id && (!mine || e.row !== mine.row)) kill.push(e.row); });   // stale rows of the same id
+  if (raw && !raw.empty) {
+    var cells = [sheetText_(id), raw.toman, raw.typed, raw.unit, tehranNow_(), cellText(sessionEmail_)];
+    var at = mine ? mine.row : Math.max(2, sheet.getLastRow() + 1);
+    sheet.getRange(at, 1, 1, RAW_HEADER.length).setValues([cells]);
+  } else if (raw && raw.empty) {
+    if (mine) kill.push(mine.row);
+  } else if (mine && from !== id) {
+    sheet.getRange(mine.row, 1, 1, 1).setValues([[sheetText_(id)]]);
+  }
+  kill.sort(function (a, b) { return b - a; }).forEach(function (r) { sheet.deleteRow(r); });
+}
+
+// Run this ONCE in the Apps Script editor after pasting Code.gs: makes the private «قیمت اولیه محصولات» tab (or fixes its
+// place and header) after «تاریخچه محصولات» (or «مشتری‌ها» / «خرید و فروش»), before «log», never first. Safe to run again;
+// it never changes data rows. Do NOT publish this tab to the web.
+function setupRawPrices() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss.getNumSheets() < 1) return 'ERROR: the products tab is missing';
+  if (ss.getSheets()[0].getName() === RAW_SHEET) return 'ERROR: «' + RAW_SHEET + '» is the first tab; the products tab must be first';
+  var sheet = ss.getSheetByName(RAW_SHEET);
+  var anchor = ss.getSheetByName(HISTORY_SHEET) || ss.getSheetByName(CUSTOMER_SHEET) || ss.getSheetByName(LEDGER_SHEET);
+  if (!sheet) sheet = ss.insertSheet(RAW_SHEET, anchor ? anchor.getIndex() : 1);   // 0-based: right after the anchor
+  var lastRow = sheet.getLastRow();
+  var head = lastRow ? sheet.getRange(1, 1, 1, RAW_HEADER.length).getValues()[0].map(cellText) : [];
+  if (lastRow > 1 && head.join('\n') !== RAW_HEADER.join('\n')) {
+    ss.setActiveSheet(ss.getSheets()[0]);
+    return 'ERROR: row 1 of «' + RAW_SHEET + '» is not the expected header and the tab has data; fix it by hand';
+  }
+  sheet.getRange(1, 1, 1, RAW_HEADER.length).setValues([RAW_HEADER]).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  RAW_FORMATS.forEach(function (f, i) { sheet.getRange(2, i + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat(f); });
+  var mine = sheet.getIndex();
+  var after = anchor ? anchor.getIndex() : 1;
+  if (mine < after) after -= 1;
+  var target = Math.max(2, after + 1);
+  if (mine !== target) {
+    ss.setActiveSheet(sheet);
+    ss.moveActiveSheet(target);
+  }
+  ss.setActiveSheet(ss.getSheets()[0]);
+  return 'OK: «' + RAW_SHEET + '» is tab ' + sheet.getIndex() + ' of ' + ss.getNumSheets() + '; products tab is «' + ss.getSheets()[0].getName() + '». Do not publish it to the web.';
 }
 
 // ---- Buys and sells: the «خرید و فروش» tab (owner approved 2026-11-07) ----
