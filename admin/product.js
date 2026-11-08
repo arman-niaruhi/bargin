@@ -195,6 +195,7 @@
       return {
         key: k, name: a.name, other: a.other, lines: a.lines, toman: a.toman, orders: a.orders, qty: a.qty, avgOrder: a.avgOrder, share: a.share, trend: a.trend,
         profit: a.costedLines > 0 ? a.profit : null, margin: a.costedLines > 0 ? a.margin : null,
+        costedToman: a.costedLines > 0 ? a.costedToman : 0,
         price: a.prices.n ? a.prices.last : null,
         topCust: a.customers.top.length ? a.customers.top[0] : null,
         with: a.withOthers.list.length ? a.withOthers.list[0] : null,

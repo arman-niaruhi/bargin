@@ -180,6 +180,12 @@
     .rp-facts li:last-child { border-bottom: 0; }
     .rp-facts li span { color: var(--muted); font-weight: 400; }
     .rp-facts li b { color: var(--text); font-weight: 800; overflow-wrap: anywhere; text-align: right; }
+    .rp-names { list-style: none; margin: 6px 0 2px; padding: 0; text-align: right; }
+    .rp-names li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+    .rp-names li:last-child { border-bottom: 0; }
+    .rp-names li span { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+    #pb-bands .rp-mini details { margin-top: 6px; }
+    #pb-bands .rp-mini summary { cursor: pointer; font-weight: 700; color: var(--green-dark); min-height: 44px; display: flex; align-items: center; }
     /* ==== end «گزارش» ==== */
 
     /* ==== «خرید و فروش» list (bargin-designer: polish here) ==== */
@@ -505,12 +511,17 @@
           <!-- 3) محصول‌ها -->
           <div id="rp-pane-products" class="rp-pane" hidden>
 <section class="adm-card rp-card">
-            <h2>پرفروش‌ترین محصولات</h2>
+            <h2 id="r-prod-title">پرفروش‌ترین محصولات</h2>
+            <div class="adm-filter rp-switch" role="group" aria-label="بهترین یا ضعیف‌ترین" id="r-ends">
+              <button type="button" data-end="top" aria-pressed="true">بهترین‌ها</button>
+              <button type="button" data-end="bottom" aria-pressed="false">ضعیف‌ترین‌ها</button>
+            </div>
             <div class="adm-filter rp-switch" role="group" aria-label="معیار" id="r-modes">
               <button type="button" data-mode="toman" aria-pressed="true">به تومان</button>
               <button type="button" data-mode="count" aria-pressed="false">به تعداد</button>
               <button type="button" data-mode="profit" aria-pressed="false">سود</button>
             </div>
+            <div class="adm-filter rp-switch" role="group" aria-label="واحد" id="r-units" hidden></div>
             <p class="rp-hint" id="r-prod-hint"></p>
             <div class="rp-chart" id="r-prod"></div>
             <details class="rp-details"><summary>جدول اعداد</summary><div id="r-prod-table"></div></details>
@@ -526,6 +537,15 @@
             </div>
             <div class="rp-allwrap" id="r-all-table"></div>
             <div class="rp-allcards" id="r-all-cards"></div>
+          </section>
+
+          <section class="adm-card rp-card" id="pb-card" hidden>
+            <h2>محصول‌ها بر اساس قیمت هر بسته/ظرف</h2>
+            <p class="rp-hint" id="pb-hint"></p>
+            <div class="rp-chart" id="pb-bar"></div>
+            <div class="rp-legend" id="pb-legend"></div>
+            <div id="pb-bands"></div>
+            <p class="rp-hint" id="pb-note"></p>
           </section>
 
 <section class="adm-card rp-card an-sec">
@@ -724,6 +744,7 @@
   <script src="analysis.js"></script>
   <script src="product.js"></script>
   <script src="overview.js"></script>
+  <script src="segments.js"></script>
   <script src="report.js"></script>
 </body>
 </html>

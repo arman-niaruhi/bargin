@@ -17,7 +17,7 @@
     barsOnlyPacks: 'طول نوار فقط تعداد «بسته» رو نشون می‌ده؛ واحدهای دیگه کنار اسم نوشته شده.',
     perUnit: 'تعداد هر واحد جدا حساب شده و با واحد دیگه جمع نمی‌شه.',
     siteName: 'سایت', personName: 'حضوری', unknownName: 'نامشخص',
-    units: { pack: 'بسته', kg: 'کیلو', g: 'گرم', piece: 'عدد' },
+    units: { pack: 'بسته/ظرف', kg: 'کیلو', g: 'گرم', piece: 'عدد' },
     thDate: 'تاریخ', thWeek: 'هفته (از شنبه‌ی)', thMonth: 'ماه', thSales: 'فروش (تومان)', thOrders: 'سفارش',
     thProduct: 'محصول', thQty: 'تعداد', thChannel: 'کانال', thShare: 'سهم', thCustomer: 'مشتری',
     used: 'بر اساس {n} ردیف فروش، {range}.',
@@ -125,6 +125,17 @@
     cuMaSales: 'میانگین ۷ روزه‌ی فروش روزانه' , cuMaProfit: 'میانگین ۷ روزه‌ی سود روزانه',
     cuMaNow: 'الان روزی {n} تومان', cuMaNeed: 'برای میانگین ۷ روزه دست‌کم ۷ روز لازمه.',
     cuNoProfit: 'تو این بازه سودی حساب نشد.', thRun: 'جمع تا اون روز (تومان)', thDay: 'همون روز (تومان)', thMa: 'میانگین ۷ روزه (تومان)',
+    // «ضعیف‌ترین‌ها»، سهم هر واحد، گروه‌بندی قیمت (phase 2a)
+    weakTitle: 'ضعیف‌ترین محصولات', lowData: 'کم‌داده', otherMany: 'سایر ({n} مورد)',
+    weakHint: 'کم‌فروش‌ترین‌ها اول اومدن. «کم‌داده» یعنی کمتر از {n} ردیف فروش داره، برای همین هنوز نمی‌شه بهش اطمینان کرد. برای مرتب کردن همه‌ی ستون‌ها، «همه محصولات فروخته‌شده» رو ببین.',
+    unitHint: 'سهم هر محصول از کل مقدار فروش به «{unit}» تو این بازه ({total}). واحدها با هم جمع نمی‌شن.',
+    unitNeed: 'برای نمودار مقدار فروش دست‌کم {n} ردیف فروش با یه واحد یکسان (بسته/ظرف، کیلو، گرم یا عدد) لازمه.',
+    thShareOfUnit: 'سهم از کل',
+    pbBands: ['ارزون‌ترها', 'میانی‌ها', 'گرون‌ترها'],
+    pbHint: 'محصول‌ها بر اساس آخرین قیمتی که هر بسته/ظرفشون باهاش فروخته شده (از ردیف‌های فروش، نه از قیمت صفحه‌ی محصولات) تو سه گروه هم‌اندازه چیده شدن. سهم‌ها فقط بین همین {n} محصوله.',
+    pbNeed: 'برای این گروه‌بندی دست‌کم {need} محصول لازمه که تو این بازه «بسته/ظرف» فروش رفته باشن؛ الان {n} تا داری.',
+    pbNoPrice: '{n} محصول فقط با کیلو، گرم یا عدد فروش رفتن و قیمت هر بسته/ظرف ندارن، برای همین تو این گروه‌بندی نیستن. «سایر»ها هم حساب نمی‌شن.',
+    pbPrice: 'قیمت هر بسته/ظرف', pbRange: 'از {a} تا {b} تومان', pbCount: 'تعداد محصول', pbSales: 'فروش', pbShare: 'سهم از فروش', pbMargin: 'حاشیه سود', pbNames: 'محصول‌ها',
     // «همه محصولات فروخته‌شده»
     allCols: { name: 'محصول', toman: 'فروش', qty: 'مقدار فروش', orders: 'تعداد سفارش', avg: 'میانگین سفارش', share: 'سهم از فروش', trend: 'روند', profit: 'سود', margin: 'حاشیه سود', price: 'قیمت هر بسته/ظرف', cust: 'بهترین مشتری', withp: 'بیشتر همراه', day: 'بهترین روز هفته' },
     allHint: 'فقط محصول‌هایی که تو این بازه فروش رفتن ({n} تا). برای مرتب کردن، ستونو انتخاب کن (تو گوشی از «مرتب‌سازی»). روی یه محصول بزن تا همه‌ی عددهاش رو ببینی. «—» یعنی داده‌ی کافی نیست یا اون عدد برای این محصول حساب نمی‌شه. قیمت هر بسته/ظرف = آخرین قیمتی که یه بسته/ظرف باهاش فروخته شده (اگه اون روز چند فروش بوده، میانگین همون روزه). مرتب‌سازی «مقدار فروش» فقط بر اساس بسته/ظرفه (کیلو، گرم و عدد توش حساب نمی‌شن).',
@@ -138,6 +149,7 @@
   var COLORS = { site: '#2f7a1f', person: '#4a2c1a', unknown: '#d2ad6c', bar: '#2f7a1f', grid: '#d9bd8c', rest: '#9b8160', loss: '#c8321e' };
   var UNITS = ['pack', 'kg', 'g', 'piece'];
   var ad = window.barginAdmin || {};
+  var SG = window.barginSegments;
 
   // ---- numbers ----
   function toFa(n) { return String(n).replace(/\d/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.charAt(d); }); }
@@ -263,13 +275,15 @@
   // The rows for the product chart: top 8 plus «بقیه». mode: 'toman' | 'count'.
   // mode 'profit': only products with at least one costed line, best profit first (losses last); each row also
   // carries cost, profit, costedToman (its margin base).
-  function productRows(byProduct, mode) {
-    var list;
-    if (mode === 'count') list = rankByCount(byProduct);
+  function productRows(byProduct, mode, opts) {
+    opts = opts || {};
+    var bottom = opts.end === 'bottom', list;
+    if (SG) list = SG.rankProducts(byProduct, mode, opts.end, opts.unit);
+    else if (mode === 'count') list = rankByCount(byProduct);
     else if (mode === 'profit') list = byProduct.filter(function (p) { return p.costedLines > 0; }).sort(function (a, b) { return b.profit - a.profit || (a.name < b.name ? -1 : 1); });
     else list = byProduct.slice().sort(function (a, b) { return b.toman - a.toman; });
-    var top = list.slice(0, 8), rest = list.slice(8);
-    var rows = top.map(function (p) { return { name: p.name, toman: p.toman, qty: p.qty, lines: p.lines, cost: p.cost || 0, profit: p.profit || 0, costedToman: p.costedToman || 0 }; });
+    var top = list.slice(0, 8), rest = bottom ? [] : list.slice(8);
+    var rows = top.map(function (p) { return { id: p.id, name: p.name, toman: p.toman, qty: p.qty, lines: p.lines, cost: p.cost || 0, profit: p.profit || 0, costedToman: p.costedToman || 0 }; });
     if (rest.length) {
       var t = 0, l = 0, c = 0, pf = 0, ct = 0;
       rest.forEach(function (p) { t += p.toman; l += p.lines; c += p.cost || 0; pf += p.profit || 0; ct += p.costedToman || 0; });
@@ -453,7 +467,7 @@
   }
 
   // ---- the tab ----
-  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0, raw: null, product: '', pv: null, allRows: null, tab: 'overview', allSort: { col: 'toman', dir: -1 } };
+  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0, raw: null, product: '', pv: null, allRows: null, end: 'top', unit: '', tab: 'overview', allSort: { col: 'toman', dir: -1 } };
   function $(id) { return document.getElementById(id); }
 
   function tile(label, big, full, neg) {
@@ -493,19 +507,60 @@
     renderTimeFor({ chart: 'r-time', hint: 'r-time-hint', table: 'r-time-table' }, sum.byDay, hasProfit(), sum.profit && !sum.profit.ready ? TEXT.noRawTab : TEXT.noProfitData);
   }
 
+  // The name of a product in the products chart and table: a typed «سایر» item gets the same «— سایر» tag as in the comparison table.
+  // The server sums all «سایر» rows under one entry; with several typed names it is shown as «سایر (N مورد)» instead of one of them.
+  var otherCount = 0;
+  function prodLabel(p) {
+    if (!(p.id === '*سایر*' || p.id === '')) return p.name;
+    return otherCount > 1 ? fill(TEXT.otherMany, { n: toFa(otherCount) }) : p.name + ' — ' + TEXT.pvOtherTag;
+  }
+  function shareText(v) { return v < 10 ? decFa(round1(v)) + '٪' : toFa(Math.round(v)) + '٪'; }
   function renderProducts() {
-    var sum = st.data, pr = productRows(sum.byProduct, st.mode), count = st.mode === 'count', prof = st.mode === 'profit';
+    var sum = st.data, mode = st.mode, count = mode === 'count', prof = mode === 'profit', bottom = st.end === 'bottom';
+    // unit pills (only inside «به تعداد», only units with enough sale lines)
+    var box = $('r-units'), unit = '', us = null;
+    clear(box);
+    box.hidden = !count;
+    if (count) {
+      us = SG.unitStats(st.raw, st.range.from, st.range.to, sum.byProduct);
+      unit = SG.defaultUnit(us, st.unit);
+      st.unit = unit;
+      SG.UNITS.forEach(function (u) {
+        if (!us[u].ok) return;
+        var b = el('button', '', TEXT.units[u]);
+        b.type = 'button';
+        b.setAttribute('data-unit', u);
+        b.setAttribute('aria-pressed', String(u === unit));
+        b.addEventListener('click', function () { st.unit = u; renderProducts(); });
+        box.appendChild(b);
+      });
+    }
+    otherCount = OV && st.raw ? OV.counts(st.data, st.raw).products.otherN : 0;
+    $('r-prod-title').textContent = bottom ? TEXT.weakTitle : 'پرفروش‌ترین محصولات';
+    setPressed('[data-end]', 'data-end', st.end);
+    var pr = productRows(sum.byProduct, mode, { end: st.end, unit: unit || 'pack' }), total = 0, unitName = unit ? TEXT.units[unit] : '';
+    if (count && unit) total = SG.unitShares(pr.all, unit).total;
     var rows = pr.rows.map(function (r) {
-      if (prof) return { label: r.name, value: Math.abs(r.profit), text: fmtMoneySigned(r.profit) + ' ' + TEXT.toman + ' · ' + fmtPct(margin(r.profit, r.costedToman)), color: r.profit < 0 ? COLORS.loss : (r.rest ? COLORS.rest : COLORS.bar) };
-      return { label: r.name, value: count ? r.qty.pack : r.toman, text: count ? fmtQty(r.qty) : fmtMoney(r.toman) + ' ' + TEXT.toman, color: r.rest ? COLORS.rest : COLORS.bar };
+      var label = r.rest ? r.name : prodLabel(r);
+      if (bottom && !r.rest && r.lines < SG.LIMIT.weakLines) label += (label.indexOf(' — ') >= 0 ? ' · ' : ' — ') + TEXT.lowData;
+      if (prof) return { label: label, value: Math.abs(r.profit), text: fmtMoneySigned(r.profit) + ' ' + TEXT.toman + ' · ' + fmtPct(margin(r.profit, r.costedToman)), color: r.profit < 0 ? COLORS.loss : (r.rest ? COLORS.rest : COLORS.bar) };
+      if (count) return { label: label, value: r.qty[unit], text: isoNums(fmtNum(r.qty[unit]) + ' ' + unitName + ' · ' + shareText(total > 0 ? r.qty[unit] * 100 / total : 0)), color: r.rest ? COLORS.rest : COLORS.bar };
+      return { label: label, value: r.toman, text: fmtMoney(r.toman) + ' ' + TEXT.toman, color: r.rest ? COLORS.rest : COLORS.bar };
     });
-    if (!rows.length) { clear($('r-prod')); } else drawRows($('r-prod'), rows, prof ? 'پرسودترین محصولات' : 'پرفروش‌ترین محصولات');
-    if (prof) $('r-prod-hint').textContent = rows.length ? TEXT.profitHint + ' ' + TEXT.marginNote : (sum.profit && !sum.profit.ready ? TEXT.noRawTab : TEXT.noProfitData);
-    else $('r-prod-hint').textContent = count ? TEXT.perUnit + ' ' + TEXT.barsOnlyPacks : '';
+    if (count && !unit) rows = [];
+    var title = bottom ? TEXT.weakTitle : (prof ? 'پرسودترین محصولات' : 'پرفروش‌ترین محصولات');
+    if (!rows.length) { clear($('r-prod')); } else drawRows($('r-prod'), rows, title);
+    var hint = [];
+    if (prof) hint.push(rows.length ? TEXT.profitHint + ' ' + TEXT.marginNote : (sum.profit && !sum.profit.ready ? TEXT.noRawTab : TEXT.noProfitData));
+    else if (count) hint.push(unit ? fill(TEXT.unitHint, { unit: unitName, total: fmtNum(total) + ' ' + unitName }) : fill(TEXT.unitNeed, { n: toFa(SG.LIMIT.unitLines) }));
+    if (bottom) hint.push(fill(TEXT.weakHint, { n: toFa(SG.LIMIT.weakLines) }));
+    $('r-prod-hint').textContent = hint.join(' ');
     if (prof) drawTable($('r-prod-table'), [TEXT.thProduct, TEXT.thProfit, TEXT.thMargin, TEXT.thCost],
-      pr.all.map(function (p) { return [p.name, fmtSigned(p.profit), fmtPct(margin(p.profit, p.costedToman)), groupFa(p.cost)]; }));
-    else drawTable($('r-prod-table'), [TEXT.thProduct, count ? TEXT.thQty : TEXT.thSales, count ? TEXT.thSales : TEXT.thQty],
-      pr.all.map(function (p) { return count ? [p.name, fmtQty(p.qty), groupFa(p.toman)] : [p.name, groupFa(p.toman), fmtQty(p.qty)]; }));
+      pr.all.map(function (p) { return [prodLabel(p), fmtSigned(p.profit), fmtPct(margin(p.profit, p.costedToman)), groupFa(p.cost)]; }));
+    else if (count) drawTable($('r-prod-table'), [TEXT.thProduct, TEXT.thQty, TEXT.thShareOfUnit, TEXT.thSales],
+      unit ? pr.all.map(function (p) { return [prodLabel(p), fmtNum(p.qty[unit]) + ' ' + unitName, shareText(total > 0 ? p.qty[unit] * 100 / total : 0), groupFa(p.toman)]; }) : []);
+    else drawTable($('r-prod-table'), [TEXT.thProduct, TEXT.thSales, TEXT.thQty],
+      pr.all.map(function (p) { return [prodLabel(p), groupFa(p.toman), fmtQty(p.qty)]; }));
   }
 
   function renderChannel() {
@@ -598,7 +653,7 @@
     revealTab();
     if (name === 'overview') { renderSummary(); anTips(); renderOverviewTop(); renderDataCard(); renderDates(); }
     else if (name === 'trend') { renderTime(); renderCum(); anWhen(); }
-    else if (name === 'products') { renderProducts(); renderAllProducts(); anProducts(); anPairs(); anIdle(); }
+    else if (name === 'products') { renderProducts(); renderAllProducts(); renderPriceBands(); anProducts(); anPairs(); anIdle(); }
     else if (name === 'customers') { renderCustomers(); anCustomers(); }
     else { renderChannel(); anChannels(); }
   }
@@ -1280,6 +1335,51 @@
       cu.all.slice().reverse().map(function (p) { return [toFa(p.key.replace(/-/g, '/')), fmtSigned(p.v), fmtSigned(p.run), p.ma === null ? '—' : fmtSigned(Math.round(p.ma))]; }));
   }
 
+  // ---- «محصول‌ها بر اساس قیمت هر بسته/ظرف» (numbers: segments.js priceBands) ----
+  var BAND_COLORS = ['#d2ad6c', '#a8700f', '#4a2c1a'];
+  function getAllRows() {
+    if (!st.raw || !PV) return null;
+    if (!st.allRows) st.allRows = PV.analyzeAll(st.raw, { from: st.range.from, to: st.range.to, today: todayKey(), H: HELP });
+    return st.allRows;
+  }
+  function renderPriceBands() {
+    var card = $('pb-card');
+    if (!card || !SG) return;
+    var rows = getAllRows();
+    if (!rows || !rows.length) { card.hidden = true; return; }
+    card.hidden = false;
+    var pb = SG.priceBands(rows), bar = $('pb-bar'), leg = $('pb-legend'), host = $('pb-bands');
+    clear(bar); clear(leg); clear(host);
+    if (!pb.ok) {
+      $('pb-hint').textContent = fill(TEXT.pbNeed, { need: toFa(SG.LIMIT.bandProducts), n: toFa(pb.n) });
+      $('pb-note').textContent = '';
+      return;
+    }
+    $('pb-hint').textContent = fill(TEXT.pbHint, { n: toFa(pb.n) });
+    drawSegBar(bar, pb.bands.map(function (b, k) { return { w: b.share, color: BAND_COLORS[k], text: isoNums(toFa(Math.round(b.share)) + '٪') }; }), TEXT.pbSales);
+    pb.bands.forEach(function (b, k) { legendItem(leg, BAND_COLORS[k], TEXT.pbBands[k] + ': ' + isoNums(toFa(Math.round(b.share)) + '٪')); });
+    pb.bands.forEach(function (b, k) {
+      var c = el('div', 'rp-mini'), g = el('div', 'rp-mini-grid');
+      c.appendChild(el('b', '', TEXT.pbBands[k]));
+      [[TEXT.pbPrice, fill(TEXT.pbRange, { a: groupFa(b.from), b: groupFa(b.to) })], [TEXT.pbCount, toFa(b.n)], [TEXT.pbSales, fmtMoney(b.toman) + ' ' + TEXT.toman],
+        [TEXT.pbShare, isoNums(shareText(b.share))], [TEXT.pbMargin, b.margin === null ? '—' : isoNums(fmtPct(b.margin))]].forEach(function (x) {
+        var d = el('div'); d.appendChild(el('span', '', x[0])); d.appendChild(el('b', '', x[1])); g.appendChild(d);
+      });
+      c.appendChild(g);
+      var det = el('details'), ul = el('ul', 'rp-names');
+      det.appendChild(el('summary', '', TEXT.pbNames + ' (' + toFa(b.n) + ')'));
+      b.names.forEach(function (n) {
+        var li = el('li');
+        li.appendChild(productLink(n.name, n.key));
+        li.appendChild(el('span', '', groupFa(n.price) + ' ' + TEXT.toman));
+        ul.appendChild(li);
+      });
+      det.appendChild(ul); c.appendChild(det);
+      host.appendChild(c);
+    });
+    $('pb-note').textContent = pb.noPrice ? fill(TEXT.pbNoPrice, { n: toFa(pb.noPrice) }) : '';
+  }
+
   function refreshView() {
     var any = st.data.rows.used > 0, open = !!st.product && !!st.raw && !!PV;
     $('pv-body').hidden = !open;
@@ -1374,6 +1474,11 @@
       setPressed('[data-metric]', 'data-metric', st.metric);
       rerenderTime();
     });
+    b = document.querySelectorAll('[data-end]');
+    for (i = 0; i < b.length; i++) b[i].addEventListener('click', function () {
+      st.end = this.getAttribute('data-end');
+      if (st.data && st.data.rows.used) renderProducts();
+    });
     b = document.querySelectorAll('[data-mode]');
     for (i = 0; i < b.length; i++) b[i].addEventListener('click', function () {
       st.mode = this.getAttribute('data-mode');
@@ -1404,7 +1509,9 @@
   window.barginReport = {
     open: function () { load(false); },
     reset: function () {
-      st.cache = {}; st.data = null; st.token += 1;
+      st.cache = {}; st.data = null; st.token += 1; st.end = 'top'; st.unit = '';
+      if ($('pb-card')) $('pb-card').hidden = true;
+      ['pb-bar', 'pb-legend', 'pb-bands', 'r-units'].forEach(function (id) { if ($(id)) clear($(id)); });
       st.tab = 'overview'; saveTab('overview');
       ['ov-sum', 'ov-data', 'ov-dates', 'cu-total', 'cu-ma', 'cu-table'].forEach(function (id) { if ($(id)) clear($(id)); });
       if ($('r-body')) { $('r-body').hidden = true; clear($('r-tiles')); if ($('r-tiles-profit')) clear($('r-tiles-profit')); }   // nothing of the report stays after logout
