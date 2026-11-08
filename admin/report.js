@@ -103,7 +103,13 @@
     pvCustNone: 'هیچ‌کدوم از سفارش‌های این محصول مشتری ثبت‌شده ندارن.',
     pvWithNone: 'هنوز محصولی نیست که دست‌کم {n} بار تو یه سفارش با این محصول خریده شده باشه.',
     pvWithRow: '{n} سفارش · {p}٪ از سفارش‌های این محصول',
-    pvWeekLittle: 'برای بهترین روزهای هفته دست‌کم ۴ هفته فروش و {n} سفارش از این محصول لازمه. یه بازه‌ی بزرگ‌تر مثل «۳ ماه اخیر» یا «همه» رو انتخاب کن.'
+    pvWeekLittle: 'برای بهترین روزهای هفته دست‌کم ۴ هفته فروش و {n} سفارش از این محصول لازمه. یه بازه‌ی بزرگ‌تر مثل «۳ ماه اخیر» یا «همه» رو انتخاب کن.',
+    // «همه محصولات فروخته‌شده»
+    allCols: { name: 'محصول', toman: 'فروش', qty: 'مقدار فروش', orders: 'تعداد سفارش', avg: 'میانگین سفارش', share: 'سهم از فروش', trend: 'روند', profit: 'سود', margin: 'حاشیه سود', price: 'قیمت هر بسته/ظرف', cust: 'بهترین مشتری', withp: 'بیشتر همراه', day: 'بهترین روز هفته' },
+    allHint: 'فقط محصول‌هایی که تو این بازه فروش رفتن ({n} تا). برای مرتب کردن، ستونو انتخاب کن (تو گوشی از «مرتب‌سازی»). روی یه محصول بزن تا همه‌ی عددهاش رو ببینی. «—» یعنی داده‌ی کافی نیست یا اون عدد برای این محصول حساب نمی‌شه. قیمت هر بسته/ظرف = آخرین قیمتی که یه بسته/ظرف باهاش فروخته شده (اگه اون روز چند فروش بوده، میانگین همون روزه). مرتب‌سازی «مقدار فروش» فقط بر اساس بسته/ظرفه (کیلو، گرم و عدد توش حساب نمی‌شن).',
+    allSort: 'مرتب‌سازی', allMore: 'عددهای بیشتر',
+    // direction labels by column type: numbers, text (Persian alphabet), weekday (from Saturday)
+    allDir: { num: ['زیاد به کم ↓', 'کم به زیاد ↑', 'از زیاد به کم', 'از کم به زیاد'], text: ['ی تا الف ↓', 'الف تا ی ↑', 'از ی تا الف', 'از الف تا ی'], day: ['جمعه تا شنبه ↓', 'شنبه تا جمعه ↑', 'از جمعه تا شنبه', 'از شنبه تا جمعه'] }
   };
 
   var DAY_MS = 86400000;
@@ -401,7 +407,7 @@
   }
 
   // ---- the tab ----
-  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0, raw: null, product: '', pv: null };
+  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0, raw: null, product: '', pv: null, allRows: null, allSort: { col: 'toman', dir: -1 } };
   function $(id) { return document.getElementById(id); }
 
   function tile(label, big, full, neg) {
@@ -497,7 +503,7 @@
       pt.appendChild(tile(TEXT.profitTiles[1], fmtMoney(pf.cost) + ' ' + TEXT.toman, groupFa(pf.cost) + ' ' + TEXT.toman));
       pt.appendChild(tile(TEXT.profitTiles[2], fmtPct(margin(pf.profit, pf.sales)), '', pf.profit < 0));
     }
-    renderTime(); renderProducts(); renderChannel(); renderCustomers();
+    renderTime(); renderProducts(); renderAllProducts(); renderChannel(); renderCustomers();
     var range = st.range.from ? fill(TEXT.rangeFromTo, { a: toFa(st.range.from.replace(/-/g, '/')), b: toFa(st.range.to.replace(/-/g, '/')) }) : TEXT.rangeAll;
     var line = fill(TEXT.used, { n: toFa(sum.rows.used), range: range });
     var sk = sum.rows.skipped.noDate + sum.rows.skipped.noTotal;
@@ -924,6 +930,128 @@
     host.scrollLeft = 0;
   }
 
+  // ---- «همه محصولات فروخته‌شده»: one row per product sold in the period (numbers: product.js analyzeAll) ----
+  var ALL_COLS = ['name', 'toman', 'qty', 'orders', 'avg', 'share', 'trend', 'profit', 'margin', 'price', 'cust', 'withp', 'day'];
+  var ALL_TEXT_COLS = { name: 1, cust: 1, withp: 1, day: 1 };   // الف→ی (day: Saturday→Friday) first; the numbers biggest first
+  function allValue(r, c) {
+    switch (c) {
+      case 'name': return r.name;
+      case 'toman': return r.toman;
+      case 'qty': return r.qty.pack;
+      case 'orders': return r.orders;
+      case 'avg': return r.avgOrder;
+      case 'share': return r.share;
+      case 'trend': return r.trend ? r.trend.pct : null;
+      case 'profit': return r.profit;
+      case 'margin': return r.margin;
+      case 'price': return r.price;
+      case 'cust': return r.topCust ? custLabel(r.topCust.id) : null;
+      case 'withp': return r.with ? r.with.name : null;
+      default: return r.bestDay;   // 'day': Saturday = 0 … Friday = 6
+    }
+  }
+  function allText(r, c) {
+    var none = '—';
+    switch (c) {
+      case 'name': return r.name + (r.other ? ' — ' + TEXT.pvOtherTag : '');
+      case 'toman': return fmtMoney(r.toman);
+      case 'qty': return fmtQty(r.qty);
+      case 'orders': return toFa(r.orders);
+      case 'avg': return fmtMoney(r.avgOrder);
+      case 'share': return r.share < 10 ? decFa(round1(r.share)) + '٪' : toFa(Math.round(r.share)) + '٪';
+      case 'trend': return r.trend ? trendText(r.trend) : none;
+      case 'profit': return r.profit === null ? none : fmtMoneySigned(r.profit);
+      case 'margin': return r.margin === null ? none : fmtPct(r.margin);
+      case 'price': return r.price === null ? none : groupFa(r.price);
+      case 'cust': return r.topCust ? custLabel(r.topCust.id) : none;
+      case 'withp': return r.with ? r.with.name : none;
+      default: return r.bestDay === null ? none : TEXT.dayNames[r.bestDay];
+    }
+  }
+  function sortedAll(rows) {
+    var c = st.allSort.col, dir = st.allSort.dir;
+    return rows.slice().sort(function (x, y) {
+      var a = allValue(x, c), b = allValue(y, c), ea = a === null || a === undefined, eb = b === null || b === undefined;
+      if (ea || eb) return ea && eb ? (y.toman - x.toman) : (ea ? 1 : -1);   // empty cells always last
+      var d = typeof a === 'string' ? a.replace(/[\u2066-\u2069]/g, '').localeCompare(b.replace(/[\u2066-\u2069]/g, ''), 'fa') : a - b;   // text: Persian alphabet order
+      return d * dir || (y.toman - x.toman) || (x.name < y.name ? -1 : 1);
+    });
+  }
+  function setAllSort(col, dir) {
+    st.allSort = { col: col, dir: dir !== undefined ? dir : (ALL_TEXT_COLS[col] ? 1 : -1) };
+    renderAllProducts();
+  }
+  function renderAllProducts() {
+    var card = $('r-all-card');
+    if (!card) return;
+    if (!st.raw || !PV) { card.hidden = true; return; }
+    if (!st.allRows) st.allRows = PV.analyzeAll(st.raw, { from: st.range.from, to: st.range.to, today: todayKey(), H: HELP });
+    var rows = st.allRows;
+    card.hidden = !rows.length;
+    if (!rows.length) return;
+    $('r-all-hint').textContent = fill(TEXT.allHint, { n: toFa(rows.length) });
+    var list = sortedAll(rows), sort = st.allSort;
+
+    // desktop: the table, sticky name column, sortable headers
+    var tb = document.createElement('table'), thead = document.createElement('thead'), tr = document.createElement('tr'), tbody = document.createElement('tbody');
+    tb.className = 'rp-table rp-alltable';
+    ALL_COLS.forEach(function (c) {
+      var th = document.createElement('th'), b = el('button', 'rp-th', TEXT.allCols[c] + (sort.col === c ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(sort.col === c));
+      b.addEventListener('click', function () { if (st.allSort.col === c) setAllSort(c, -st.allSort.dir); else setAllSort(c); });
+      th.setAttribute('aria-sort', sort.col === c ? (sort.dir < 0 ? 'descending' : 'ascending') : 'none');
+      th.appendChild(b); tr.appendChild(th);
+    });
+    thead.appendChild(tr); tb.appendChild(thead);
+    list.forEach(function (r) {
+      var row = document.createElement('tr');
+      ALL_COLS.forEach(function (c) {
+        var td = document.createElement('td');
+        if (c === 'name') td.appendChild(productLink(allText(r, c), r.key));
+        else {
+          td.textContent = allText(r, c);
+          if (c === 'toman') td.title = groupFa(r.toman) + ' ' + TEXT.toman;
+          if ((c === 'profit' && r.profit < 0) || (c === 'margin' && r.margin < 0)) td.className = 'rp-negtxt';
+        }
+        row.appendChild(td);
+      });
+      row.addEventListener('click', function (ev) { if (ev.target.tagName !== 'BUTTON') openProduct(r.key); });
+      tbody.appendChild(row);
+    });
+    tb.appendChild(tbody);
+    clear($('r-all-table')); $('r-all-table').appendChild(tb);
+
+    // phones: one card per product (name + sales, orders, profit, share, trend; the rest under «بیشتر»), sorted by the dropdown
+    var sel = $('r-all-sort');
+    clear(sel);
+    ALL_COLS.forEach(function (c) { var o = document.createElement('option'); o.value = c; o.textContent = TEXT.allCols[c]; sel.appendChild(o); });
+    sel.value = sort.col;
+    var dirBtn = $('r-all-dir');
+    var dl = TEXT.allDir[sort.col === 'day' ? 'day' : (ALL_TEXT_COLS[sort.col] ? 'text' : 'num')], di = sort.dir < 0 ? 0 : 1;
+    dirBtn.textContent = dl[di];
+    dirBtn.setAttribute('aria-label', TEXT.allSort + ': ' + dl[di + 2]);
+    var cards = $('r-all-cards');
+    clear(cards);
+    list.forEach(function (r) {
+      var card2 = el('div', 'rp-acard'), open = el('button', 'rp-aopen'), top = el('div', 'rp-atop'), kvs = el('div', 'rp-akv');
+      open.type = 'button';
+      top.appendChild(el('b', '', allText(r, 'name')));
+      top.appendChild(el('span', '', fmtMoney(r.toman) + ' ' + TEXT.toman));
+      open.appendChild(top);
+      ['orders', 'profit', 'share', 'trend'].forEach(function (c) { kv(kvs, TEXT.allCols[c] + ':', allText(r, c)); });
+      open.appendChild(kvs);
+      open.addEventListener('click', function () { openProduct(r.key); });
+      card2.appendChild(open);
+      var det = el('details'), more = el('div', 'rp-akv');
+      det.appendChild(el('summary', '', TEXT.allMore));
+      ['qty', 'avg', 'margin', 'price', 'cust', 'withp', 'day'].forEach(function (c) { kv(more, TEXT.allCols[c] + ':', allText(r, c)); });
+      det.appendChild(more);
+      card2.appendChild(det);
+      cards.appendChild(card2);
+    });
+  }
+
   function refreshView() {
     var any = st.data.rows.used > 0, open = !!st.product && !!st.raw && !!PV;
     $('pv-body').hidden = !open;
@@ -960,6 +1088,7 @@
   function show(summary, raw) {
     st.data = summary;
     st.raw = raw || null;
+    st.allRows = null;
     st.cut = !!(raw && raw.cut);
     st.prevDays = st.range.from ? dayDiff(st.range.from, st.range.to) + 1 : 0;
     runAnalysis(raw);
@@ -1025,9 +1154,16 @@
     });
     if ($('pv-select')) $('pv-select').addEventListener('change', function () { openProduct(this.value); });
     if ($('pv-back')) $('pv-back').addEventListener('click', function () { openProduct(''); });
+    if ($('r-all-sort')) {
+      $('r-all-sort').addEventListener('change', function () { setAllSort(this.value); });
+      $('r-all-dir').addEventListener('click', function () { setAllSort(st.allSort.col, -st.allSort.dir); });
+    }
     $('r-reload').addEventListener('click', function () { load(true); });
     $('r-logout').addEventListener('click', function () { ad.logout(); });
-    window.addEventListener('resize', function () {
+    var lastWidth = window.innerWidth;
+    window.addEventListener('resize', function () {   // only a real width change redraws (phone address bars fire resize on scroll and would close the open «بیشتر»)
+      if (window.innerWidth === lastWidth) return;
+      lastWidth = window.innerWidth;
       if (!$('v-report').hidden && st.data) refreshView();
     });
   }
@@ -1037,7 +1173,9 @@
     reset: function () {
       st.cache = {}; st.data = null; st.token += 1;
       if ($('r-body')) { $('r-body').hidden = true; clear($('r-tiles')); if ($('r-tiles-profit')) clear($('r-tiles-profit')); }   // nothing of the report stays after logout
-      st.an = null; st.raw = null; st.product = ''; st.pv = null;
+      st.an = null; st.raw = null; st.product = ''; st.pv = null; st.allRows = null;
+      if ($('r-all-card')) $('r-all-card').hidden = true;
+      ['r-all-table', 'r-all-cards', 'r-all-sort'].forEach(function (id) { if ($(id)) clear($(id)); });
       if ($('pv-body')) $('pv-body').hidden = true;
       if ($('pv-pick')) $('pv-pick').hidden = true;
       if ($('pv-select')) clear($('pv-select'));

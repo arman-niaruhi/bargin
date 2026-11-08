@@ -45,32 +45,45 @@
   function sum(list, f) { var t = 0; list.forEach(function (x) { t += f(x); }); return t; }
   function round2(x) { return Math.round(x * 100) / 100; }
 
-  // ctx = {from, to, today, H:{dayDiff, weekdayOf}}, key = a key from options().
-  function analyze(A, ctx, key) {
-    var H = ctx.H, from = ctx.from || '', to = ctx.to || '';
+  // The work that is the same for every product: the period split, lines grouped by product key and by order,
+  // the totals. analyzeAll() does it once; analyze() does it itself when it gets no `pre`.
+  function prepare(A, ctx) {
+    var from = ctx.from || '', to = ctx.to || '';
     var all = (A && A.lines) || [], items = (A && A.items) || [];
-    var P = [], Q = [];
+    var pre = { all: all, items: items, P: [], byP: {}, byQ: {}, byOrder: {}, totalToman: 0, totalOrders: 0, first: '', last: '', keys: [] };
     all.forEach(function (l) {
-      if (from && l[0] < from) Q.push(l);
-      else if (!to || l[0] <= to) P.push(l);
+      var k = keyOf(items[l[2]]);
+      if (from && l[0] < from) { (pre.byQ[k] || (pre.byQ[k] = [])).push(l); return; }
+      if (to && l[0] > to) return;
+      pre.P.push(l);
+      if (!pre.byP[k]) { pre.byP[k] = []; pre.keys.push(k); }
+      pre.byP[k].push(l);
+      var o = pre.byOrder[l[1]];
+      if (!o) { o = pre.byOrder[l[1]] = []; pre.totalOrders += 1; }
+      o.push(l);
+      pre.totalToman += l[5];
+      if (!pre.first || l[0] < pre.first) pre.first = l[0];
+      if (l[0] > pre.last) pre.last = l[0];
     });
+    return pre;
+  }
+
+  // ctx = {from, to, today, H:{dayDiff, weekdayOf}}, key = a key from options(), pre = prepare() result (optional).
+  function analyze(A, ctx, key, pre) {
+    var H = ctx.H, from = ctx.from || '';
+    pre = pre || prepare(A, ctx);
+    var all = pre.all, items = pre.items, P = pre.P;
+    var PL = pre.byP[key] || [], QL = pre.byQ[key] || [];
     var isMine = function (l) { return keyOf(items[l[2]]) === key; };
-    var PL = P.filter(isMine), QL = Q.filter(isMine);
     var name = '', other = key.slice(0, 2) === 'x:';
     items.forEach(function (it) { if (!name && keyOf(it) === key) name = it.n; });
     if (!name) ((A && A.shop) || []).forEach(function (s) { if (!name && s.id === key) name = s.name; });
     var out = { key: key, name: name, other: other, found: PL.length > 0, lines: PL.length, hasPrev: !!(from && A && A.prevFrom), cut: !!(A && A.cut), periodLines: P.length };
-
-    // the last sale in all the data we have (also before the period)
-    var lastSale = '';
-    all.forEach(function (l) { if (isMine(l) && l[0] > lastSale) lastSale = l[0]; });
-    out.lastSale = lastSale;
+    if (!PL.length) { var ls = ''; all.forEach(function (l) { if (isMine(l) && l[0] > ls) ls = l[0]; }); out.lastSale = ls; }   // the last sale in all the data (also before the period)
 
     // period totals (all products) for the share
-    var orderAll = {};
-    P.forEach(function (l) { orderAll[l[1]] = true; });
-    out.totalToman = sum(P, function (l) { return l[5]; });
-    out.totalOrders = Object.keys(orderAll).length;
+    out.totalToman = pre.totalToman;
+    out.totalOrders = pre.totalOrders;
     if (!PL.length) return out;
 
     // ---- orders of this product (lines with one order key are ONE order) ----
@@ -143,24 +156,23 @@
     out.customers = { n: cl.length, top: cl.slice(0, LIMIT.topCustomers), noId: noCust };
 
     // ---- bought with it: the other products in the same orders ----
-    var mine = {};
-    order.forEach(function (o) { mine[o.key] = true; });
     var seenWith = {}, withCount = {};
-    P.forEach(function (l) {
-      if (!mine[l[1]] || isMine(l)) return;
-      var k = keyOf(items[l[2]]), s = k + '|' + l[1];
-      if (seenWith[s]) return;
-      seenWith[s] = true;
-      var w = withCount[k] || (withCount[k] = { key: k, name: items[l[2]].n, n: 0 });
-      w.n += 1;
+    order.forEach(function (o) {
+      pre.byOrder[o.key].forEach(function (l) {
+        if (isMine(l)) return;
+        var k = keyOf(items[l[2]]), s = k + '|' + l[1];
+        if (seenWith[s]) return;
+        seenWith[s] = true;
+        var w = withCount[k] || (withCount[k] = { key: k, name: items[l[2]].n, n: 0 });
+        w.n += 1;
+      });
     });
     var wl = Object.keys(withCount).map(function (k) { return withCount[k]; });
     wl.sort(function (a, b) { return b.n - a.n || (a.name < b.name ? -1 : 1); });
     out.withOthers = { all: wl.length, list: wl.filter(function (x) { return x.n >= LIMIT.pairOrders; }).slice(0, LIMIT.withMax) };
 
     // ---- weekdays (Saturday = 0 … Friday = 6) ----
-    var first = P[0][0], last = P[0][0];
-    P.forEach(function (l) { if (l[0] < first) first = l[0]; if (l[0] > last) last = l[0]; });
+    var first = pre.first, last = pre.last;
     var wd = [0, 1, 2, 3, 4, 5, 6].map(function (i) { return { i: i, toman: 0, orders: 0 }; });
     order.forEach(function (o) { var w = wd[H.weekdayOf(o.date)]; w.toman += o.toman; w.orders += 1; });
     out.weekdays = { ok: H.dayDiff(first, last) + 1 >= LIMIT.weekdayDays && order.length >= LIMIT.weekdayOrders, days: wd, best: wd.slice().sort(function (x, y) { return y.toman - x.toman; })[0] };
@@ -171,5 +183,25 @@
     return out;
   }
 
-  window.barginProduct = { LIMIT: LIMIT, keyOf: keyOf, options: options, analyze: analyze };
+    // One row per product SOLD in the period (shop products and each «سایر» name): the same numbers as analyze(),
+  // reduced to what the comparison table shows. Unsold shop products are not listed.
+  // Row: {key, name, other, toman, orders, qty, avgOrder, share, trend, profit|null, margin|null, price|null (latest pack price),
+  //       topCust: {id, toman, orders}|null, with: {key, name, n}|null, bestDay: weekday index|null}
+  function analyzeAll(A, ctx) {
+    var pre = prepare(A, ctx), nameOf = {};
+    pre.items.forEach(function (it) { var k = keyOf(it); if (!nameOf[k]) nameOf[k] = it.n; });
+    return pre.keys.map(function (k) {
+      var a = analyze(A, ctx, k, pre);
+      return {
+        key: k, name: a.name, other: a.other, lines: a.lines, toman: a.toman, orders: a.orders, qty: a.qty, avgOrder: a.avgOrder, share: a.share, trend: a.trend,
+        profit: a.costedLines > 0 ? a.profit : null, margin: a.costedLines > 0 ? a.margin : null,
+        price: a.prices.n ? a.prices.last : null,
+        topCust: a.customers.top.length ? a.customers.top[0] : null,
+        with: a.withOthers.list.length ? a.withOthers.list[0] : null,
+        bestDay: a.weekdays.ok ? a.weekdays.best.i : null
+      };
+    });
+  }
+
+  window.barginProduct = { LIMIT: LIMIT, keyOf: keyOf, options: options, analyze: analyze, analyzeAll: analyzeAll };
 })();

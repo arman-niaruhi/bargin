@@ -2241,5 +2241,43 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(x) the product view is read-only: report.js still calls only getReport; no names hard-coded in report.js or the page", /api\('getReport'/.test(rsrc) && !/saveLedger|deleteLedger/.test(rsrc) && !/نام‌آزمایشی/.test(rsrc + html));
 }
 
+// ---- (y) «همه محصولات فروخته‌شده»: PV.analyzeAll + its card (owner approved 2026-11-08) ----
+{
+  const rsrc = read("admin/report.js"), html = read("admin/index.html");
+  const win = { barginAdmin: { jalCal_: gs.jalCal_, toJalali_: gs.toJalali_, months: ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"] } };
+  const ctxp = { window: win, document: { getElementById: () => null }, Intl, Date, Math, Object, String };
+  vm.runInNewContext(read("admin/analysis.js"), ctxp);
+  vm.runInNewContext(read("admin/product.js"), ctxp);
+  vm.runInNewContext(rsrc, ctxp);
+  const U = win.barginReport.util, PV = win.barginProduct;
+  const H = { dayDiff: U.dayDiff, addDays: U.addDays, weekdayOf: U.weekdayOf, monthKey: U.monthKey };
+  const items = [{ i: "a", n: "الف" }, { i: "b", n: "ب" }, { i: "*سایر*", n: "گردو" }, { i: "z", n: "حذف‌شده" }];
+  const shop = [{ id: "a", name: "الف" }, { id: "b", name: "ب" }, { id: "c", name: "ج" }];
+  const mk = (o, day, it, toman, profit, cust, ch, qty, unit) => [day, "o" + o, it, unit || "pack", qty === undefined ? 1 : qty, toman, profit, cust, ch || "s"];
+  const lines = [];
+  for (let i = 0; i < 40; i++) {
+    const day = U.addDays("1405-07-01", i), cust = String(1 + (i % 4));
+    lines.push(mk(i, day, 0, 100000 + (i % 2) * 10000, 40000, cust, i % 2 ? "p" : "s"));
+    if (i % 2 === 0) lines.push(mk(i, day, 1, 50000, null, cust, "s"));
+  }
+  lines.push(mk(100, "1405-08-05", 2, 70000, null, "", "u"));
+  lines.push(mk(200, "1405-06-01", 3, 9000, null, "1"));   // «حذف‌شده» sold only before the period
+  const A = { lines, items, shop, prevFrom: "1405-06-01", cut: false, profitReady: true };
+  const ctx = { from: "1405-07-01", to: "1405-09-30", today: "1405-09-30", H };
+  const rows = PV.analyzeAll(A, ctx);
+  check("(y) analyzeAll: one row per product SOLD in the period (الف, ب, گردو); the unsold shop product ج and the one sold only before the period are not listed", rows.map((r) => r.key).sort().join() === "a,b,x:گردو" && rows.length === 3, JSON.stringify(rows.map((r) => r.key)));
+  const same = rows.every((r) => { const a = PV.analyze(A, ctx, r.key); return r.toman === a.toman && r.orders === a.orders && r.avgOrder === a.avgOrder && r.share === a.share && JSON.stringify(r.trend) === JSON.stringify(a.trend) && JSON.stringify(r.qty) === JSON.stringify(a.qty) && (a.costedLines ? r.profit === a.profit && r.margin === a.margin : r.profit === null && r.margin === null) && r.price === (a.prices.n ? a.prices.last : null) && r.bestDay === (a.weekdays.ok ? a.weekdays.best.i : null) && (r.topCust ? r.topCust.id === a.customers.top[0].id : a.customers.top.length === 0) && (r.with ? r.with.key === a.withOthers.list[0].key : a.withOthers.list.length === 0); });
+  check("(y) analyzeAll gives the same numbers as analyze() for every product (sales, orders, average, share, trend, qty, profit, margin, price, top customer, with, best day)", same);
+  const ra = rows.find((r) => r.key === "a"), rg = rows.find((r) => r.key === "x:گردو"), rb = rows.find((r) => r.key === "b");
+  check("(y) cells below the limits are empty (null → «—»): «سایر» has no profit/margin/with/best day; ب has no profit; الف has all", ra.profit === 1600000 && ra.margin === 38 && ra.with && ra.with.key === "b" && ra.bestDay !== null && rg.profit === null && rg.margin === null && rg.with === null && rg.bestDay === null && rg.topCust === null && rb.profit === null && rb.price === 50000);
+  // speed: 20,000 lines, 30 products
+  const bigItems = Array.from({ length: 30 }, (_, i) => ({ i: "p" + i, n: "محصول " + i })), big = [];
+  for (let i = 0; i < 20000; i++) big.push(mk(Math.floor(i / 2), U.addDays("1405-01-01", i % 200), i % 30, 100000 + (i % 7) * 1000, i % 3 ? 20000 : null, String(1 + (i % 50)), i % 2 ? "s" : "p"));
+  const t0 = Date.now(), bigRows = PV.analyzeAll({ lines: big, items: bigItems, shop: [], prevFrom: "", profitReady: true }, { from: "", to: "", today: "1405-09-30", H }), ms = Date.now() - t0;
+  check("(y) analyzeAll with 20,000 lines and 30 products is fast (under 1.5 s) and has 30 rows", bigRows.length === 30 && ms < 1500, ms + " ms");
+  check("(y) the page: card «همه محصولات فروخته‌شده» between the products card and «سایت یا حضوری؟», table + cards + phone sort box; sort by header, empty last, row tap opens the product",
+    html.indexOf("همه محصولات فروخته‌شده") > html.indexOf("پرفروش‌ترین محصولات") && html.indexOf("همه محصولات فروخته‌شده") < html.lastIndexOf("<h2>سایت یا حضوری؟</h2>") && ["r-all-card", "r-all-table", "r-all-cards", "r-all-sort", "r-all-dir"].every((i) => html.includes('id="' + i + '"')) && /aria-sort/.test(rsrc) && /empty cells always last/.test(rsrc) && /openProduct\(r\.key\)/.test(rsrc) && !/innerHTML/.test(rsrc));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

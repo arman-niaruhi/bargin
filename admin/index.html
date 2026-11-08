@@ -130,6 +130,32 @@
     .rp-link:hover, .rp-link:focus-visible { color: var(--green-dark); }
     #pv-body .adm-bar { justify-content: flex-start; }
     #pv-title { word-break: break-word; }
+    .rp-allwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 6px; }
+    .rp-alltable { font-size: .88rem; min-width: 100%; }
+    .rp-alltable th, .rp-alltable td { white-space: nowrap; text-align: right; }
+    .rp-alltable tbody tr { cursor: pointer; }
+    .rp-alltable tbody tr:hover td { background: #fffaf0; }
+    .rp-alltable th:first-child, .rp-alltable td:first-child { position: sticky; right: 0; background: var(--surface); z-index: 1; box-shadow: -6px 0 6px -6px rgba(74,44,26,.25); }
+    .rp-alltable tbody tr:hover td:first-child { background: #fffaf0; }
+    .rp-th { font: inherit; font-weight: 700; color: var(--brown); background: none; border: 0; padding: 0 2px; min-height: 44px; cursor: pointer; }
+    .rp-th[aria-pressed="true"] { color: var(--green-dark); }
+    .rp-negtxt { color: var(--red); }
+    .rp-allcards, .rp-sortbar { display: none; }
+    .rp-sortbar { align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+    .rp-sortbar .rp-select { width: auto; margin: 0; max-width: 60%; }
+    .rp-sortbar .btn { min-height: 44px; padding: 4px 16px; }
+    .rp-acard { background: #fffaf0; border: 1px solid var(--line); border-radius: 12px; margin: 8px 0; text-align: right; overflow: hidden; }
+    .rp-aopen { display: block; width: 100%; font: inherit; color: inherit; background: none; border: 0; padding: 10px 12px 6px; text-align: right; cursor: pointer; min-height: 44px; }
+    .rp-atop { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+    .rp-atop b { font-size: 1rem; color: var(--green-dark); overflow-wrap: anywhere; }
+    .rp-atop span { white-space: nowrap; font-weight: 700; }
+    .rp-akv { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin-top: 6px; font-size: .88rem; color: var(--muted); }
+    .rp-akv b { color: var(--text); }
+    .rp-acard details { border-top: 1px dashed var(--line); padding: 0 12px; }
+    .rp-acard summary { cursor: pointer; font-weight: 700; color: var(--green-dark); min-height: 44px; display: flex; align-items: center; }
+    .rp-acard details .rp-akv { margin: 0 0 10px; grid-template-columns: 1fr; }
+    .rp-akv .rp-kv { white-space: normal; overflow-wrap: anywhere; }
+    @media (max-width: 639px) { .rp-allwrap { display: none; } .rp-allcards { display: block; } .rp-sortbar { display: flex; } }
     /* ==== end «گزارش» ==== */
 
     /* ==== «خرید و فروش» list (bargin-designer: polish here) ==== */
@@ -398,6 +424,18 @@
             <p class="rp-hint" id="r-prod-hint"></p>
             <div class="rp-chart" id="r-prod"></div>
             <details class="rp-details"><summary>جدول اعداد</summary><div id="r-prod-table"></div></details>
+          </section>
+
+          <section class="adm-card rp-card" id="r-all-card" hidden>
+            <h2>همه محصولات فروخته‌شده</h2>
+            <p class="rp-hint" id="r-all-hint"></p>
+            <div class="rp-sortbar">
+              <label for="r-all-sort">مرتب‌سازی</label>
+              <select id="r-all-sort" class="rp-select"></select>
+              <button type="button" class="btn btn-ghost" id="r-all-dir" aria-label="جهت مرتب‌سازی"></button>
+            </div>
+            <div class="rp-allwrap" id="r-all-table"></div>
+            <div class="rp-allcards" id="r-all-cards"></div>
           </section>
 
           <section class="adm-card rp-card">
