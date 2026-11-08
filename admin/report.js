@@ -151,6 +151,18 @@
     obBands: ['سفارش‌های کوچیک', 'سفارش‌های متوسط', 'سفارش‌های بزرگ'],
     obRange: ['تا {b} تومان', 'از {a} تا {b} تومان', 'از {a} تومان به بالا'],
     obAmount: 'مبلغ سفارش', obOrders: 'تعداد سفارش', obShare: 'سهم از فروش', obLines: 'میانگین تعداد محصول تو هر سفارش', obChan: 'سایت / حضوری',
+    // عملکرد ماه‌ها (phase 2c)
+    moHeads: ['ماه', 'فروش', 'نسبت به ماه قبل', 'نسبت به همین ماه پارسال', 'نسبت به میانگین ماه‌های کامل'],
+    moPartial: '{m} (ناقص: ۱ تا {n})',
+    moHint: 'هر ماه با ماه قبل، همین ماه پارسال و میانگین ماه‌های کامل مقایسه شده. «—» یعنی اون عدد تو داده‌ها نیست.',
+    moNoYear: 'برای مقایسه با پارسال، «همه» رو انتخاب کن.',
+    moNoYearAll: 'ماه‌هایی که پارسالشون تو داده‌ها نیست «—» دارن.',
+    moAvg: 'میانگین ماه‌های کامل: {a} تومان ({n} ماه).',
+    moAvgNeed: 'برای مقایسه با میانگین دست‌کم {need} ماه کامل لازمه؛ الان {n} تا داری.',
+    moNone: 'تو این بازه فروشی نیست که ماه‌ها رو مقایسه کنیم.',
+    moCut: ' فقط ۲۰,۰۰۰ ردیف فروشِ آخر حساب شد؛ ماه‌های قدیمی‌تر نیومدن.',
+    pmHint: 'فروش این محصول تو هر ماه؛ خط‌چین میانگین ماه‌های کامله. ماه ناقص کم‌رنگه.',
+    pmAvg: 'میانگین',
     // «همه محصولات فروخته‌شده»
     allCols: { name: 'محصول', toman: 'فروش', qty: 'مقدار فروش', orders: 'تعداد سفارش', avg: 'میانگین سفارش', share: 'سهم از فروش', trend: 'روند', profit: 'سود', margin: 'حاشیه سود', price: 'قیمت هر بسته/ظرف', cust: 'بهترین مشتری', withp: 'بیشتر همراه', day: 'بهترین روز هفته' },
     allHint: 'فقط محصول‌هایی که تو این بازه فروش رفتن ({n} تا). برای مرتب کردن، ستونو انتخاب کن (تو گوشی از «مرتب‌سازی»). روی یه محصول بزن تا همه‌ی عددهاش رو ببینی. «—» یعنی داده‌ی کافی نیست یا اون عدد برای این محصول حساب نمی‌شه. قیمت هر بسته/ظرف = آخرین قیمتی که یه بسته/ظرف باهاش فروخته شده (اگه اون روز چند فروش بوده، میانگین همون روزه). مرتب‌سازی «مقدار فروش» فقط بر اساس بسته/ظرفه (کیلو، گرم و عدد توش حساب نمی‌شن).',
@@ -358,6 +370,8 @@
   function isoNums(text) {
     return String(text).replace(/[۰-۹]{4}\/[۰-۹]{2}\/[۰-۹]{2}|[۰-۹]+(?:٫[۰-۹]+)?٪/g, function (m) { return '\u2066' + m + '\u2069'; });
   }
+  // x for a centred value label that must stay inside the chart (about 5.8 px per character at font-size 10)
+  function clampX(cx, text, W) { var half = String(text).length * 2.9 + 3; return Math.max(half, Math.min(W - half, cx)); }
   function svgBox(host, w, h, label) {
     var svg = S('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h, role: 'img', 'aria-label': label });
     host.appendChild(svg);
@@ -401,7 +415,7 @@
       var rect = S('rect', { x: cx - bw / 2, y: neg ? zeroY : zeroY - bh, width: bw, height: Math.max(0, bh), rx: 3, fill: neg ? COLORS.loss : COLORS.bar });
       rect.appendChild(S('title', null, rtl(labelOf(x.key, grain) + ' — ' + fmtSigned(val) + ' ' + TEXT.toman)));
       svg.appendChild(rect);
-      if (showVals && val !== 0) svg.appendChild(S('text', { x: cx, y: neg ? zeroY + bh + 12 : zeroY - bh - 5, 'font-size': 10, 'text-anchor': 'middle' }, rtl(fmtMoneySigned(val))));
+      if (showVals && val !== 0) svg.appendChild(S('text', { x: clampX(cx, fmtMoneySigned(val), W), y: neg ? zeroY + bh + 12 : zeroY - bh - 5, 'font-size': 10, 'text-anchor': 'middle' }, rtl(fmtMoneySigned(val))));
       if (i % step === 0 || i === 0) svg.appendChild(S('text', { x: cx, y: top + ch + 15, 'font-size': 10.5, 'text-anchor': 'middle' }, rtl(labelOf(x.key, grain))));
       if (grain === 'day') {
         var j = jparse(x.key), prev = i + 1 < n ? jparse(shown[i + 1].key) : null;   // the older neighbour is on the right
@@ -667,7 +681,7 @@
     setPressed('[data-rtab]', 'data-rtab', name);
     revealTab();
     if (name === 'overview') { renderSummary(); anTips(); renderOverviewTop(); renderDataCard(); renderDates(); }
-    else if (name === 'trend') { renderTime(); renderCum(); anWhen(); }
+    else if (name === 'trend') { renderTime(); renderCum(); anWhen(); renderMonths(); }
     else if (name === 'products') { renderProducts(); renderAllProducts(); renderPriceBands(); anProducts(); anPairs(); anIdle(); }
     else if (name === 'customers') { renderCustomers(); anCustomers(); renderCustBands(); }
     else { renderChannel(); anChannels(); renderOrderBands(); }
@@ -1028,6 +1042,7 @@
     // time chart (shares the روزانه/هفتگی/ماهانه/سالانه and فروش/سود switches)
     var why = pv.other ? TEXT.pvOther : (st.pv.profitReady ? TEXT.pvNoRaw : TEXT.noRawTab);
     renderTimeFor({ chart: 'pv-time', hint: 'pv-time-hint', table: 'pv-time-table' }, pv.byDay, withProfit, why);
+    renderMonths(st.product);
 
     // price of one pack
     var pr = pv.prices, ph = $('pv-price-hint'), pc = $('pv-price');
@@ -1473,6 +1488,67 @@
     });
   }
 
+  // ---- «عملکرد ماه‌ها» (shop, tab روند) and «ماه‌های این محصول» (single-product view) — numbers: segments.js monthly ----
+  function monthName(key) { var j = jparse(key); return (ad.months || [])[j.m - 1] + ' ' + toFa(j.y); }
+  // a comparison cell: arrow + % (the same arrow style as the trend), «—» when the other month is unknown or was zero
+  function cmpText(c) {
+    if (!c || c.pct === null) return '—';
+    return trendText({ pct: c.pct, dir: c.dir });
+  }
+  // bars of the product's months (newest on the left, like the other charts) with the average as a dashed line
+  function drawMonthBars(host, months, avg) {
+    clear(host);
+    var shown = months.slice(), n = shown.length;
+    if (!n) return;
+    var left = 62, right = 14, top = 22, bottom = 34, H = 210, W = Math.max(host.clientWidth || 320, left + right + n * 36);   // fits a phone without sideways scrolling
+    var max = avg || 0;
+    shown.forEach(function (m) { if (m.toman > max) max = m.toman; });
+    var hi = niceMax(max), ch = H - top - bottom, svg = svgBox(host, W, H, TEXT.pmHint), t, slot = (W - left - right) / n, bw = Math.min(40, slot * 0.66);
+    function Y(v) { return top + ch * (hi - v) / hi; }
+    for (t = 0; t <= 4; t++) {
+      var v = hi * t / 4, y = Y(v);
+      svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: y, y2: y, stroke: COLORS.grid, 'stroke-width': 1, 'stroke-dasharray': '3 4' }));
+      svg.appendChild(S('text', { x: 2, y: y + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl(v === 0 ? '۰' : fmtMoney(v))));
+    }
+    shown.forEach(function (m, i) {
+      var cx = left + slot * i + slot / 2, bh = ch * m.toman / hi;
+      var rect = S('rect', { x: cx - bw / 2, y: Y(m.toman), width: bw, height: Math.max(0, bh), rx: 3, fill: COLORS.bar, 'fill-opacity': m.partial ? 0.45 : 1 });
+      rect.appendChild(S('title', null, rtl(monthName(m.key) + ' — ' + groupFa(m.toman) + ' ' + TEXT.toman)));
+      svg.appendChild(rect);
+      if (slot >= 52 && m.toman > 0) svg.appendChild(S('text', { x: clampX(cx, fmtMoney(m.toman), W), y: Y(m.toman) - 5, 'font-size': 10, 'text-anchor': 'middle' }, rtl(fmtMoney(m.toman))));
+      svg.appendChild(S('text', { x: cx, y: top + ch + 15, 'font-size': 10.5, 'text-anchor': 'middle' }, rtl((ad.months || [])[jparse(m.key).m - 1] || '')));
+      svg.appendChild(S('text', { x: cx, y: top + ch + 28, 'font-size': 9.5, 'text-anchor': 'middle' }, rtl(toFa(jparse(m.key).y))));
+    });
+    if (avg) {
+      svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: Y(avg), y2: Y(avg), stroke: COLORS.person, 'stroke-width': 2, 'stroke-dasharray': '7 5' }));
+      var avgLine = svg.lastChild;
+      avgLine.appendChild(S('title', null, rtl(TEXT.pmAvg + ' ' + groupFa(avg) + ' ' + TEXT.toman)));
+    }
+    host.scrollLeft = 0;
+  }
+  // product === undefined: the whole shop (card mo-*); a product key: the single-product card (pm-*)
+  function renderMonths(product) {
+    var one = product !== undefined, ids = one ? { card: 'pm-card', hint: 'pm-hint', table: 'pm-table', note: 'pm-note' } : { card: 'mo-card', hint: 'mo-hint', table: 'mo-table', note: 'mo-note' };
+    var card = $(ids.card);
+    if (!card || !SG) return;
+    if (!st.raw || !st.raw.lines) { card.hidden = true; return; }
+    var mo = SG.monthly(st.raw, { from: st.range.from, to: st.range.to, today: todayKey(), H: { addDays: addDays, monthKey: monthKey } }, one ? product : '');
+    card.hidden = false;
+    clear($(ids.table));
+    if (one) clear($('pm-chart'));
+    if (!mo.ok) { $(ids.hint).textContent = TEXT.moNone; $(ids.note).textContent = ''; return; }
+    $(ids.hint).textContent = one ? TEXT.pmHint + ' ' + TEXT.moHint : TEXT.moHint;
+    if (one) drawMonthBars($('pm-chart'), mo.months, mo.avgOk ? mo.avg : 0);
+    drawDual($(ids.table), TEXT.moHeads, mo.months.map(function (m) {
+      return [m.partial ? fill(TEXT.moPartial, { m: monthName(m.key), n: toFa(m.days) }) : monthName(m.key), fmtMoney(m.toman) + ' ' + TEXT.toman, cmpText(m.vsPrev), cmpText(m.vsYear), cmpText(m.vsAvg)];
+    }));
+    var note = [];
+    if (mo.noYear) note.push(st.range.from ? TEXT.moNoYear : TEXT.moNoYearAll);
+    note.push(mo.avgOk ? fill(TEXT.moAvg, { a: fmtMoney(mo.avg), n: toFa(mo.fullN) }) : fill(TEXT.moAvgNeed, { need: toFa(SG.LIMIT.avgMonths), n: toFa(mo.fullN) }));
+    if (mo.cut) note.push(TEXT.moCut.trim());
+    $(ids.note).textContent = note.join(' ');
+  }
+
   function refreshView() {
     var any = st.data.rows.used > 0, open = !!st.product && !!st.raw && !!PV;
     $('pv-body').hidden = !open;
@@ -1605,6 +1681,9 @@
       st.cache = {}; st.data = null; st.token += 1; st.end = 'top'; st.unit = '';
       if ($('pb-card')) $('pb-card').hidden = true;
       if ($('cb-card')) $('cb-card').hidden = true;
+      if ($('mo-card')) $('mo-card').hidden = true;
+      if ($('pm-card')) $('pm-card').hidden = true;
+      ['mo-table', 'pm-chart', 'pm-table'].forEach(function (id) { if ($(id)) clear($(id)); });
       if ($('ob-card')) $('ob-card').hidden = true;
       ['cb-bar', 'cb-legend', 'cb-orders', 'cb-spend', 'ob-bar', 'ob-legend', 'ob-bands'].forEach(function (id) { if ($(id)) clear($(id)); });
       ['pb-bar', 'pb-legend', 'pb-bands', 'r-units'].forEach(function (id) { if ($(id)) clear($(id)); });

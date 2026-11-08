@@ -12,7 +12,10 @@
     top: 8,            // products drawn (the rest of the best list is summed in «بقیه»)
     customers: 8,      // customer bands: at least this many customers with a customer id
     topShare: 0.2,     // «۲۰٪ اول از نظر خرج»
-    orders: 15         // order-size bands: at least this many sale orders (5 per band)
+    orders: 15,        // order-size bands: at least this many sale orders (5 per band)
+    months: 6,         // months shown in «عملکرد ماه‌ها»
+    avgMonths: 3,      // the average of full months needs at least this many full months
+    monthFlat: 5       // a month-to-month change smaller than this % reads «ثابت»
   };
   var CH = { s: 'site', p: 'person', u: 'unknown' };
   var UNITS = ['pack', 'kg', 'g', 'piece'];
@@ -151,5 +154,64 @@
     return out;
   }
 
-  window.barginSegments = { customerBands: customerBands, orderBands: orderBands, ordersOf: ordersOf, LIMIT: LIMIT, UNITS: UNITS, unitStats: unitStats, defaultUnit: defaultUnit, rankProducts: rankProducts, unitShares: unitShares, priceBands: priceBands };
+  // ---- «عملکرد ماه‌ها»: Jalali months against the month before, the same month last year and the average of full months ----
+  // raw = the analysis part of getReport (lines of the period AND the period before it, items, prevFrom, cut); ctx = {from, to, today,
+  // H: {addDays, monthKey}}; key = a product key (product.js keyOf) or '' for the whole shop. The newest LIMIT.months months that the loaded
+  // lines cover completely, newest first. A month that is not over yet (partial) is compared with the SAME first N days of the other month
+  // (N = the day of the last day of the period), never projected, and not compared with the average. A month that the loaded lines do not
+  // cover (before the window, before the first sale) is unknown: null → «—».
+  function monthly(raw, ctx, key) {
+    var H = ctx.H, lines = (raw && raw.lines) || [], from = ctx.from || '', to = ctx.to || '', today = ctx.today || '';
+    var out = { ok: false, months: [], fullN: 0, avg: null, avgOk: false, noYear: false, cut: !!(raw && raw.cut) };
+    if (!lines.length) return out;
+    var items = raw.items || [], PVk = window.barginProduct;
+    function nextMonth(ms) { return H.monthKey(H.addDays(ms, 31)); }
+    function prevMonth(ms) { return H.monthKey(H.addDays(ms, -1)); }
+    function monthEnd(ms) { return H.addDays(nextMonth(ms), -1); }
+    function lastYear(ms) { return (parseInt(ms.slice(0, 4), 10) - 1) + ms.slice(4); }
+    var oldest = lines[0][0];
+    lines.forEach(function (l) { if (l[0] < oldest) oldest = l[0]; });
+    var low = (raw && raw.prevFrom) || from || '';
+    if (out.cut) { var nm = nextMonth(H.monthKey(oldest)); if (nm > low) low = nm; }
+    var firstMonth = H.monthKey(oldest);
+    function known(ms) { return ms >= firstMonth && (!low || ms >= low); }
+    var mine = key && PVk ? lines.filter(function (l) { return PVk.keyOf(items[l[2]]) === key; }) : lines;
+    var byMonth = {};
+    mine.forEach(function (l) { var m = H.monthKey(l[0]); byMonth[m] = (byMonth[m] || 0) + l[5]; });
+    function range(a, b) { var t = 0; mine.forEach(function (l) { if (l[0] >= a && l[0] <= b) t += l[5]; }); return t; }
+    var endDate = to && to < today ? to : today, lastM = H.monthKey(endDate), nDay = parseInt(endDate.slice(8), 10);
+    function partial(ms) { return monthEnd(ms) > endDate; }
+    function obj(cur, ref) {
+      if (ref === null) return null;
+      if (!(ref > 0)) return { ref: ref, pct: null, dir: '' };
+      var pc = Math.round((cur - ref) * 100 / ref);
+      return { ref: ref, pct: pc, dir: pc >= LIMIT.monthFlat ? 'up' : (pc <= -LIMIT.monthFlat ? 'down' : 'flat') };
+    }
+    function refSum(ms, part) {
+      if (!known(ms)) return null;
+      return part ? range(ms, H.addDays(ms, Math.min(nDay, parseInt(monthEnd(ms).slice(8), 10)) - 1)) : (byMonth[ms] || 0);
+    }
+    // the average of every full month the lines cover
+    var fulls = [], ms = firstMonth, guard = 0;
+    while (ms <= lastM && guard < 400) { if (known(ms) && !partial(ms)) fulls.push(byMonth[ms] || 0); ms = nextMonth(ms); guard += 1; }
+    out.fullN = fulls.length;
+    out.avgOk = fulls.length >= LIMIT.avgMonths;
+    if (out.avgOk) { var t = 0; fulls.forEach(function (v) { t += v; }); out.avg = Math.round(t / fulls.length); }
+    // the months shown, newest first
+    var cur = lastM, shown = 0;
+    while (shown < LIMIT.months && known(cur)) {
+      var part = partial(cur), v = part ? range(cur, endDate) : (byMonth[cur] || 0);
+      var m = { key: cur, toman: v, partial: part, days: part ? nDay : 0 };
+      m.vsPrev = obj(v, refSum(prevMonth(cur), part));
+      m.vsYear = obj(v, refSum(lastYear(cur), part));
+      m.vsAvg = !part && out.avgOk ? obj(v, out.avg) : null;
+      if (m.vsYear === null) out.noYear = true;
+      out.months.push(m);
+      cur = prevMonth(cur); shown += 1;
+    }
+    out.ok = out.months.length > 0;
+    return out;
+  }
+
+  window.barginSegments = { monthly: monthly, customerBands: customerBands, orderBands: orderBands, ordersOf: ordersOf, LIMIT: LIMIT, UNITS: UNITS, unitStats: unitStats, defaultUnit: defaultUnit, rankProducts: rankProducts, unitShares: unitShares, priceBands: priceBands };
 })();
