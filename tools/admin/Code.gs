@@ -1447,10 +1447,14 @@ function reportSummarize_(entries, customers, from, to, raw) {
 // period when the page asks for one, else `from`) and `to`, as small arrays the page analyses itself:
 // lines = [[date, orderKey, itemIndex, unit, qty, rowToman, profit|null, customerId, channel('s'|'p'|'u')]],
 // items = [{i: productId ('' for «سایر»), n: name}]. profit is null unless the row is costed exactly like in
-// reportSummarize_ (same pack-unit rule, current raw price). NO customer names, only the customer id. Same skipping
+// reportSummarize_ (same pack-unit rule, current raw price). The lines hold only the customer id; the names come in the separate
+// map customerNames {id: name} (only customers in the lines; admin session only; for «بررسی یه محصول», owner 2026-11-08). Same skipping
 // rules as reportSummarize_ (a sale without a date or a total is left out). Capped at REPORT_MAX_LINES (newest kept).
 var REPORT_MAX_LINES = 20000;
-function reportLines_(entries, lo, to, raw) {
+function reportLines_(entries, lo, to, raw, customers) {
+  var names = {};   // customer id -> name, only for the customers that appear in the lines (admin only, for «بررسی یه محصول»)
+  (customers || []).forEach(function (c) { names[c.id] = (c.firstName + ' ' + c.lastName).replace(/\s+/g, ' ').trim(); });
+  var usedNames = {};
   var prices = (raw && raw.ready && raw.prices) || {}, ready = !!(raw && raw.ready);
   var items = [], itemAt = {}, lines = [];
   (entries || []).forEach(function (e, n) {
@@ -1458,7 +1462,8 @@ function reportLines_(entries, lo, to, raw) {
     var date = typeof e.date === 'string' && /^\d{4}-\d\d-\d\d$/.test(e.date) ? e.date : '';
     if (!date || (lo && date < lo) || (to && date > to)) return;
     if (typeof e.rowToman !== 'number' || !isFinite(e.rowToman) || e.rowToman < 0) return;
-    var key = e.productId !== '' ? e.productId : e.productName;
+    // each typed «سایر» name is its own item (owner 2026-11-08), so one product can be looked at alone
+    var key = e.productId === LEDGER_OTHER_ID ? LEDGER_OTHER_ID + '\n' + e.productName : (e.productId !== '' ? e.productId : e.productName);
     if (!Object.prototype.hasOwnProperty.call(itemAt, key)) { itemAt[key] = items.length; items.push({ i: e.productId, n: e.productName || e.productId }); }
     var qty = typeof e.qty === 'number' && isFinite(e.qty) && e.qty > 0 ? e.qty : 0;
     var price = e.productId !== '' && e.productId !== LEDGER_OTHER_ID && Object.prototype.hasOwnProperty.call(prices, e.productId) ? prices[e.productId] : null;
@@ -1466,13 +1471,14 @@ function reportLines_(entries, lo, to, raw) {
     if (ready && e.qtyUnit === 'pack' && typeof price === 'number' && isFinite(price) && price > 0 && qty > 0) profit = e.rowToman - Math.round(price * qty);
     lines.push([date, typeof e.orderId === 'number' ? 'o' + e.orderId : 'r' + n, itemAt[key], REPORT_UNITS.indexOf(e.qtyUnit) >= 0 ? e.qtyUnit : '', qty, e.rowToman, profit,
       e.customerId !== '' ? e.customerId : '', e.channel === 'site' ? 's' : (e.channel === 'person' ? 'p' : 'u')]);
+    if (e.customerId !== '' && Object.prototype.hasOwnProperty.call(names, e.customerId) && names[e.customerId]) usedNames[e.customerId] = names[e.customerId];
   });
   var cut = lines.length > REPORT_MAX_LINES;
   if (cut) {
     lines.sort(function (a, b) { return a[0] < b[0] ? 1 : (a[0] > b[0] ? -1 : 0); });
     lines = lines.slice(0, REPORT_MAX_LINES);
   }
-  return { lines: lines, items: items, cut: cut };
+  return { lines: lines, items: items, cut: cut, customerNames: usedNames };
 }
 
 // Action getReport (read-only): data = {from, to} Persian dates 'yyyy-mm-dd' (either may be '' = no limit).
@@ -1497,13 +1503,13 @@ function getReport(data) {
     // for «تحلیل و پیشنهاد»: the sale lines of the period and of the equal period before it (prevFrom), no names
     var prevFrom = data.prevFrom !== undefined && data.prevFrom !== null ? data.prevFrom : '';
     if (typeof prevFrom !== 'string' || (prevFrom !== '' && (ledgerDate_(prevFrom) !== prevFrom || !from || prevFrom >= from))) return { ok: false, message: MSG.reportRange };
-    var an = reportLines_(entries, prevFrom || from, to, raw);
+    var an = reportLines_(entries, prevFrom || from, to, raw, customers);
     var shop = [];
     try {   // the current shop products (to find the ones that never sell); a broken products tab just means no list
       var pr = readSheetRows();
       if (!pr.issues.length) pr.rows.forEach(function (r) { if (r.id && r.name) shop.push({ id: r.id, name: r.name }); });
     } catch (err) { shop = []; }
-    out.analysis = { lines: an.lines, items: an.items, cut: an.cut, shop: shop, prevFrom: prevFrom, profitReady: !!rm.ready };
+    out.analysis = { lines: an.lines, items: an.items, cut: an.cut, shop: shop, prevFrom: prevFrom, profitReady: !!rm.ready, customerNames: an.customerNames };
   }
   return out;
 }

@@ -1712,7 +1712,12 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
             an.lines.length === 6 && an.lines.every((l) => l.length === 9) && an.lines.some((l) => l[0] === "1405-07-01") && !an.lines.some((l) => l[3] === "" && l[5] === 2000000), JSON.stringify(an.lines));
           check("(w) analysis: an order's lines share one order key; a row without an order number has its own key; items are listed once",
             an.lines.filter((l) => l[1] === "o7").length === 2 && an.lines.filter((l) => l[1] === "o8").length === 2 && new Set(an.lines.map((l) => l[1])).size === 4 && an.items.length === 2, JSON.stringify(an.items));
-          check("(w) analysis: NO customer names anywhere, only customer ids (and no raw prices)", !/zahra|ahmadi/i.test(JSON.stringify(an)) && an.lines.some((l) => l[7] === "2") && an.lines.every((l) => l[6] === null) && an.profitReady === false && Array.isArray(an.shop), JSON.stringify(an).slice(0, 300));
+          check("(w) analysis: the lines hold NO customer names, only customer ids (names are only in the separate customerNames map); no raw prices", !/zahra|ahmadi/i.test(JSON.stringify(an.lines)) && !/zahra|ahmadi/i.test(JSON.stringify(an.items)) && an.lines.some((l) => l[7] === "2") && an.lines.every((l) => l[6] === null) && an.profitReady === false && Array.isArray(an.shop), JSON.stringify(an).slice(0, 300));
+          check("(x) product view: analysis.customerNames = {id: name} only for the customers in the lines (customer 1 yes; 2 has no row in «مشتری‌ها»)", an.customerNames && an.customerNames["1"] === "zahra ahmadi" && !("2" in an.customerNames) && Object.keys(an.customerNames).every((k) => an.lines.some((l) => l[7] === k)), JSON.stringify(an.customerNames));
+          check("(x) product view: a normal getReport (no analysis:true) has no analysis part at all", !("analysis" in rep({ from: "1405-08-01", to: "1405-08-30" }, rows0).data));
+          const oth = [rr(1, "1405-08-10", S, "*سایر*", "گردو", 1, PK, 1000, "", "سایت", 1), rr(2, "1405-08-11", S, "*سایر*", "بادام", 2, PK, 2000, "", "سایت", 2), rr(3, "1405-08-12", S, "*سایر*", "گردو", 1, PK, 1500, "", "سایت", 3)];
+          const lo2 = gs.reportLines_(oth.map((r) => gs.ledgerEntry_(r)), "", "", { ready: false, prices: {} }, []);
+          check("(x) product view: each typed «سایر» name is its own item (گردو, بادام), the same name is the same item", lo2.items.length === 2 && lo2.items[0].n === "گردو" && lo2.items[1].n === "بادام" && lo2.lines[0][2] === lo2.lines[2][2] && lo2.lines[1][2] === 1 && Object.keys(lo2.customerNames).length === 0, JSON.stringify(lo2.items));
           const badPrev = [rep({ from: "1405-08-01", to: "1405-08-30", analysis: true, prevFrom: "x" }, rows0), rep({ from: "1405-08-01", to: "1405-08-30", analysis: true, prevFrom: "1405-08-05" }, rows0), rep({ from: "", to: "", analysis: true, prevFrom: "1405-01-01" }, rows0), rep({ from: "1405-08-01", to: "", analysis: true, prevFrom: 7 }, rows0)];
           check("(w) analysis: a bad prevFrom (not a date, not before from, or no from at all) is refused with a message", badPrev.every((x) => x.data.ok === false && typeof x.data.message === "string"), JSON.stringify(badPrev));
           const ents = rows0.map((r) => gs.ledgerEntry_(r));
@@ -2055,6 +2060,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const ctxr = { window: win, document: { getElementById: () => null }, Intl, Date, Math, Object, String };
   const asrc = read("admin/analysis.js");
   vm.runInNewContext(asrc, ctxr);
+  vm.runInNewContext(read("admin/product.js"), ctxr);
   vm.runInNewContext(rsrc, ctxr);
   const U = win.barginReport.util;
   const p2 = (n) => String(n).padStart(2, "0");
@@ -2097,9 +2103,9 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(t) report.js and the whole admin use nothing newer than ES2017", !newer.test(rsrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(asrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(adm.replace(/\/\/[^\n]*/g, "")));
   check("(t) report.js: no innerHTML / eval / document.write / libraries / network calls of its own (only barginAdmin.api)", !/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|fetch\(|XMLHttpRequest|import\(|require\(|https?:\/\//.test(rsrc.replace(/'http:\/\/www\.w3\.org\/2000\/svg'/, "")));
   check("(t) report.js only reads: it calls getReport and no save/delete action", /api\('getReport'/.test(rsrc) && !/saveLedger|deleteLedger|saveProduct|deleteProduct|publishCsv/.test(rsrc));
-  check("(t) the page loads report.js after admin.js (script-src 'self' allows it) and has the «گزارش» tab", /<script src="admin\.js"><\/script>\s*<script src="analysis\.js"><\/script>\s*<script src="report\.js"><\/script>/.test(html) && /id="tab-report"[^>]*>گزارش</.test(html) && /script-src 'self'/.test(html));
+  check("(t) the page loads report.js after admin.js (script-src 'self' allows it) and has the «گزارش» tab", /<script src="admin\.js"><\/script>\s*<script src="analysis\.js"><\/script>\s*<script src="product\.js"><\/script>\s*<script src="report\.js"><\/script>/.test(html) && /id="tab-report"[^>]*>گزارش</.test(html) && /script-src 'self'/.test(html));
   check("(t) the report has the four tiles, the three switches and the four charts with a «جدول اعداد» under each",
-    ["جمع فروش", "تعداد سفارش", "تعداد مشتری", "میانگین هر سفارش"].every((t) => rsrc.includes(t)) && ["این ماه", "۳ ماه اخیر", "امسال", "روزانه", "هفتگی", "ماهانه", "به تومان", "به تعداد", "فروش و سود در طول زمان", "سالانه", "۷ روز اخیر", "هفته‌ی قبل", "پرفروش‌ترین محصولات", "سایت یا حضوری؟", "بهترین مشتری‌ها"].every((t) => html.includes(t)) && (html.match(/<summary>جدول اعداد<\/summary>/g) || []).length === 4 && (html.match(/<details/g) || []).length >= 4);
+    ["جمع فروش", "تعداد سفارش", "تعداد مشتری", "میانگین هر سفارش"].every((t) => rsrc.includes(t)) && ["این ماه", "۳ ماه اخیر", "امسال", "روزانه", "هفتگی", "ماهانه", "به تومان", "به تعداد", "فروش و سود در طول زمان", "سالانه", "۷ روز اخیر", "هفته‌ی قبل", "پرفروش‌ترین محصولات", "سایت یا حضوری؟", "بهترین مشتری‌ها"].every((t) => html.includes(t)) && (html.match(/<summary>جدول اعداد<\/summary>/g) || []).length >= 4 && (html.match(/<details/g) || []).length >= 4);
   check("(t) the old-server guard: an old script (unknown_action, or no report:true) shows a message; the session loss goes through onApiError (back to login)", /unknown_action/.test(rsrc) && /r\.report !== true/.test(rsrc) && /ad\.onApiError\(err/.test(rsrc) && /onApiError[\s\S]{0,200}NO_SESSION/.test(adm));
   check("(t) the report is wiped when the login screen shows (logout / NO_SESSION), so no customer name stays in the page", /id !== 's-app' && window\.barginReport\) window\.barginReport\.reset\(\)/.test(adm) && /reset: function/.test(rsrc));
   check("(t) channel colours: green for سایت, walnut for حضوری, tan for نامشخص", /site: '#2f7a1f', person: '#4a2c1a', unknown: '#d2ad6c'/.test(rsrc));
@@ -2187,5 +2193,53 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     check("(w) analysis: the previous period is the same number of days right before: 30 days from 1405-08-01 → prevFrom 1405-07-01", U.prevFromFor({ from: "1405-08-01", to: "1405-08-30" }) === "1405-07-01" && U.prevFromFor({ from: "", to: "" }) === "");
   }
 }
+// ---- (x) «بررسی یه محصول»: admin/product.js + its drawing (owner approved 2026-11-08) ----
+{
+  const rsrc = read("admin/report.js"), html = read("admin/index.html"), psrc = read("admin/product.js");
+  const win = { barginAdmin: { jalCal_: gs.jalCal_, toJalali_: gs.toJalali_, months: ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"] } };
+  const ctxp = { window: win, document: { getElementById: () => null }, Intl, Date, Math, Object, String };
+  vm.runInNewContext(read("admin/analysis.js"), ctxp);
+  vm.runInNewContext(psrc, ctxp);
+  vm.runInNewContext(rsrc, ctxp);
+  const U = win.barginReport.util, PV = win.barginProduct;
+  const H = { dayDiff: U.dayDiff, addDays: U.addDays, weekdayOf: U.weekdayOf, monthKey: U.monthKey };
+  const items = [{ i: "a", n: "الف" }, { i: "b", n: "ب" }, { i: "*سایر*", n: "گردو" }, { i: "z", n: "حذف‌شده" }];
+  const shop = [{ id: "a", name: "الف" }, { id: "b", name: "ب" }, { id: "c", name: "ج" }];
+  const mk = (o, day, it, toman, profit, cust, ch, qty, unit) => [day, "o" + o, it, unit || "pack", qty === undefined ? 1 : qty, toman, profit, cust, ch || "s"];
+  const lines = [];
+  for (let i = 0; i < 40; i++) {
+    const day = U.addDays("1405-07-01", i), cust = String(1 + (i % 4));
+    lines.push(mk(i, day, 0, 100000 + (i % 2) * 10000, 40000, cust, i % 2 ? "p" : "s"));   // الف in every order, pack price 100000 / 110000
+    if (i % 2 === 0) lines.push(mk(i, day, 1, 50000, null, cust, "s"));                         // ب in half of the orders
+  }
+  lines.push(mk(100, "1405-08-05", 2, 70000, null, "", "u"));                                    // a «سایر» sale
+  const A = { lines, items, shop, prevFrom: "", cut: false, profitReady: true, customerNames: { "1": "نام‌آزمایشی" } };
+  const ctx = { from: "", to: "", today: "1405-09-30", H };
+  const o = PV.options(A);
+  check("(x) product options: shop products first (even ج with no sales), then sold items not in the shop; a «سایر» name is marked", o.slice(0, 3).map((x) => x.key).join() === "a,b,c" && o.some((x) => x.key === "x:گردو" && x.other) && o.some((x) => x.key === "z" && !x.other) && o[o.length - 1].other, JSON.stringify(o));
+  const a = PV.analyze(A, ctx, "a");
+  check("(x) product numbers: sales, orders, quantity, average order, share of the total", a.found && a.lines === 40 && a.orders === 40 && a.toman === 4200000 && a.avgOrder === 105000 && a.qty.pack === 40 && Math.abs(a.share - 4200000 * 100 / a.totalToman) < 1e-9 && a.totalOrders === 41, JSON.stringify([a.toman, a.orders, a.share]));
+  check("(x) product profit uses only the costed lines: profit 1,600,000, margin 38%, cost = costed sales − profit", a.costedLines === 40 && a.profit === 1600000 && a.cost === 2600000 && a.margin === 38 && a.uncosted === 0, JSON.stringify([a.profit, a.cost, a.margin]));
+  const b = PV.analyze(A, ctx, "b");
+  check("(x) a product without raw price: sales yes, no profit lines", b.found && b.orders === 20 && b.toman === 1000000 && b.costedLines === 0 && b.profit === 0 && b.margin === null && b.uncosted === 20);
+  check("(x) bought with it: ب and الف share 20 orders; under 3 shared orders is left out", b.withOthers.list[0].key === "a" && b.withOthers.list[0].n === 20 && a.withOthers.list.some((x) => x.key === "b" && x.n === 20) && !a.withOthers.list.some((x) => x.key === "x:گردو"));
+  check("(x) customers: ids with orders and sales, best first, 4 customers", a.customers.n === 4 && a.customers.top.length === 4 && a.customers.top[0].toman >= a.customers.top[3].toman && a.customers.top.reduce((t, c) => t + c.orders, 0) === 40);
+  check("(x) price per pack: 100000 / 110000 alternate, min / max / last", a.prices.n === 40 && a.prices.min === 100000 && a.prices.max === 110000 && a.prices.list.length === 40 && a.prices.last === 110000);
+  check("(x) weekdays need 28 days of data AND 5 orders of the product; channels add up to the orders", a.weekdays.ok === true && a.weekdays.days.reduce((t, d) => t + d.orders, 0) === 40 && a.channels.site.orders + a.channels.person.orders + a.channels.unknown.orders === 40);
+  const g = PV.analyze(A, ctx, "x:گردو");
+  check("(x) a «سایر» item: found, one sale, no profit; nothing bought with it, weekdays not enough", g.found && g.other === true && g.name === "گردو" && g.orders === 1 && g.costedLines === 0 && g.withOthers.list.length === 0 && g.weekdays.ok === false && g.prices.n === 1);
+  const c = PV.analyze(A, ctx, "c");
+  check("(x) a product with no sales: found false, the name comes from the shop list, no last sale", c.found === false && c.name === "ج" && c.lastSale === "");
+  const A2 = { lines: lines.concat([mk(200, "1405-06-01", 3, 9000, null, "1")]), items, shop, prevFrom: "1405-06-01", cut: true, profitReady: true };
+  const z = PV.analyze(A2, { from: "1405-07-01", to: "1405-07-30", today: "1405-09-30", H }, "z");
+  check("(x) no sales in the period: found false, the last sale in the earlier data is shown; cut is passed on", z.found === false && z.lastSale === "1405-06-01" && z.cut === true);
+  const t = PV.analyze({ lines: [].concat(Array.from({ length: 6 }, (_, i) => mk(300 + i, U.addDays("1405-07-01", i), 0, 200000, null, "1")), Array.from({ length: 6 }, (_, i) => mk(400 + i, U.addDays("1405-06-01", i), 0, 100000, null, "1"))), items, shop, prevFrom: "1405-06-01", profitReady: false }, { from: "1405-07-01", to: "1405-07-30", today: "1405-09-30", H }, "a");
+  check("(x) trend against the period before: 1,200,000 now vs 600,000 before = +100%, up (needs 5 lines in both)", t.trend && t.trend.pct === 100 && t.trend.dir === "up" && PV.analyze({ lines: lines.slice(0, 3), items, shop, prevFrom: "" }, ctx, "a").trend === null);
+  check("(x) product.js is pure: no DOM, no network, no names", !/document|fetch\(|XMLHttpRequest|innerHTML/.test(psrc.replace(/\/\/[^\n]*/g, "")) && !/zahra|ahmadi/i.test(psrc));
+  check("(x) the page: picker, back button and product view cards; report.js has both ways in (dropdown + ranking links) and falls back to «مشتری N» without customerNames",
+    ["pv-select", "pv-back", "pv-body", "pv-tiles", "pv-time", "pv-price", "pv-cust", "pv-with", "pv-week", "pv-chan"].every((i) => html.includes('id="' + i + '"')) && /همه محصولات \(نمای کلی\)/.test(rsrc) && /productLink\(p\.name/.test(rsrc) && /fill\(TEXT\.customerNo/.test(rsrc) && /customerNames/.test(rsrc) && !/innerHTML/.test(rsrc));
+  check("(x) the product view is read-only: report.js still calls only getReport; no names hard-coded in report.js or the page", /api\('getReport'/.test(rsrc) && !/saveLedger|deleteLedger/.test(rsrc) && !/نام‌آزمایشی/.test(rsrc + html));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

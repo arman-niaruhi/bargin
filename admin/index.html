@@ -124,6 +124,12 @@
     .rp-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
     .rp-table th, .rp-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; }
     .rp-table td.n, .rp-table th.n { text-align: left; white-space: nowrap; }
+    .rp-select { width: 100%; max-width: 420px; display: block; margin: 6px auto 0; box-sizing: border-box; min-height: 44px; font-family: inherit; font-size: 1rem; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fffaf0; color: var(--text); }
+    .rp-select:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(47, 122, 31, .2); }
+    .rp-link { font: inherit; font-weight: 700; color: var(--text); background: none; border: 0; padding: 0; min-height: 32px; cursor: pointer; text-align: right; text-decoration: underline dotted var(--green); text-underline-offset: 4px; }
+    .rp-link:hover, .rp-link:focus-visible { color: var(--green-dark); }
+    #pv-body .adm-bar { justify-content: flex-start; }
+    #pv-title { word-break: break-word; }
     /* ==== end «گزارش» ==== */
 
     /* ==== «خرید و فروش» list (bargin-designer: polish here) ==== */
@@ -296,7 +302,71 @@
           <button type="button" data-period="year" aria-pressed="false">امسال</button>
           <button type="button" data-period="all" aria-pressed="false">همه</button>
         </div>
+        <section class="adm-card rp-card" id="pv-pick" hidden>
+          <h2>بررسی یه محصول</h2>
+          <label class="rp-hint" for="pv-select">یه محصول رو انتخاب کن تا فقط عددهای خودش رو ببینی.</label>
+          <select id="pv-select" class="rp-select"></select>
+        </section>
         <p class="adm-status" id="r-note" role="status"></p>
+        <div id="pv-body" hidden>
+          <div class="adm-bar"><button type="button" class="btn btn-ghost" id="pv-back">→ برگشت به نمای کلی</button></div>
+          <h2 class="rp-h" id="pv-title"></h2>
+          <p class="rp-hint" id="pv-note"></p>
+          <div id="pv-main" hidden>
+            <div class="rp-tiles" id="pv-tiles"></div>
+            <div class="rp-tiles rp-tiles3" id="pv-tiles-profit" hidden></div>
+
+            <section class="adm-card rp-card">
+              <h2>فروش و سود این محصول در طول زمان</h2>
+              <div class="adm-filter rp-switch" role="group" aria-label="نمایش" id="pv-metrics">
+                <button type="button" data-metric="toman" aria-pressed="true">فروش</button>
+                <button type="button" data-metric="profit" aria-pressed="false">سود</button>
+              </div>
+              <div class="adm-filter rp-switch" role="group" aria-label="دسته‌بندی زمان" id="pv-grains">
+                <button type="button" data-grain="day" aria-pressed="true">روزانه</button>
+                <button type="button" data-grain="week" aria-pressed="false">هفتگی</button>
+                <button type="button" data-grain="month" aria-pressed="false">ماهانه</button>
+                <button type="button" data-grain="year" aria-pressed="false">سالانه</button>
+              </div>
+              <p class="rp-hint" id="pv-time-hint"></p>
+              <div class="rp-chart" id="pv-time"></div>
+              <details class="rp-details"><summary>جدول اعداد</summary><div id="pv-time-table"></div></details>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>قیمت فروش هر بسته</h2>
+              <p class="rp-hint" id="pv-price-hint"></p>
+              <div class="rp-chart" id="pv-price"></div>
+              <details class="rp-details"><summary>جدول اعداد</summary><div id="pv-price-table"></div></details>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>مشتری‌های این محصول</h2>
+              <p class="rp-hint" id="pv-cust-hint"></p>
+              <div class="rp-chart" id="pv-cust"></div>
+              <details class="rp-details"><summary>جدول اعداد</summary><div id="pv-cust-table"></div></details>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>با چی خریده می‌شه؟</h2>
+              <ol class="rp-rank" id="pv-with"></ol>
+              <p class="rp-hint" id="pv-with-hint"></p>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>بهترین روزهای هفته</h2>
+              <p class="rp-hint" id="pv-week-hint"></p>
+              <div class="rp-chart" id="pv-week"></div>
+            </section>
+
+            <section class="adm-card rp-card">
+              <h2>سایت یا حضوری؟</h2>
+              <div class="rp-chart" id="pv-chan"></div>
+              <div class="rp-legend" id="pv-chan-legend"></div>
+            </section>
+            <p class="rp-hint" id="pv-used"></p>
+          </div>
+        </div>
         <div id="r-body" hidden>
           <div class="rp-tiles" id="r-tiles"></div>
           <div class="rp-tiles rp-tiles3" id="r-tiles-profit" hidden></div>
@@ -536,6 +606,7 @@
   <script src="../products.js"></script>
   <script src="admin.js"></script>
   <script src="analysis.js"></script>
+  <script src="product.js"></script>
   <script src="report.js"></script>
 </body>
 </html>

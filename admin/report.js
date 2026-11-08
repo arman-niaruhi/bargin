@@ -80,7 +80,30 @@
     idleNone: 'همه‌ی محصول‌های فروشگاه تو {k} روز اخیر فروش داشتن.',
     idleNever: 'تو این {k} روز اصلاً فروش نرفتن',
     idleRare: 'بیشتر از ۲۸ روزه فروش نرفتن',
-    idleDays: '{n} روز'
+    idleDays: '{n} روز',
+    // «بررسی یه محصول»
+    pvAll: 'همه محصولات (نمای کلی)', pvOtherTag: 'سایر',
+    pvTiles: ['فروش این محصول', 'مقدار فروش', 'تعداد سفارش', 'میانگین هر سفارش', 'سهم از کل فروش', 'روند نسبت به دوره‌ی قبل'],
+    pvNone: 'تو این بازه‌ی زمانی از این محصول فروشی ثبت نشده.',
+    pvLast: 'آخرین فروشش {d} بوده.',
+    pvNoLast: 'تو این بازه و دوره‌ی قبلش هم فروشی ازش ثبت نشده.',
+    pvBasis: 'بر اساس {n} ردیف فروش این محصول (از کل {m} ردیف فروش)، {range}.',
+    pvCut: 'فقط ۲۰,۰۰۰ ردیف فروشِ آخر حساب شد.',
+    pvTrendNeed: 'فلش روند وقتی میاد که تو هر دو دوره دست‌کم {n} ردیف فروش این محصول باشه.',
+    pvOther: 'این یه مورد «سایر»ه؛ قیمت اولیه نداره و تو سود حساب نمی‌شه.',
+    pvNoRaw: 'این محصول قیمت اولیه نداره (یا واحد فروشش «بسته/ظرف» نیست)، برای همین سودش حساب نشده.',
+    pvUncosted: '{n} ردیف فروش این محصول تو سود حساب نشدن، چون قیمت اولیه نداشتن یا واحدشون «بسته/ظرف» نبود.',
+    pvPriceTitle: 'قیمت فروش هر بسته',
+    pvPriceNone: 'تو این بازه برای این محصول ردیف فروشی با واحد «بسته/ظرف» نیست، پس قیمت هر بسته حساب نمی‌شه.',
+    pvPriceOne: 'فقط تو یه روز فروش «بسته/ظرف» داشتیم و قیمت هر بسته {p} تومان بود.',
+    pvPriceHint: 'قیمت هر بسته = مبلغ ردیف ÷ تعداد، فقط از ردیف‌های «بسته/ظرف». اگه تو یه روز چند فروش داشتی، میانگینشون حساب می‌شه. کمترین {min}، بیشترین {max}، آخرین {last} تومان.',
+    thPrice: 'قیمت هر بسته (تومان)',
+    pvCustHint: 'فقط سفارش‌هایی که مشتری ثبت‌شده دارن حساب می‌شن.',
+    pvCustNoId: ' {n} سفارش چون مشتری نداشت حساب نشد.',
+    pvCustNone: 'هیچ‌کدوم از سفارش‌های این محصول مشتری ثبت‌شده ندارن.',
+    pvWithNone: 'هنوز محصولی نیست که دست‌کم {n} بار تو یه سفارش با این محصول خریده شده باشه.',
+    pvWithRow: '{n} سفارش · {p}٪ از سفارش‌های این محصول',
+    pvWeekLittle: 'برای بهترین روزهای هفته دست‌کم ۴ هفته فروش و {n} سفارش از این محصول لازمه. یه بازه‌ی بزرگ‌تر مثل «۳ ماه اخیر» یا «همه» رو انتخاب کن.'
   };
 
   var DAY_MS = 86400000;
@@ -378,7 +401,7 @@
   }
 
   // ---- the tab ----
-  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0 };
+  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0, raw: null, product: '', pv: null };
   function $(id) { return document.getElementById(id); }
 
   function tile(label, big, full, neg) {
@@ -393,17 +416,17 @@
 
   function hasProfit() { var p = st.data && st.data.profit; return !!(p && p.ready && p.rows > 0); }
 
-  function renderTime() {
-    var sum = st.data, series = buildSeries(sum.byDay, st.grain, st.range.from, st.range.to), prof = st.metric === 'profit';
-    if (prof && !hasProfit()) {
-      clear($('r-time'));
-      $('r-time-hint').textContent = sum.profit && !sum.profit.ready ? TEXT.noRawTab : TEXT.noProfitData;
+  // The time chart + hint + table for the overview (ids r-*) or for one product (ids pv-*); one shared switch.
+  function renderTimeFor(ids, byDay, withProfit, noProfitMsg) {
+    var series = buildSeries(byDay, st.grain, st.range.from, st.range.to), prof = st.metric === 'profit';
+    if (prof && !withProfit) {
+      clear($(ids.chart));
+      $(ids.hint).textContent = noProfitMsg;
     } else {
-      var total = drawTime($('r-time'), series, st.grain, st.metric);
-      $('r-time-hint').textContent = (total > MAX_BARS ? fill(TEXT.more60, { n: toFa(MAX_BARS) }) + ' ' : '') + (prof ? TEXT.profitHint : '');
+      var total = drawTime($(ids.chart), series, st.grain, st.metric);
+      $(ids.hint).textContent = (total > MAX_BARS ? fill(TEXT.more60, { n: toFa(MAX_BARS) }) + ' ' : '') + (prof ? TEXT.profitHint : '');
     }
     var head = st.grain === 'week' ? TEXT.thWeek : (st.grain === 'month' ? TEXT.thMonth : (st.grain === 'year' ? TEXT.thYear : TEXT.thDate));
-    var withProfit = hasProfit();
     var rows = series.slice().reverse().map(function (x) {
       var j = jparse(x.key), r = [st.grain === 'year' ? toFa(j.y) : (st.grain === 'month' ? (ad.months[j.m - 1] + ' ' + toFa(j.y)) : toFa(x.key.replace(/-/g, '/'))), groupFa(x.toman), toFa(x.orders)];
       if (withProfit) r.push(fmtSigned(x.profit));
@@ -411,7 +434,11 @@
     });
     var heads = [head, TEXT.thSales, TEXT.thOrders];
     if (withProfit) heads.push(TEXT.thProfit);
-    drawTable($('r-time-table'), heads, rows);
+    drawTable($(ids.table), heads, rows);
+  }
+  function renderTime() {
+    var sum = st.data;
+    renderTimeFor({ chart: 'r-time', hint: 'r-time-hint', table: 'r-time-table' }, sum.byDay, hasProfit(), sum.profit && !sum.profit.ready ? TEXT.noRawTab : TEXT.noProfitData);
   }
 
   function renderProducts() {
@@ -624,7 +651,7 @@
     var rank = $('an-rank');
     clear(rank);
     a.ranked.slice(0, 8).forEach(function (p) {
-      var li = el('li', 'rp-rank-row'), top = el('div', 'rp-rank-top'), nm = el('b', '', p.name), sub;
+      var li = el('li', 'rp-rank-row'), top = el('div', 'rp-rank-top'), nm = productLink(p.name, PV ? PV.keyOf({ i: p.id, n: p.name }) : ''), sub;
       top.appendChild(nm);
       if (p.group) { var chip = el('span', 'rp-chip', TEXT.groups[p.group]); chip.style.background = GROUP_COLOR[p.group]; top.appendChild(chip); }
       li.appendChild(top);
@@ -735,6 +762,185 @@
     }
   }
 
+
+  // ---- «بررسی یه محصول» (numbers come from product.js; this part only draws) ----
+  var PV = window.barginProduct;
+  var HELP = { dayDiff: dayDiff, addDays: addDays, weekdayOf: weekdayOf, monthKey: monthKey };
+  function productLink(name, key) {
+    if (!key) return el('b', '', name);
+    var b = el('button', 'rp-link', name);
+    b.type = 'button';
+    b.addEventListener('click', function () { openProduct(key); });
+    return b;
+  }
+  // customer names come only from the admin session (getReport); an old server has none → «مشتری N»
+  function custLabel(id) {
+    var m = st.raw && st.raw.customerNames, nm = m && typeof m === 'object' && Object.prototype.hasOwnProperty.call(m, id) ? m[id] : '';
+    return typeof nm === 'string' && nm ? '⁨' + nm + '⁩' : fill(TEXT.customerNo, { n: toFa(id) });
+  }
+  function setPicker() {
+    var pick = $('pv-pick'), sel = $('pv-select');
+    if (!pick || !sel) return;
+    if (!st.raw || !PV) { pick.hidden = true; st.product = ''; return; }
+    var opts = PV.options(st.raw), found = false, o;
+    clear(sel);
+    o = document.createElement('option'); o.value = ''; o.textContent = TEXT.pvAll; sel.appendChild(o);
+    opts.forEach(function (x) {
+      o = document.createElement('option'); o.value = x.key;
+      o.textContent = x.name + (x.other ? ' — ' + TEXT.pvOtherTag : '');
+      sel.appendChild(o);
+      if (x.key === st.product) found = true;
+    });
+    if (st.product && !found) st.product = '';
+    sel.value = st.product;
+    pick.hidden = false;
+  }
+  function openProduct(key) {
+    st.product = key;
+    if ($('pv-select')) $('pv-select').value = key;
+    if (st.data) refreshView();
+    try { window.scrollTo(0, 0); } catch (e) { /* old browsers */ }
+  }
+
+  function renderProduct() {
+    var pv = PV.analyze(st.raw, { from: st.range.from, to: st.range.to, today: todayKey(), H: HELP }, st.product);
+    st.pv = pv;
+    $('pv-title').textContent = pv.name + (pv.other ? ' — ' + TEXT.pvOtherTag : '');
+    var main = $('pv-main'), note = $('pv-note');
+    main.hidden = !pv.found;
+    if (!pv.found) {
+      note.textContent = TEXT.pvNone + ' ' + (pv.lastSale ? fill(TEXT.pvLast, { d: toFa(pv.lastSale.replace(/-/g, '/')) }) : TEXT.pvNoLast) + (pv.cut ? ' ' + TEXT.pvCut : '');
+      return;
+    }
+    note.textContent = '';
+    var tiles = $('pv-tiles');
+    clear(tiles);
+    tiles.className = 'rp-tiles rp-tiles2 rp-t3';
+    tiles.appendChild(tile(TEXT.pvTiles[0], fmtMoney(pv.toman) + ' ' + TEXT.toman, groupFa(pv.toman) + ' ' + TEXT.toman));
+    tiles.appendChild(tile(TEXT.pvTiles[1], fmtQty(pv.qty)));
+    tiles.appendChild(tile(TEXT.pvTiles[2], toFa(pv.orders)));
+    tiles.appendChild(tile(TEXT.pvTiles[3], fmtMoney(pv.avgOrder) + ' ' + TEXT.toman, groupFa(pv.avgOrder) + ' ' + TEXT.toman));
+    tiles.appendChild(tile(TEXT.pvTiles[4], pv.share < 10 ? decFa(round1(pv.share)) + '٪' : toFa(Math.round(pv.share)) + '٪'));
+    tiles.appendChild(tile(TEXT.pvTiles[5], pv.trend ? trendText(pv.trend) : '—'));
+    var pt = $('pv-tiles-profit'), withProfit = pv.costedLines > 0;
+    clear(pt);
+    pt.hidden = !withProfit;
+    if (withProfit) {
+      pt.appendChild(tile(TEXT.profitTiles[0], fmtMoneySigned(pv.profit) + ' ' + TEXT.toman, fmtSigned(pv.profit) + ' ' + TEXT.toman, pv.profit < 0));
+      pt.appendChild(tile(TEXT.profitTiles[1], fmtMoney(pv.cost) + ' ' + TEXT.toman, groupFa(pv.cost) + ' ' + TEXT.toman));
+      pt.appendChild(tile(TEXT.profitTiles[2], pv.margin === null ? '—' : fmtPct(pv.margin), '', pv.profit < 0));
+    }
+
+    // time chart (shares the روزانه/هفتگی/ماهانه/سالانه and فروش/سود switches)
+    var why = pv.other ? TEXT.pvOther : (st.pv.profitReady ? TEXT.pvNoRaw : TEXT.noRawTab);
+    renderTimeFor({ chart: 'pv-time', hint: 'pv-time-hint', table: 'pv-time-table' }, pv.byDay, withProfit, why);
+
+    // price of one pack
+    var pr = pv.prices, ph = $('pv-price-hint'), pc = $('pv-price');
+    clear(pc);
+    if (!pr.n) { ph.textContent = TEXT.pvPriceNone; clear($('pv-price-table')); }
+    else if (pr.n === 1) { ph.textContent = fill(TEXT.pvPriceOne, { p: groupFa(pr.last) }); drawTable($('pv-price-table'), [TEXT.thDate, TEXT.thPrice], [[toFa(pr.list[0].d.replace(/-/g, '/')), groupFa(pr.list[0].price)]]); }
+    else {
+      ph.textContent = fill(TEXT.pvPriceHint, { min: groupFa(pr.min), max: groupFa(pr.max), last: groupFa(pr.last) });
+      drawPriceLine(pc, pr.list);
+      drawTable($('pv-price-table'), [TEXT.thDate, TEXT.thPrice], pr.list.slice().reverse().map(function (x) { return [toFa(x.d.replace(/-/g, '/')), groupFa(x.price)]; }));
+    }
+
+    // customers
+    var cu = pv.customers, ch = $('pv-cust-hint');
+    if (!cu.top.length) { clear($('pv-cust')); clear($('pv-cust-table')); ch.textContent = TEXT.pvCustNone; }
+    else {
+      ch.textContent = TEXT.pvCustHint + (cu.noId ? fill(TEXT.pvCustNoId, { n: toFa(cu.noId) }) : '');
+      drawRows($('pv-cust'), cu.top.map(function (c) {
+        return { label: custLabel(c.id), value: c.toman, text: fmtMoney(c.toman) + ' ' + TEXT.toman + ' · ' + toFa(c.orders) + ' ' + TEXT.thOrders };
+      }), TEXT.pvTiles[2]);
+      drawTable($('pv-cust-table'), [TEXT.thCustomer, TEXT.thSales, TEXT.thOrders], cu.top.map(function (c) { return [custLabel(c.id), groupFa(c.toman), toFa(c.orders)]; }));
+    }
+
+    // bought with it
+    var wl = $('pv-with');
+    clear(wl);
+    pv.withOthers.list.forEach(function (x) {
+      var li = el('li', 'rp-rank-row'), top = el('div', 'rp-rank-top');
+      top.appendChild(productLink(x.name, x.key));
+      li.appendChild(top);
+      li.appendChild(el('div', 'rp-rank-sub', fill(TEXT.pvWithRow, { n: toFa(x.n), p: toFa(pct(x.n, pv.orders)) })));
+      wl.appendChild(li);
+    });
+    $('pv-with-hint').textContent = pv.withOthers.list.length ? '' : fill(TEXT.pvWithNone, { n: toFa(PV.LIMIT.pairOrders) });
+
+    // best days
+    var wk = $('pv-week'), wh = $('pv-week-hint');
+    clear(wk);
+    if (pv.weekdays.ok) {
+      wh.textContent = '';
+      drawRows(wk, pv.weekdays.days.map(function (d) {
+        return { label: TEXT.dayNames[d.i], value: d.toman, text: fmtMoney(d.toman) + ' ' + TEXT.toman + ' · ' + toFa(d.orders) + ' ' + TEXT.thOrdersN, color: d === pv.weekdays.best ? COLORS.bar : COLORS.rest };
+      }), TEXT.dayNames[pv.weekdays.best.i]);
+    } else wh.textContent = fill(TEXT.pvWeekLittle, { n: toFa(PV.LIMIT.weekdayOrders) });
+
+    drawChannel($('pv-chan'), $('pv-chan-legend'), pv.channels);
+
+    // the basis line
+    var range = st.range.from ? fill(TEXT.rangeFromTo, { a: toFa(st.range.from.replace(/-/g, '/')), b: toFa(st.range.to.replace(/-/g, '/')) }) : TEXT.rangeAll;
+    var line = fill(TEXT.pvBasis, { n: toFa(pv.lines), m: toFa(pv.periodLines), range: range });
+    if (pv.other) line += ' ' + TEXT.pvOther;
+    else if (!pv.costedLines) line += ' ' + (pv.profitReady ? TEXT.pvNoRaw : TEXT.noRawTab);
+    else if (pv.uncosted && pv.costedLines) line += ' ' + fill(TEXT.pvUncosted, { n: toFa(pv.uncosted) });
+    if (pv.costedLines) line += ' ' + TEXT.rawNow;
+    if (!pv.trend) line += ' ' + fill(TEXT.pvTrendNeed, { n: toFa(PV.LIMIT.trendLines) });
+    if (pv.cut) line += ' ' + TEXT.pvCut;
+    $('pv-used').textContent = line;
+  }
+
+  // A simple line of the pack price per day (newest on the left, like the bar charts).
+  function drawPriceLine(host, list) {
+    clear(host);
+    var shown = list.slice().reverse(), n = shown.length;
+    var left = 62, right = 14, top = 22, bottom = 40, H = 220, avail = host.clientWidth || 320;
+    var W = Math.max(avail, left + right + n * 26), min = shown[0].price, max = shown[0].price;
+    shown.forEach(function (x) { if (x.price < min) min = x.price; if (x.price > max) max = x.price; });
+    var pad = (max - min) * 0.15 || Math.max(1, max * 0.05), lo = Math.max(0, min - pad), hi = max + pad;
+    var svg = svgBox(host, W, H, TEXT.pvPriceTitle), ch = H - top - bottom, t;
+    function X(i) { return n === 1 ? (left + W - right) / 2 : left + (W - left - right) * i / (n - 1); }
+    function Y(v) { return top + ch * (hi - v) / (hi - lo); }
+    for (t = 0; t <= 3; t++) {
+      var v = lo + (hi - lo) * t / 3, y = Y(v);
+      svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: y, y2: y, stroke: COLORS.grid, 'stroke-width': 1, 'stroke-dasharray': '3 4' }));
+      svg.appendChild(S('text', { x: 2, y: y + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl(fmtMoney(v))));
+    }
+    var pts = shown.map(function (x, i) { return X(i) + ',' + Y(x.price); }).join(' ');
+    svg.appendChild(S('polyline', { points: pts, fill: 'none', stroke: COLORS.bar, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }));
+    var step = Math.max(1, Math.ceil(54 / ((W - left - right) / Math.max(1, n - 1))));
+    shown.forEach(function (x, i) {
+      var dot = S('circle', { cx: X(i), cy: Y(x.price), r: 4.5, fill: COLORS.bar, stroke: '#f8ecd5', 'stroke-width': 1.5 });
+      dot.appendChild(S('title', null, rtl(toFa(x.d.replace(/-/g, '/')) + ' — ' + groupFa(x.price) + ' ' + TEXT.toman)));
+      svg.appendChild(dot);
+      if (i % step === 0 || i === n - 1) {
+        var j = jparse(x.d);
+        svg.appendChild(S('text', { x: X(i), y: top + ch + 16, 'font-size': 10.5, 'text-anchor': 'middle' }, rtl(toFa(j.d) + ' ' + ((ad.months || [])[j.m - 1] || ''))));
+      }
+    });
+    host.scrollLeft = 0;
+  }
+
+  function refreshView() {
+    var any = st.data.rows.used > 0, open = !!st.product && !!st.raw && !!PV;
+    $('pv-body').hidden = !open;
+    if (open) {
+      $('r-body').hidden = true;
+      $('r-note').textContent = '';
+      renderProduct();
+    } else {
+      st.product = '';
+      if ($('pv-select')) $('pv-select').value = '';
+      $('r-body').hidden = !any;
+      $('r-note').textContent = any ? '' : TEXT.empty;
+      $('r-note').className = 'adm-status';
+      if (any) renderAll(); else $('r-used').textContent = '';
+    }
+  }
+
   // The analysis of the loaded period: the previous period = the same number of days right before it.
   function runAnalysis(raw) {
     if (!raw) { st.an = null; return; }
@@ -753,15 +959,12 @@
 
   function show(summary, raw) {
     st.data = summary;
+    st.raw = raw || null;
     st.cut = !!(raw && raw.cut);
     st.prevDays = st.range.from ? dayDiff(st.range.from, st.range.to) + 1 : 0;
     runAnalysis(raw);
-    var any = summary.rows.used > 0;
-    $('r-body').hidden = !any;
-    $('r-note').textContent = any ? '' : TEXT.empty;
-    $('r-note').className = 'adm-status';
-    if (any) renderAll();
-    else $('r-used').textContent = '';
+    setPicker();
+    refreshView();
   }
 
   function load(force) {
@@ -772,6 +975,7 @@
     $('r-note').textContent = TEXT.loading;
     $('r-note').className = 'adm-status';
     $('r-body').hidden = true;
+    if ($('pv-body')) $('pv-body').hidden = true;
     ad.api('getReport', { from: range.from, to: range.to, analysis: true, prevFrom: prevFromFor(range) }, true).then(function (r) {
       if (mine !== st.token) return;
       if (!r || !r.ok) { $('r-note').textContent = ''; ad.setStatus((r && r.message) || TEXT.loadFail, 'err'); return; }
@@ -787,6 +991,12 @@
     });
   }
 
+  function rerenderTime() {
+    if (!st.data) return;
+    if (st.product && st.raw && PV) renderProduct();
+    else if (st.data.rows.used) renderTime();
+  }
+
   function wire() {
     var i, b;
     b = document.querySelectorAll('[data-period]');
@@ -799,13 +1009,13 @@
     for (i = 0; i < b.length; i++) b[i].addEventListener('click', function () {
       st.grain = this.getAttribute('data-grain');
       setPressed('[data-grain]', 'data-grain', st.grain);
-      if (st.data && st.data.rows.used) renderTime();
+      rerenderTime();
     });
     b = document.querySelectorAll('[data-metric]');
     for (i = 0; i < b.length; i++) b[i].addEventListener('click', function () {
       st.metric = this.getAttribute('data-metric');
       setPressed('[data-metric]', 'data-metric', st.metric);
-      if (st.data && st.data.rows.used) renderTime();
+      rerenderTime();
     });
     b = document.querySelectorAll('[data-mode]');
     for (i = 0; i < b.length; i++) b[i].addEventListener('click', function () {
@@ -813,10 +1023,12 @@
       setPressed('[data-mode]', 'data-mode', st.mode);
       if (st.data && st.data.rows.used) renderProducts();
     });
+    if ($('pv-select')) $('pv-select').addEventListener('change', function () { openProduct(this.value); });
+    if ($('pv-back')) $('pv-back').addEventListener('click', function () { openProduct(''); });
     $('r-reload').addEventListener('click', function () { load(true); });
     $('r-logout').addEventListener('click', function () { ad.logout(); });
     window.addEventListener('resize', function () {
-      if (!$('v-report').hidden && st.data && st.data.rows.used) renderAll();
+      if (!$('v-report').hidden && st.data) refreshView();
     });
   }
 
@@ -825,7 +1037,13 @@
     reset: function () {
       st.cache = {}; st.data = null; st.token += 1;
       if ($('r-body')) { $('r-body').hidden = true; clear($('r-tiles')); if ($('r-tiles-profit')) clear($('r-tiles-profit')); }   // nothing of the report stays after logout
-      st.an = null;
+      st.an = null; st.raw = null; st.product = ''; st.pv = null;
+      if ($('pv-body')) $('pv-body').hidden = true;
+      if ($('pv-pick')) $('pv-pick').hidden = true;
+      if ($('pv-select')) clear($('pv-select'));
+      ['pv-tiles', 'pv-tiles-profit', 'pv-time', 'pv-time-table', 'pv-price', 'pv-price-table', 'pv-cust', 'pv-cust-table', 'pv-with', 'pv-week', 'pv-chan', 'pv-chan-legend'].forEach(function (id) { if ($(id)) clear($(id)); });
+      if ($('pv-title')) $('pv-title').textContent = '';
+      ['pv-note', 'pv-used'].forEach(function (id) { if ($(id)) $(id).textContent = ''; });
       ['an-tips', 'an-quad', 'an-quad-legend', 'an-rank', 'an-rank-table', 'an-abc', 'an-abc-legend', 'an-cust', 'an-pairs', 'an-week', 'an-month', 'an-chan-table', 'an-idle'].forEach(function (id) { if ($(id)) clear($(id)); });
       if ($('an-note')) $('an-note').textContent = '';
       ['r-time', 'r-prod', 'r-chan', 'r-chan-legend', 'r-cust', 'r-time-table', 'r-prod-table', 'r-chan-table', 'r-cust-table'].forEach(function (id) { if ($(id)) clear($(id)); });
