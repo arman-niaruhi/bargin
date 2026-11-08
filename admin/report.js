@@ -104,6 +104,27 @@
     pvWithNone: 'هنوز محصولی نیست که دست‌کم {n} بار تو یه سفارش با این محصول خریده شده باشه.',
     pvWithRow: '{n} سفارش · {p}٪ از سفارش‌های این محصول',
     pvWeekLittle: 'برای بهترین روزهای هفته دست‌کم ۴ هفته فروش و {n} سفارش از این محصول لازمه. یه بازه‌ی بزرگ‌تر مثل «۳ ماه اخیر» یا «همه» رو انتخاب کن.',
+    // «نمای کلی» (phase 1)
+    sumTitle: 'خلاصه', sumNone: 'تو این بازه فروشی نیست که خلاصه‌ای ازش بسازیم.',
+    sumHint: 'هر جمله از یه قانون ساده روی همین عددها درمیاد؛ جمله‌ای که داده‌ی کافی نداره نمیاد.',
+    dataRows: 'ردیف فروش', dataRowsSkip: '{n} ردیف دیگه به خاطر نداشتن تاریخ یا مبلغ حساب نشد',
+    dataOrders: 'سفارش', dataProducts: 'محصول‌های فروخته‌شده', dataProductsOf: '{a} از {b} محصول فروشگاه',
+    dataOther: 'اسم‌های «سایر»', dataCust: 'مشتری‌هایی که خرید کردن', dataNoCust: 'ردیف بدون مشتری',
+    dataChan: 'سایت / حضوری / نامشخص', dataQty: 'مقدار فروش', dataCosted: 'ردیف‌هایی که تو سود حساب شدن', dataCostedOf: '{a} از {b}',
+    dataBuys: 'ردیف خرید (تو گزارش فروش حساب نشد)', dataCut: 'تعداد ردیف‌های بدون مشتری و محصول‌ها فقط از ۲۰,۰۰۰ ردیفِ آخر حساب شده.',
+    dataHint: 'همه‌ی این عددها برای بازه‌ی انتخاب‌شده‌ست.', dataHintAll: 'این عددها برای کل داده‌هاست (بازه‌ی «همه»).',
+    dataNeedAll: ' برای عددهای کل داده‌ها، «همه» رو بزن.',
+    datesTitle: 'تاریخ‌های فروش', dateFirst: 'اولین فروش', dateLast: 'آخرین فروش', dateSpan: 'فاصله‌ی اولین تا آخرین فروش',
+    dateDays: 'روزهایی که فروش داشتی', dateGap: 'بلندترین فاصله بدون فروش', dateBest: 'پرفروش‌ترین روز',
+    dateNone: 'تو این بازه فروشی نیست.', dateDaysN: '{n} روز', dateDaysOf: '{a} از {b} روز ({p}٪)', dateGapRow: '{n} روز ({a} تا {b})', dateNoGap: 'فاصله‌ای نیست',
+    dateHint: 'تاریخ‌ها فقط از فروش‌های همین بازه‌ست.',
+    cuTitle: 'جمع تجمعی فروش و سود',
+    unitB: 'میلیارد تومان', unitM: 'میلیون تومان', unitK: 'هزار تومان', nowLabel: 'الان',
+    cuHintSales: 'جمع فروش از اول بازه تا هر روز. تا الان {t} تومان.', cuHintProfit: 'جمع سود از اول بازه تا هر روز. تا الان {t} تومان.',
+    cuWeekly: ' بازه بلنده، برای همین هر نقطه یه هفته‌ست (جدول همه‌ی روزها رو داره).',
+    cuMaSales: 'میانگین ۷ روزه‌ی فروش روزانه' , cuMaProfit: 'میانگین ۷ روزه‌ی سود روزانه',
+    cuMaNow: 'الان روزی {n} تومان', cuMaNeed: 'برای میانگین ۷ روزه دست‌کم ۷ روز لازمه.',
+    cuNoProfit: 'تو این بازه سودی حساب نشد.', thRun: 'جمع تا اون روز (تومان)', thDay: 'همون روز (تومان)', thMa: 'میانگین ۷ روزه (تومان)',
     // «همه محصولات فروخته‌شده»
     allCols: { name: 'محصول', toman: 'فروش', qty: 'مقدار فروش', orders: 'تعداد سفارش', avg: 'میانگین سفارش', share: 'سهم از فروش', trend: 'روند', profit: 'سود', margin: 'حاشیه سود', price: 'قیمت هر بسته/ظرف', cust: 'بهترین مشتری', withp: 'بیشتر همراه', day: 'بهترین روز هفته' },
     allHint: 'فقط محصول‌هایی که تو این بازه فروش رفتن ({n} تا). برای مرتب کردن، ستونو انتخاب کن (تو گوشی از «مرتب‌سازی»). روی یه محصول بزن تا همه‌ی عددهاش رو ببینی. «—» یعنی داده‌ی کافی نیست یا اون عدد برای این محصول حساب نمی‌شه. قیمت هر بسته/ظرف = آخرین قیمتی که یه بسته/ظرف باهاش فروخته شده (اگه اون روز چند فروش بوده، میانگین همون روزه). مرتب‌سازی «مقدار فروش» فقط بر اساس بسته/ظرفه (کیلو، گرم و عدد توش حساب نمی‌شن).',
@@ -284,6 +305,30 @@
     for (i = 0; i < steps.length; i++) if (steps[i] * p >= max) { best = steps[i] * p; break; }
     return best;
   }
+  // Nice axis: {lo, hi, step} with a step of 1, 2, 2.5, 5 or 10 times a power of ten, about `want` steps.
+  function niceScale(min, max, want) {
+    var raw = (Math.max(max, 0) - Math.min(min, 0)) / want;
+    if (!(raw > 0)) return { lo: 0, hi: 1, step: 0.25 };
+    var p = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10)), steps = [1, 2, 2.5, 5, 10], step = p * 10, i;
+    for (i = 0; i < steps.length; i++) if (steps[i] * p >= raw - 1e-9) { step = steps[i] * p; break; }
+    return { lo: Math.floor(Math.min(min, 0) / step + 1e-9) * step, hi: Math.ceil(Math.max(max, 0) / step - 1e-9) * step, step: step };
+  }
+  // The unit written once on the axis: {div, name}; tick labels are plain numbers in that unit.
+  function axisUnit(maxAbs) {
+    if (maxAbs >= 1e9) return { div: 1e9, name: TEXT.unitB };
+    if (maxAbs >= 1e6) return { div: 1e6, name: TEXT.unitM };
+    if (maxAbs >= 1e3) return { div: 1e3, name: TEXT.unitK };
+    return { div: 1, name: TEXT.toman };
+  }
+  function tickText(v, u) {
+    if (v === 0) return '۰';
+    var t = decFa(Math.round(Math.abs(v) / u.div * 100) / 100);
+    return v < 0 ? neg(t) : t;
+  }
+  // bidi isolates for the percentages and dates inside a sentence (the text is set with textContent, so no <bdi>)
+  function isoNums(text) {
+    return String(text).replace(/[۰-۹]{4}\/[۰-۹]{2}\/[۰-۹]{2}|[۰-۹]+(?:٫[۰-۹]+)?٪/g, function (m) { return '\u2066' + m + '\u2069'; });
+  }
   function svgBox(host, w, h, label) {
     var svg = S('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h, role: 'img', 'aria-label': label });
     host.appendChild(svg);
@@ -298,28 +343,29 @@
     if (!series.length) return 0;
     metric = metric === 'profit' ? 'profit' : 'toman';
     var shown = series.slice(-MAX_BARS).reverse();   // newest first = left to right
-    var n = shown.length, left = 62, right = 8, top = 26, bottom = 46, H = 230;
+    var n = shown.length, left = 40, right = 8, top = 26, bottom = 46, H = 230;
     var slotMin = grain === 'day' ? 18 : (grain === 'week' ? 30 : 44);
     var avail = host.clientWidth || 320;
     var W = Math.max(avail, left + right + n * slotMin);
     var slot = (W - left - right) / n, bw = Math.min(40, slot * 0.7);
     var max = 0, min = 0;
     shown.forEach(function (x) { if (x[metric] > max) max = x[metric]; if (x[metric] < min) min = x[metric]; });
-    var posMax = max > 0 ? niceMax(max) : 0, negMax = min < 0 ? niceMax(-min) : 0;
+    var sc = niceScale(min, max, 4), posMax = sc.hi, negMax = -sc.lo, unit = axisUnit(Math.max(max, -min));
     if (posMax + negMax <= 0) posMax = 1;
     var span = posMax + negMax, ch = H - top - bottom;
     function yOf(v) { return top + ch * (posMax - v) / span; }
     var svg = svgBox(host, W, H, metric === 'profit' ? 'نمودار سود' : 'نمودار فروش');
     var t, zeroY = yOf(0);
-    for (t = 0; t <= 4; t++) {
-      var v = -negMax + span * t / 4, y = yOf(v);
+    svg.appendChild(S('text', { x: 2, y: 12, 'font-size': 10.5, 'text-anchor': 'start', 'fill-opacity': 0.8 }, rtl(unit.name)));
+    for (t = 0; t * sc.step <= span + 1e-9; t++) {
+      var v = -negMax + sc.step * t, y = yOf(v);
       if (Math.abs(y - zeroY) < 1) continue;
       svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: y, y2: y, stroke: COLORS.grid, 'stroke-width': 1, 'stroke-dasharray': '3 4' }));
-      if (Math.abs(y - zeroY) > 12) svg.appendChild(S('text', { x: 2, y: y + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl(fmtMoneySigned(v))));
+      if (Math.abs(y - zeroY) > 12 && y > 18) svg.appendChild(S('text', { x: 2, y: y + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl(tickText(v, unit))));
     }
     svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: zeroY, y2: zeroY, stroke: negMax > 0 ? COLORS.rest : COLORS.grid, 'stroke-width': negMax > 0 ? 1.5 : 1 }));
     svg.appendChild(S('text', { x: 2, y: zeroY + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl('۰')));
-    var labelW = grain === 'day' ? 16 : (grain === 'week' ? 54 : 50), step = Math.max(1, Math.ceil(labelW / slot));
+    var labelW = grain === 'day' ? 18 : (grain === 'week' ? 60 : 56), step = Math.max(1, Math.ceil(labelW / slot));
     var showVals = n <= 12;
     shown.forEach(function (x, i) {
       var val = x[metric], cx = left + slot * i + slot / 2, bh = ch * Math.abs(val) / span, neg = val < 0;
@@ -351,8 +397,8 @@
     rows.forEach(function (r, i) {
       var y = pad + i * rowH, full = W - pad * 2;
       var len = max > 0 && r.value > 0 ? Math.max(4, full * r.value / max) : 3;
-      svg.appendChild(S('text', { x: W - pad, y: y + 15, 'font-size': 13, 'font-weight': 700, 'text-anchor': 'end' }, rtl(r.label)));
-      svg.appendChild(S('text', { x: pad, y: y + 15, 'font-size': 12, 'text-anchor': 'start' }, rtl(r.text)));
+      svg.appendChild(S('text', { x: W - pad, y: y + 15, 'font-size': 13.5, 'font-weight': 700, 'text-anchor': 'end' }, rtl(r.label)));
+      svg.appendChild(S('text', { x: pad, y: y + 15, 'font-size': 12.5, 'text-anchor': 'start' }, rtl(r.text)));
       var bar = S('rect', { x: W - pad - len, y: y + 22, width: len, height: 14, rx: 5, fill: r.color || COLORS.bar });
       bar.appendChild(S('title', null, rtl(r.label + ' — ' + r.text)));
       svg.appendChild(bar);
@@ -407,7 +453,7 @@
   }
 
   // ---- the tab ----
-  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0, raw: null, product: '', pv: null, allRows: null, allSort: { col: 'toman', dir: -1 } };
+  var st = { period: 'd90', grain: 'day', metric: 'toman', mode: 'toman', cache: {}, token: 0, data: null, range: null, an: null, cut: false, prevDays: 0, raw: null, product: '', pv: null, allRows: null, tab: 'overview', allSort: { col: 'toman', dir: -1 } };
   function $(id) { return document.getElementById(id); }
 
   function tile(label, big, full, neg) {
@@ -485,7 +531,7 @@
 
   function fill(t, v) { return t.replace(/\{(\w+)\}/g, function (m, k) { return v[k] !== undefined ? String(v[k]) : m; }); }
 
-  function renderAll() {
+  function renderOverviewTop() {
     var sum = st.data, t = sum.totals;
     var tiles = $('r-tiles');
     clear(tiles);
@@ -503,7 +549,6 @@
       pt.appendChild(tile(TEXT.profitTiles[1], fmtMoney(pf.cost) + ' ' + TEXT.toman, groupFa(pf.cost) + ' ' + TEXT.toman));
       pt.appendChild(tile(TEXT.profitTiles[2], fmtPct(margin(pf.profit, pf.sales)), '', pf.profit < 0));
     }
-    renderTime(); renderProducts(); renderAllProducts(); renderChannel(); renderCustomers();
     var range = st.range.from ? fill(TEXT.rangeFromTo, { a: toFa(st.range.from.replace(/-/g, '/')), b: toFa(st.range.to.replace(/-/g, '/')) }) : TEXT.rangeAll;
     var line = fill(TEXT.used, { n: toFa(sum.rows.used), range: range });
     var sk = sum.rows.skipped.noDate + sum.rows.skipped.noTotal;
@@ -514,7 +559,55 @@
       if (sum.profit.rows) line += ' ' + TEXT.rawNow;
     } else if (sum.profit) line += ' ' + TEXT.noRawTab;
     $('r-used').textContent = line + ' ' + TEXT.noCustomer;
-    renderAnalysis();
+  }
+
+  // ---- the five sub-tabs: only the open one is drawn (a chart in a hidden tab would have no width) ----
+  var TABS = ['overview', 'trend', 'products', 'customers', 'channel'];
+  var TAB_KEY = 'bargin-report-tab', memTab = '';
+  function loadTab() {
+    var v = '';
+    try { v = window.sessionStorage.getItem(TAB_KEY) || ''; } catch (e) { /* use memory */ }
+    if (!v) v = memTab;
+    return TABS.indexOf(v) >= 0 ? v : 'overview';
+  }
+  function saveTab(v) {
+    memTab = v === 'overview' ? '' : v;
+    try { if (memTab) window.sessionStorage.setItem(TAB_KEY, memTab); else window.sessionStorage.removeItem(TAB_KEY); } catch (e) { /* memory only */ }
+  }
+  // keeps the open tab inside the sideways-scrolling strip (no scrollIntoView: it can also scroll the page)
+  function revealTab() {
+    var strip = $('r-tabs'), on = strip && strip.querySelector('[aria-pressed="true"]');
+    if (!on || !strip.clientWidth) return;
+    var a = strip.getBoundingClientRect(), b = on.getBoundingClientRect();
+    strip.scrollLeft += (b.left + b.width / 2) - (a.left + a.width / 2);
+    tabFades();
+  }
+  // soft fade on the edge(s) of the tab strip where more tabs are hidden (works with any RTL scrollLeft convention: it measures the tabs, not scrollLeft)
+  function tabFades() {
+    var strip = $('r-tabs'), wrap = $('r-tabwrap');
+    if (!strip || !wrap || !strip.clientWidth) return;
+    var first = strip.firstElementChild, last = strip.lastElementChild, a = strip.getBoundingClientRect();
+    if (!first || !last) return;
+    var l = Math.min(first.getBoundingClientRect().left, last.getBoundingClientRect().left), r = Math.max(first.getBoundingClientRect().right, last.getBoundingClientRect().right);
+    wrap.classList.toggle('more-left', l < a.left - 2);
+    wrap.classList.toggle('more-right', r > a.right + 2);
+  }
+  function renderPane(name) {
+    TABS.forEach(function (t) { var p = $('rp-pane-' + t); if (p) p.hidden = t !== name; });
+    setPressed('[data-rtab]', 'data-rtab', name);
+    revealTab();
+    if (name === 'overview') { renderSummary(); anTips(); renderOverviewTop(); renderDataCard(); renderDates(); }
+    else if (name === 'trend') { renderTime(); renderCum(); anWhen(); }
+    else if (name === 'products') { renderProducts(); renderAllProducts(); anProducts(); anPairs(); anIdle(); }
+    else if (name === 'customers') { renderCustomers(); anCustomers(); }
+    else { renderChannel(); anChannels(); }
+  }
+  function renderAll() { renderPane(st.tab); }
+  function setTab(name) {
+    if (TABS.indexOf(name) < 0) return;
+    st.tab = name;
+    saveTab(name);
+    if (st.data && !st.product) renderAll(); else setPressed('[data-rtab]', 'data-rtab', name);
   }
 
 
@@ -617,31 +710,47 @@
     legend.appendChild(s);
   }
 
-  function renderAnalysis() {
-    var a = st.an, note = $('an-note'), body = $('an-body');
-    if (!note || !body) return;
-    clear($('an-tips'));
-    if (!a) { body.hidden = true; note.textContent = TEXT.anOld; return; }
-    if (!a.enough) { body.hidden = true; note.textContent = fill(TEXT.anLittle, { need: toFa(a.need), n: toFa(a.orders) }); return; }
-    body.hidden = false;
+  // The analysis blocks live in different tabs; anReady() checks the data and the note, then each block draws itself.
+  function anReady() {
+    var a = st.an, note = $('an-note'), secs = document.querySelectorAll('.an-sec'), i;
+    if (!note) return null;
+    function hideAll(h) { for (i = 0; i < secs.length; i++) secs[i].hidden = h; }
+    if (!a) { hideAll(true); note.textContent = TEXT.anOld; return null; }
+    if (!a.enough) { hideAll(true); note.textContent = fill(TEXT.anLittle, { need: toFa(a.need), n: toFa(a.orders) }); return null; }
+    hideAll(false);
     var range = st.range.from ? fill(TEXT.rangeFromTo, { a: toFa(st.range.from.replace(/-/g, '/')), b: toFa(st.range.to.replace(/-/g, '/')) }) : TEXT.rangeAll;
     var basis = fill(TEXT.anBasis, { n: toFa(a.orders), m: toFa(a.lines), range: range });
     if (a.hasPrev) basis += fill(TEXT.anBasisPrev, { k: toFa(st.prevDays), p: toFa(a.prevOrders) }); else basis += TEXT.anNoPrev;
     if (st.cut) basis += ' ' + TEXT.anCut;
     note.textContent = basis;
-
-    // tips
-    var tl = AN.tips(a, fmtOf()), ol = $('an-tips'), i;
+    return a;
+  }
+  // tips that only repeat a «خلاصه» sentence shown right above them are left out (the next tip fills the place)
+  function tipSkip() {
+    var skip = { ids: {}, products: {} }, has = {};
+    (st.sumList || []).forEach(function (x) { has[x.id] = true; if (x.product) skip.products[x.product] = true; });
+    if (has.weekday) skip.ids.weekday = true;
+    if (has.channel) skip.ids.channel = true;
+    if (has.customers) skip.ids.repeat = true;
+    return skip;
+  }
+  function anTips() {
+    clear($('an-tips'));
+    var a = anReady();
+    if (!a) return;
+    var tl = AN.tips(a, fmtOf(), tipSkip()), ol = $('an-tips'), i;
     if (!tl.length) ol.appendChild(el('li', 'rp-tip-none', TEXT.tipsNone));
     tl.forEach(function (t, k) {
-      var li = el('li', '', t.text), n = el('span', 'rp-tip-n', toFa(k + 1));
+      var li = el('li', '', isoNums(t.text)), n = el('span', 'rp-tip-n', toFa(k + 1));
       n.setAttribute('aria-hidden', 'true');
       li.insertBefore(n, li.firstChild);
       ol.appendChild(li);
     });
     $('an-tips-hint').textContent = TEXT.tipsHint;
-
-    // products
+  }
+  function anProducts() {
+    var a = anReady();
+    if (!a) return;
     var hint = [];
     if (a.quad.ok) hint.push(fill(TEXT.quadHint, { n: toFa(AN.LIMIT.productLines) }));
     else if (!st.data.profit || !st.data.profit.ready || !hasProfit()) hint.push(TEXT.quadNoRaw);
@@ -683,8 +792,10 @@
     legendItem(abcLeg, '#a8700f', TEXT.abcB + ': ' + toFa(abc.b.n) + ' (' + toFa(Math.round(abc.b.share)) + '٪)');
     legendItem(abcLeg, COLORS.rest, TEXT.abcC + ': ' + toFa(abc.c.n) + ' (' + toFa(Math.round(abc.c.share)) + '٪)');
     $('an-abc-hint').textContent = fill(TEXT.abcLine, { n: toFa(abc.a.n), m: toFa(abc.total), s: toFa(Math.round(abc.a.share)) }) + ' ' + TEXT.abcHint;
-
-    // customers
+  }
+  function anCustomers() {
+    var a = anReady();
+    if (!a) return;
     var c = a.customers, ct = $('an-cust'), ch = $('an-cust-hint');
     clear(ct);
     if (c.ok) {
@@ -700,8 +811,10 @@
     }
 
     ct.className = 'rp-tiles rp-tiles2' + (ct.children.length === 3 ? ' rp-t3' : (ct.children.length === 2 ? ' rp-t2' : ''));
-
-    // together
+  }
+  function anPairs() {
+    var a = anReady();
+    if (!a) return;
     var pl = $('an-pairs');
     clear(pl);
     if (a.pairs.list.length) a.pairs.list.forEach(function (x) {
@@ -711,8 +824,10 @@
       pl.appendChild(li);
     });
     $('an-pairs-hint').textContent = a.pairs.list.length ? '' : fill(TEXT.pairsNone, { n: toFa(AN.LIMIT.pairOrders), m: toFa(a.pairs.multi) });
-
-    // when
+  }
+  function anWhen() {
+    var a = anReady();
+    if (!a) return;
     var wk = $('an-week'), wh = $('an-week-hint');
     clear(wk);
     if (a.weekdays.ok) {
@@ -729,8 +844,10 @@
       }), TEXT.monthTitle);
       mh.textContent = TEXT.monthNote;
     } else mh.textContent = fill(TEXT.monthLittle, { n: toFa(AN.LIMIT.months) });
-
-    // channels
+  }
+  function anChannels() {
+    var a = anReady();
+    if (!a) return;
     var rows = [], keys = [['site', TEXT.siteName], ['person', TEXT.personName], ['unknown', TEXT.unknownName]];
     keys.forEach(function (k) {
       var x = a.channels[k[0]];
@@ -747,8 +864,10 @@
       cards.appendChild(c);
     });
     $('an-chan-table').appendChild(cards);
-
-    // never / rarely sold
+  }
+  function anIdle() {
+    var a = anReady();
+    if (!a) return;
     var idle = $('an-idle'), ih = $('an-idle-hint');
     clear(idle);
     if (!a.idle.ok) ih.textContent = TEXT.idleLittle;
@@ -767,7 +886,6 @@
       }
     }
   }
-
 
   // ---- «بررسی یه محصول» (numbers come from product.js; this part only draws) ----
   var PV = window.barginProduct;
@@ -1052,6 +1170,116 @@
     });
   }
 
+  // ---- «نمای کلی»: خلاصه، داده‌هامون، تاریخ‌ها، جمع تجمعی (numbers come from overview.js; this part only draws) ----
+  var OV = window.barginOverview;
+  function renderSummary() {
+    var ol = $('ov-sum'), card = $('ov-sum-card');
+    if (!ol || !OV) return;
+    clear(ol);
+    var list = OV.sentences(st.data, st.raw, { from: st.range.from, to: st.range.to }, st.an, fmtOf());
+    st.sumList = list;
+    card.hidden = false;
+    if (!list.length) ol.appendChild(el('li', 'rp-tip-none', TEXT.sumNone));
+    list.forEach(function (x, k) {
+      ol.appendChild(el('li', '', isoNums(x.text)));
+    });
+    $('ov-sum-hint').textContent = TEXT.sumHint;
+  }
+  function fact(ul, label, value) {
+    var li = el('li');
+    li.appendChild(el('span', '', label));
+    li.appendChild(el('b', '', isoNums(value)));
+    ul.appendChild(li);
+  }
+  function renderDataCard() {
+    var ul = $('ov-data');
+    if (!ul || !OV) return;
+    clear(ul);
+    var c = OV.counts(st.data, st.raw);
+    fact(ul, TEXT.dataRows, toFa(c.rows) + (c.skipped ? ' (' + fill(TEXT.dataRowsSkip, { n: toFa(c.skipped) }) + ')' : ''));
+    fact(ul, TEXT.dataOrders, toFa(c.orders));
+    if (c.products) {
+      fact(ul, TEXT.dataProducts, fill(TEXT.dataProductsOf, { a: toFa(c.products.soldShop), b: toFa(c.products.shop) }));
+      if (c.products.otherN) fact(ul, TEXT.dataOther, c.products.other.map(function (n) { return '⁨' + n + '⁩'; }).join('، ') + (c.products.otherMore ? ' و ' + toFa(c.products.otherMore) + ' تای دیگه' : ''));
+    }
+    fact(ul, TEXT.dataCust, toFa(c.customers) + (c.noCustomer ? ' (' + TEXT.dataNoCust + ': ' + toFa(c.noCustomer) + ')' : ''));
+    var ch = [];
+    [['site', TEXT.siteName], ['person', TEXT.personName], ['unknown', TEXT.unknownName]].forEach(function (k) { if (c.channels[k[0]] > 0) ch.push(k[1] + ' ' + toFa(c.channels[k[0]])); });
+    fact(ul, TEXT.dataChan, ch.join('، ') || '—');
+    fact(ul, TEXT.dataQty, fmtQty(c.qty));
+    if (c.costed !== null) fact(ul, TEXT.dataCosted, fill(TEXT.dataCostedOf, { a: toFa(c.costed), b: toFa(c.costed + c.uncosted) }));
+    if (c.buys) fact(ul, TEXT.dataBuys, toFa(c.buys));
+    $('ov-data-hint').textContent = (st.range.from ? TEXT.dataHint + TEXT.dataNeedAll : TEXT.dataHintAll) + (c.cut ? ' ' + TEXT.dataCut : '');
+  }
+  function renderDates() {
+    var ul = $('ov-dates');
+    if (!ul || !OV) return;
+    clear(ul);
+    var d = OV.dates(st.data, { dayDiff: dayDiff, addDays: addDays });
+    if (!d) { $('ov-dates-hint').textContent = TEXT.dateNone; return; }
+    var fa = function (k) { return '\u2066' + toFa(k.replace(/-/g, '/')) + '\u2069'; };
+    fact(ul, TEXT.dateFirst, fa(d.first));
+    fact(ul, TEXT.dateLast, fa(d.last));
+    fact(ul, TEXT.dateSpan, fill(TEXT.dateDaysN, { n: toFa(d.span) }));
+    fact(ul, TEXT.dateDays, fill(TEXT.dateDaysOf, { a: toFa(d.days), b: toFa(d.span), p: toFa(d.share) }));
+    fact(ul, TEXT.dateGap, d.gap > 0 ? fill(TEXT.dateGapRow, { n: toFa(d.gap), a: fa(d.gapFrom), b: fa(d.gapTo) }) : TEXT.dateNoGap);
+    fact(ul, TEXT.dateBest, fa(d.best.d) + ' — ' + fmtMoney(d.best.toman) + ' ' + TEXT.toman);
+    $('ov-dates-hint').textContent = TEXT.dateHint;
+  }
+
+  // A plain line (newest on the left, like the other charts). pts [{key, v}] oldest first.
+  // Both line charts use the same stroke and dot; `color` tells them apart. The end dot is labelled «الان».
+  function drawLineChart(host, pts, label, color) {
+    clear(host);
+    if (pts.length < 2) return;
+    var shown = pts.slice().reverse(), n = shown.length, left = 40, right = 16, top = 26, bottom = 40, H = 220, padY = 7;
+    var W = Math.max(host.clientWidth || 320, left + right + n * 5);
+    var max = 0, min = 0;
+    shown.forEach(function (x) { if (x.v > max) max = x.v; if (x.v < min) min = x.v; });
+    var sc = niceScale(min, max, 4), hi = sc.hi, lo = sc.lo, unit = axisUnit(Math.max(max, -min));
+    if (hi - lo <= 0) hi = 1;
+    var span = hi - lo, ch = H - top - bottom, svg = svgBox(host, W, H, label), t;
+    function X(i) { return left + (W - left - right) * i / (n - 1); }
+    function Y(v) { return top + padY + (ch - 2 * padY) * (hi - Math.max(lo, Math.min(hi, v))) / span; }   // padded and clamped: the line never leaves the plot
+    svg.appendChild(S('text', { x: 2, y: 12, 'font-size': 10.5, 'text-anchor': 'start', 'fill-opacity': 0.8 }, rtl(unit.name)));
+    for (t = 0; t * sc.step <= span + 1e-9; t++) {
+      var v = lo + sc.step * t, y = Y(v);
+      svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: y, y2: y, stroke: COLORS.grid, 'stroke-width': 1, 'stroke-dasharray': '3 4' }));
+      svg.appendChild(S('text', { x: 2, y: y + 4, 'font-size': 11, 'text-anchor': 'start' }, rtl(tickText(v, unit))));
+    }
+    if (lo < 0) svg.appendChild(S('line', { x1: left - 4, x2: W - right, y1: Y(0), y2: Y(0), stroke: COLORS.rest, 'stroke-width': 1.5 }));
+    svg.appendChild(S('polyline', { points: shown.map(function (x, i) { return X(i) + ',' + Y(x.v); }).join(' '), fill: 'none', stroke: color, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    var last = shown[0], ly = Y(last.v), dot = S('circle', { cx: X(0), cy: ly, r: 5, fill: color, stroke: '#f8ecd5', 'stroke-width': 1.5 });
+    dot.appendChild(S('title', null, rtl(toFa(last.key.replace(/-/g, '/')) + ' — ' + fmtSigned(Math.round(last.v)) + ' ' + TEXT.toman)));
+    svg.appendChild(dot);
+    svg.appendChild(S('text', { x: X(0) - 3, y: ly - 11 < 25 ? ly + 19 : ly - 10, 'font-size': 11, 'font-weight': 700, 'text-anchor': 'start', fill: color, stroke: '#f8ecd5', 'stroke-width': 3, 'paint-order': 'stroke' }, rtl(TEXT.nowLabel)));
+    var step = Math.max(1, Math.ceil(74 / ((W - left - right) / Math.max(1, n - 1)))), k, lastYear = 0;
+    for (k = 0; k < n; k += step) {
+      if (k > 0 && X(k) > W - right - 22) break;   // a centred label this close to the edge would be cut off
+      var j = jparse(shown[k].key), anchor = k === 0 ? 'start' : 'middle';
+      svg.appendChild(S('text', { x: X(k), y: top + ch + 16, 'font-size': 10.5, 'text-anchor': anchor }, rtl(toFa(j.d) + ' ' + ((ad.months || [])[j.m - 1] || ''))));
+      if (j.y !== lastYear) { svg.appendChild(S('text', { x: X(k), y: top + ch + 32, 'font-size': 10.5, 'font-weight': 700, 'text-anchor': anchor }, rtl(toFa(j.y)))); lastYear = j.y; }
+    }
+    host.scrollLeft = 0;
+  }
+  function renderCum() {
+    var host = $('cu-total');
+    if (!host || !OV) return;
+    var prof = st.metric === 'profit', series = buildSeries(st.data.byDay, 'day', st.range.from, st.range.to);
+    clear(host); clear($('cu-ma')); clear($('cu-table'));
+    $('cu-ma-title').textContent = '';
+    if (prof && !hasProfit()) { $('cu-hint').textContent = st.data.profit && !st.data.profit.ready ? TEXT.noRawTab : TEXT.cuNoProfit; return; }
+    var cu = OV.cumulative(series, st.metric);
+    $('cu-hint').textContent = fill(prof ? TEXT.cuHintProfit : TEXT.cuHintSales, { t: fmtSigned(cu.total) }) + (cu.weekly ? TEXT.cuWeekly : '') + (prof ? ' ' + TEXT.profitHint : '');
+    drawLineChart(host, cu.pts.map(function (p) { return { key: p.key, v: p.run }; }), TEXT.cuTitle, COLORS.bar);
+    if (cu.hasMa) {
+      $('cu-ma-title').textContent = (prof ? TEXT.cuMaProfit : TEXT.cuMaSales) + ' — ' + fill(TEXT.cuMaNow, { n: fmtSigned(Math.round(cu.last7)) });
+      drawLineChart($('cu-ma'), cu.pts.filter(function (p) { return p.ma !== null; }).map(function (p) { return { key: p.key, v: p.ma }; }), TEXT.cuMaSales, COLORS.person);
+    } else $('cu-ma-title').textContent = TEXT.cuMaNeed;
+    drawTable($('cu-table'), [TEXT.thDate, TEXT.thDay, TEXT.thRun, TEXT.thMa],
+      cu.all.slice().reverse().map(function (p) { return [toFa(p.key.replace(/-/g, '/')), fmtSigned(p.v), fmtSigned(p.run), p.ma === null ? '—' : fmtSigned(Math.round(p.ma))]; }));
+  }
+
   function refreshView() {
     var any = st.data.rows.used > 0, open = !!st.product && !!st.raw && !!PV;
     $('pv-body').hidden = !open;
@@ -1123,7 +1351,7 @@
   function rerenderTime() {
     if (!st.data) return;
     if (st.product && st.raw && PV) renderProduct();
-    else if (st.data.rows.used) renderTime();
+    else if (st.data.rows.used) renderPane(st.tab);
   }
 
   function wire() {
@@ -1154,6 +1382,11 @@
     });
     if ($('pv-select')) $('pv-select').addEventListener('change', function () { openProduct(this.value); });
     if ($('pv-back')) $('pv-back').addEventListener('click', function () { openProduct(''); });
+    st.tab = loadTab();
+    if ($('r-tabs')) { $('r-tabs').addEventListener('scroll', tabFades); window.addEventListener('resize', tabFades); }
+    b = document.querySelectorAll('[data-rtab]');
+    for (i = 0; i < b.length; i++) b[i].addEventListener('click', function () { setTab(this.getAttribute('data-rtab')); });
+    setPressed('[data-rtab]', 'data-rtab', st.tab);
     if ($('r-all-sort')) {
       $('r-all-sort').addEventListener('change', function () { setAllSort(this.value); });
       $('r-all-dir').addEventListener('click', function () { setAllSort(st.allSort.col, -st.allSort.dir); });
@@ -1172,6 +1405,8 @@
     open: function () { load(false); },
     reset: function () {
       st.cache = {}; st.data = null; st.token += 1;
+      st.tab = 'overview'; saveTab('overview');
+      ['ov-sum', 'ov-data', 'ov-dates', 'cu-total', 'cu-ma', 'cu-table'].forEach(function (id) { if ($(id)) clear($(id)); });
       if ($('r-body')) { $('r-body').hidden = true; clear($('r-tiles')); if ($('r-tiles-profit')) clear($('r-tiles-profit')); }   // nothing of the report stays after logout
       st.an = null; st.raw = null; st.product = ''; st.pv = null; st.allRows = null;
       if ($('r-all-card')) $('r-all-card').hidden = true;
@@ -1188,7 +1423,7 @@
     },
     util: {
       fmtMoney: fmtMoney, fmtQty: fmtQty, fmtNum: fmtNum, weekStartKey: weekStartKey, monthKey: monthKey, rangeFor: rangeFor, addDays: addDays,
-      dayDiff: dayDiff, weekdayOf: weekdayOf, prevFromFor: prevFromFor, buildSeries: buildSeries, margin: margin, fmtSigned: fmtSigned, productRows: productRows, rankByCount: rankByCount, todayKey: todayKey, labelOf: labelOf
+      dayDiff: dayDiff, weekdayOf: weekdayOf, prevFromFor: prevFromFor, buildSeries: buildSeries, margin: margin, fmtSigned: fmtSigned, productRows: productRows, rankByCount: rankByCount, todayKey: todayKey, labelOf: labelOf, hasOverview: !!window.barginOverview
     }
   };
   if ($('r-periods')) wire();

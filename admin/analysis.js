@@ -217,16 +217,19 @@
 
   // The tips (at most LIMIT.tips) in a fixed order of importance. F = the formatters of report.js:
   // {fa(n) Persian digits, money(n) compact signed money, pct(n) percent with a minus, q(name) quoted name, day(i) weekday name, month(key) month name}.
-  function tips(a, F) {
+  // skip (optional, owner 2026-11-08): tips that only repeat a «خلاصه» sentence shown above them are dropped before the cut to 5,
+  // so the next tip can take their place. skip = {ids: {weekday: true, …}, products: {«name»: true}}; a tip with `product` (star, top) is
+  // dropped when its product is in skip.products.
+  function tips(a, F, skip) {
     var out = [];
     if (!a || !a.enough) return out;
-    function add(id, text) { out.push({ id: id, text: text }); }
+    function add(id, text, product) { var t = { id: id, text: text }; if (product) t.product = product; out.push(t); }
     var prods = a.products, tm = F.toman;
     var worst = prods.filter(function (p) { return p.costedLines >= LIMIT.profitLines && p.profit < 0; }).sort(function (x, y) { return x.profit - y.profit; })[0];
     if (worst) add('loss', F.q(worst.name) + ' زیر قیمت اولیه فروش رفته: ' + F.money(-worst.profit) + ' ' + tm + ' ضرر تو ' + F.fa(worst.costedLines) + ' ردیف. قیمت فروش یا قیمت اولیه‌ش رو چک کن.');
     var stars = prods.filter(function (p) { return p.group === GROUPS.star; }).sort(function (x, y) { return y.profit - x.profit; });
-    if (stars.length) add('star', F.q(stars[0].name) + ' ستاره‌ی فروشته: ' + F.fa(Math.round(stars[0].share)) + '٪ فروش و ' + F.money(stars[0].profit) + ' ' + tm + ' سود. سعی کن همیشه موجود باشه.');
-    else if (!a.quad.ok && prods[0] && prods[0].share >= 20 && prods[0].lines >= LIMIT.productLines) add('top', F.q(prods[0].name) + ' ' + F.fa(Math.round(prods[0].share)) + '٪ فروشت رو می‌سازه (' + F.money(prods[0].toman) + ' ' + tm + '). سعی کن همیشه موجود باشه.');
+    if (stars.length) add('star', F.q(stars[0].name) + ' ستاره‌ی فروشته: ' + F.fa(Math.round(stars[0].share)) + '٪ فروش و ' + F.money(stars[0].profit) + ' ' + tm + ' سود. سعی کن همیشه موجود باشه.', stars[0].name);
+    else if (!a.quad.ok && prods[0] && prods[0].share >= 20 && prods[0].lines >= LIMIT.productLines) add('top', F.q(prods[0].name) + ' ' + F.fa(Math.round(prods[0].share)) + '٪ فروشت رو می‌سازه (' + F.money(prods[0].toman) + ' ' + tm + '). سعی کن همیشه موجود باشه.', prods[0].name);
     var lowM = prods.filter(function (p) { return p.group === GROUPS.volume; }).sort(function (x, y) { return y.orders - x.orders; })[0];
     if (lowM) add('lowmargin', F.q(lowM.name) + ' تو ' + F.fa(lowM.orders) + ' سفارش بوده ولی حاشیه‌ی سودش فقط ' + F.pct(lowM.margin) + ' هست (میانگین ' + F.pct(a.quad.avgMargin) + '). قیمت فروش یا قیمت اولیه‌ش رو یه نگاه بنداز.');
     var down = prods.filter(function (p) { return p.trend && p.trend.pct <= -LIMIT.tipMove; }).sort(function (x, y) { return x.trend.pct - y.trend.pct; })[0];
@@ -253,6 +256,7 @@
     if (a.months.ok && a.months.best.toman >= a.months.avg * LIMIT.monthRatio) add('month', F.month(a.months.best.key) + ' بهترین ماه فروشته: ' + F.money(a.months.best.toman) + ' ' + tm + ' (میانگین ماه‌ها ' + F.money(a.months.avg) + ').');
     var up = prods.filter(function (p) { return p.trend && p.trend.pct >= LIMIT.tipMove; }).sort(function (x, y) { return y.trend.pct - x.trend.pct; })[0];
     if (up) add('rising', 'فروش ' + F.q(up.name) + ' نسبت به دوره‌ی قبل ' + F.pct(up.trend.pct) + ' بیشتر شده (' + F.money(up.toman) + ' در برابر ' + F.money(up.prevToman) + ' ' + tm + ').');
+    if (skip) out = out.filter(function (t) { return !((skip.ids && skip.ids[t.id]) || (t.product && skip.products && skip.products[t.product])); });
     return out.slice(0, LIMIT.tips);
   }
 

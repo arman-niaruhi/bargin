@@ -156,6 +156,30 @@
     .rp-acard details .rp-akv { margin: 0 0 10px; grid-template-columns: 1fr; }
     .rp-akv .rp-kv { white-space: normal; overflow-wrap: anywhere; }
     @media (max-width: 639px) { .rp-allwrap { display: none; } .rp-allcards { display: block; } .rp-sortbar { display: flex; } }
+    /* sub-tabs: one connected underline strip (a different level from the pill switches); scrolls sideways on phones */
+    .rp-tabwrap { position: relative; margin: 30px 0 4px; }
+    .rp-tabwrap::before, .rp-tabwrap::after { content: ""; position: absolute; top: 0; bottom: 0; width: 34px; pointer-events: none; z-index: 1; opacity: 0; transition: opacity .15s; border-radius: 10px 10px 0 0; }
+    .rp-tabwrap::before { left: 0; background: linear-gradient(to right, #ddc297 15%, rgba(221, 194, 151, 0)); }
+    .rp-tabwrap::after { right: 0; background: linear-gradient(to left, #ddc297 15%, rgba(221, 194, 151, 0)); }
+    .rp-tabwrap.more-left::before, .rp-tabwrap.more-right::after { opacity: 1; }
+    .rp-tabs { display: flex; flex-wrap: nowrap; justify-content: flex-start; gap: 0; margin: 0; padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left); overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; background: rgba(74, 44, 26, .09); border-bottom: 2px solid var(--brown); border-radius: 10px 10px 0 0; }
+    .rp-tabs::-webkit-scrollbar { display: none; }
+    .rp-tabs button { flex: 0 0 auto; font-family: inherit; font-size: 1rem; font-weight: 800; cursor: pointer; min-height: 48px; padding: 6px 18px 4px; margin: 0 0 -2px; border: 0; border-bottom: 4px solid transparent; border-radius: 8px 8px 0 0; background: transparent; color: var(--brown); white-space: nowrap; }
+    .rp-tabs button:first-child { margin-inline-start: auto; }
+    .rp-tabs button:last-child { margin-inline-end: auto; }
+    .rp-tabs button:hover { background: rgba(255, 250, 240, .5); }
+    .rp-tabs button[aria-pressed="true"] { background: var(--surface); border-bottom-color: var(--green); color: var(--green-dark); }
+    .rp-tabs button:focus-visible { outline: 3px solid rgba(47, 122, 31, .35); outline-offset: -3px; }
+    /* خلاصه: leaf bullets (tips keep their numbers) */
+    .rp-sum li { padding-right: 32px; }
+    .rp-sum li::before { content: ""; position: absolute; right: 8px; top: 19px; width: 11px; height: 15px; background: var(--green); border-radius: 0 100% 0 100%; transform: rotate(-20deg); }
+    .rp-sub { font-weight: 800; color: var(--brown); margin: 18px 0 2px; font-size: .95rem; }
+    .rp-pane[hidden] { display: none; }
+    .rp-facts { list-style: none; margin: 6px 0; padding: 0; text-align: right; }
+    .rp-facts li { display: grid; grid-template-columns: minmax(7.5em, 40%) minmax(0, 1fr); gap: 4px 12px; align-items: baseline; padding: 9px 4px; border-bottom: 1px dotted var(--line); line-height: 1.7; }
+    .rp-facts li:last-child { border-bottom: 0; }
+    .rp-facts li span { color: var(--muted); font-weight: 400; }
+    .rp-facts li b { color: var(--text); font-weight: 800; overflow-wrap: anywhere; text-align: right; }
     /* ==== end «گزارش» ==== */
 
     /* ==== «خرید و فروش» list (bargin-designer: polish here) ==== */
@@ -394,10 +418,52 @@
           </div>
         </div>
         <div id="r-body" hidden>
+          <div class="rp-tabwrap" id="r-tabwrap">
+          <div class="rp-tabs" role="group" aria-label="بخش‌های گزارش" id="r-tabs">
+            <button type="button" data-rtab="overview" aria-pressed="true">نمای کلی</button>
+            <button type="button" data-rtab="trend" aria-pressed="false">روند</button>
+            <button type="button" data-rtab="products" aria-pressed="false">محصول‌ها</button>
+            <button type="button" data-rtab="customers" aria-pressed="false">مشتری‌ها</button>
+            <button type="button" data-rtab="channel" aria-pressed="false">سایت یا حضوری</button>
+          </div>
+          </div>
+
+          <!-- 1) نمای کلی -->
+          <div id="rp-pane-overview" class="rp-pane">
           <div class="rp-tiles" id="r-tiles"></div>
           <div class="rp-tiles rp-tiles3" id="r-tiles-profit" hidden></div>
 
-          <section class="adm-card rp-card">
+          <section class="adm-card rp-card" id="ov-sum-card">
+            <h2>خلاصه</h2>
+            <ul class="rp-tips rp-sum" id="ov-sum"></ul>
+            <p class="rp-hint" id="ov-sum-hint"></p>
+          </section>
+
+          <h2 class="rp-h">تحلیل و پیشنهاد</h2>
+          <p class="rp-hint" id="an-note"></p>
+          <section class="adm-card rp-card an-sec" id="an-tips-card">
+            <h2>پیشنهادها</h2>
+            <ol class="rp-tips" id="an-tips"></ol>
+            <p class="rp-hint" id="an-tips-hint"></p>
+          </section>
+
+          <section class="adm-card rp-card" id="ov-data-card">
+            <h2>داده‌هامون</h2>
+            <ul class="rp-facts" id="ov-data"></ul>
+            <p class="rp-hint" id="ov-data-hint"></p>
+          </section>
+
+          <section class="adm-card rp-card" id="ov-dates-card">
+            <h2>تاریخ‌های فروش</h2>
+            <ul class="rp-facts" id="ov-dates"></ul>
+            <p class="rp-hint" id="ov-dates-hint"></p>
+          </section>
+          <p class="rp-hint" id="r-used"></p>
+          </div>
+
+          <!-- 2) روند -->
+          <div id="rp-pane-trend" class="rp-pane" hidden>
+<section class="adm-card rp-card">
             <h2>فروش و سود در طول زمان</h2>
             <div class="adm-filter rp-switch" role="group" aria-label="نمایش" id="r-metrics">
               <button type="button" data-metric="toman" aria-pressed="true">فروش</button>
@@ -414,7 +480,31 @@
             <details class="rp-details"><summary>جدول اعداد</summary><div id="r-time-table"></div></details>
           </section>
 
-          <section class="adm-card rp-card">
+          <section class="adm-card rp-card" id="cu-card">
+            <h2>جمع تجمعی فروش و سود</h2>
+            <div class="adm-filter rp-switch" role="group" aria-label="نمایش" id="cu-metrics">
+              <button type="button" data-metric="toman" aria-pressed="true">فروش</button>
+              <button type="button" data-metric="profit" aria-pressed="false">سود</button>
+            </div>
+            <p class="rp-hint" id="cu-hint"></p>
+            <div class="rp-chart" id="cu-total"></div>
+            <p class="rp-hint rp-sub" id="cu-ma-title"></p>
+            <div class="rp-chart" id="cu-ma"></div>
+            <details class="rp-details"><summary>جدول اعداد</summary><div id="cu-table"></div></details>
+          </section>
+
+<section class="adm-card rp-card an-sec">
+              <h2>کی بهتر می‌فروشیم؟</h2>
+              <p class="rp-hint" id="an-week-hint"></p>
+              <div class="rp-chart" id="an-week"></div>
+              <p class="rp-hint" id="an-month-hint"></p>
+              <div class="rp-chart" id="an-month"></div>
+            </section>
+          </div>
+
+          <!-- 3) محصول‌ها -->
+          <div id="rp-pane-products" class="rp-pane" hidden>
+<section class="adm-card rp-card">
             <h2>پرفروش‌ترین محصولات</h2>
             <div class="adm-filter rp-switch" role="group" aria-label="معیار" id="r-modes">
               <button type="button" data-mode="toman" aria-pressed="true">به تومان</button>
@@ -426,7 +516,7 @@
             <details class="rp-details"><summary>جدول اعداد</summary><div id="r-prod-table"></div></details>
           </section>
 
-          <section class="adm-card rp-card" id="r-all-card" hidden>
+<section class="adm-card rp-card" id="r-all-card" hidden>
             <h2>همه محصولات فروخته‌شده</h2>
             <p class="rp-hint" id="r-all-hint"></p>
             <div class="rp-sortbar">
@@ -438,29 +528,7 @@
             <div class="rp-allcards" id="r-all-cards"></div>
           </section>
 
-          <section class="adm-card rp-card">
-            <h2>سایت یا حضوری؟</h2>
-            <div class="rp-chart" id="r-chan"></div>
-            <div class="rp-legend" id="r-chan-legend"></div>
-            <details class="rp-details"><summary>جدول اعداد</summary><div id="r-chan-table"></div></details>
-          </section>
-
-          <section class="adm-card rp-card">
-            <h2>بهترین مشتری‌ها</h2>
-            <div class="rp-chart" id="r-cust"></div>
-            <details class="rp-details"><summary>جدول اعداد</summary><div id="r-cust-table"></div></details>
-          </section>
-
-          <h2 class="rp-h">تحلیل و پیشنهاد</h2>
-          <p class="rp-hint" id="an-note"></p>
-          <div id="an-body" hidden>
-            <section class="adm-card rp-card">
-              <h2>پیشنهادها</h2>
-              <ol class="rp-tips" id="an-tips"></ol>
-              <p class="rp-hint" id="an-tips-hint"></p>
-            </section>
-
-            <section class="adm-card rp-card">
+<section class="adm-card rp-card an-sec">
               <h2>کدوم محصول‌ها بهترن؟</h2>
               <p class="rp-hint" id="an-prod-hint"></p>
               <div class="rp-chart" id="an-quad"></div>
@@ -469,45 +537,55 @@
               <details class="rp-details"><summary>جدول همه‌ی محصول‌ها</summary><div id="an-rank-table"></div></details>
             </section>
 
-            <section class="adm-card rp-card">
+<section class="adm-card rp-card an-sec">
               <h2>تمرکز فروش</h2>
               <div class="rp-chart" id="an-abc"></div>
               <div class="rp-legend" id="an-abc-legend"></div>
               <p class="rp-hint" id="an-abc-hint"></p>
             </section>
 
-            <section class="adm-card rp-card">
-              <h2>مشتری‌های برگشتی</h2>
-              <div class="rp-tiles rp-tiles2" id="an-cust"></div>
-              <p class="rp-hint" id="an-cust-hint"></p>
-            </section>
-
-            <section class="adm-card rp-card">
+<section class="adm-card rp-card an-sec">
               <h2>چی با چی خریده می‌شه؟</h2>
               <ol class="rp-rank" id="an-pairs"></ol>
               <p class="rp-hint" id="an-pairs-hint"></p>
             </section>
 
-            <section class="adm-card rp-card">
-              <h2>کی بهتر می‌فروشیم؟</h2>
-              <p class="rp-hint" id="an-week-hint"></p>
-              <div class="rp-chart" id="an-week"></div>
-              <p class="rp-hint" id="an-month-hint"></p>
-              <div class="rp-chart" id="an-month"></div>
-            </section>
-
-            <section class="adm-card rp-card">
-              <h2>سایت یا حضوری: کدوم بهتره؟</h2>
-              <div id="an-chan-table"></div>
-            </section>
-
-            <section class="adm-card rp-card">
+<section class="adm-card rp-card an-sec">
               <h2>محصول‌های کم‌فروش</h2>
               <p class="rp-hint" id="an-idle-hint"></p>
               <div id="an-idle"></div>
             </section>
           </div>
-          <p class="rp-hint" id="r-used"></p>
+
+          <!-- 4) مشتری‌ها -->
+          <div id="rp-pane-customers" class="rp-pane" hidden>
+<section class="adm-card rp-card">
+            <h2>بهترین مشتری‌ها</h2>
+            <div class="rp-chart" id="r-cust"></div>
+            <details class="rp-details"><summary>جدول اعداد</summary><div id="r-cust-table"></div></details>
+          </section>
+
+<section class="adm-card rp-card an-sec">
+              <h2>مشتری‌های برگشتی</h2>
+              <div class="rp-tiles rp-tiles2" id="an-cust"></div>
+              <p class="rp-hint" id="an-cust-hint"></p>
+            </section>
+          </div>
+
+          <!-- 5) سایت یا حضوری -->
+          <div id="rp-pane-channel" class="rp-pane" hidden>
+<section class="adm-card rp-card">
+            <h2>سایت یا حضوری؟</h2>
+            <div class="rp-chart" id="r-chan"></div>
+            <div class="rp-legend" id="r-chan-legend"></div>
+            <details class="rp-details"><summary>جدول اعداد</summary><div id="r-chan-table"></div></details>
+          </section>
+
+<section class="adm-card rp-card an-sec">
+              <h2>سایت یا حضوری: کدوم بهتره؟</h2>
+              <div id="an-chan-table"></div>
+            </section>
+          </div>
         </div>
       </div>
 
@@ -645,6 +723,7 @@
   <script src="admin.js"></script>
   <script src="analysis.js"></script>
   <script src="product.js"></script>
+  <script src="overview.js"></script>
   <script src="report.js"></script>
 </body>
 </html>

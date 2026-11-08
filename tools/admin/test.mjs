@@ -2061,6 +2061,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   const asrc = read("admin/analysis.js");
   vm.runInNewContext(asrc, ctxr);
   vm.runInNewContext(read("admin/product.js"), ctxr);
+  vm.runInNewContext(read("admin/overview.js"), ctxr);
   vm.runInNewContext(rsrc, ctxr);
   const U = win.barginReport.util;
   const p2 = (n) => String(n).padStart(2, "0");
@@ -2103,7 +2104,7 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(t) report.js and the whole admin use nothing newer than ES2017", !newer.test(rsrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(asrc.replace(/\/\/[^\n]*/g, "")) && !newer.test(adm.replace(/\/\/[^\n]*/g, "")));
   check("(t) report.js: no innerHTML / eval / document.write / libraries / network calls of its own (only barginAdmin.api)", !/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|fetch\(|XMLHttpRequest|import\(|require\(|https?:\/\//.test(rsrc.replace(/'http:\/\/www\.w3\.org\/2000\/svg'/, "")));
   check("(t) report.js only reads: it calls getReport and no save/delete action", /api\('getReport'/.test(rsrc) && !/saveLedger|deleteLedger|saveProduct|deleteProduct|publishCsv/.test(rsrc));
-  check("(t) the page loads report.js after admin.js (script-src 'self' allows it) and has the «گزارش» tab", /<script src="admin\.js"><\/script>\s*<script src="analysis\.js"><\/script>\s*<script src="product\.js"><\/script>\s*<script src="report\.js"><\/script>/.test(html) && /id="tab-report"[^>]*>گزارش</.test(html) && /script-src 'self'/.test(html));
+  check("(t) the page loads report.js after admin.js (script-src 'self' allows it) and has the «گزارش» tab", /<script src="admin\.js"><\/script>\s*<script src="analysis\.js"><\/script>\s*<script src="product\.js"><\/script>\s*<script src="overview\.js"><\/script>\s*<script src="report\.js"><\/script>/.test(html) && /id="tab-report"[^>]*>گزارش</.test(html) && /script-src 'self'/.test(html));
   check("(t) the report has the four tiles, the three switches and the four charts with a «جدول اعداد» under each",
     ["جمع فروش", "تعداد سفارش", "تعداد مشتری", "میانگین هر سفارش"].every((t) => rsrc.includes(t)) && ["این ماه", "۳ ماه اخیر", "امسال", "روزانه", "هفتگی", "ماهانه", "به تومان", "به تعداد", "فروش و سود در طول زمان", "سالانه", "۷ روز اخیر", "هفته‌ی قبل", "پرفروش‌ترین محصولات", "سایت یا حضوری؟", "بهترین مشتری‌ها"].every((t) => html.includes(t)) && (html.match(/<summary>جدول اعداد<\/summary>/g) || []).length >= 4 && (html.match(/<details/g) || []).length >= 4);
   check("(t) the old-server guard: an old script (unknown_action, or no report:true) shows a message; the session loss goes through onApiError (back to login)", /unknown_action/.test(rsrc) && /r\.report !== true/.test(rsrc) && /ad\.onApiError\(err/.test(rsrc) && /onApiError[\s\S]{0,200}NO_SESSION/.test(adm));
@@ -2166,6 +2167,12 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     check("(w) analysis: channels — site and person orders add up to 30; average per channel", a.channels.site.orders + a.channels.person.orders === 30 && a.channels.site.avg > 0 && a.channels.person.margin !== null);
     check("(w) analysis: never-sold shop product «ف» and the long-idle ones are listed (the data reaches back 90 days)", a.idle.ok && a.idle.none.indexOf("ف") >= 0 && a.idle.rare.some((x) => x.name === "الف" && x.days >= 28));
     const t = AN.tips(a, F);
+    {
+      const full = AN.tips(a, F), ids = full.map((x) => x.id), starName = (full.find((x) => x.id === "star") || {}).product;
+      const sk = AN.tips(a, F, { ids: { weekday: true, channel: true, repeat: true }, products: { [starName]: true } });
+      check("(z) tips that repeat a summary sentence are dropped: the star/top tip of the product named in the summary, and the weekday, channel and repeat-customer tips; the star tip carries its product", !!starName && !sk.some((x) => ["star", "weekday", "channel", "repeat"].indexOf(x.id) >= 0) && sk.length <= 5, JSON.stringify([ids, sk.map((x) => x.id)]));
+      check("(z) a tip about ANOTHER product stays; the list refills in priority order up to 5; without skip nothing changes", AN.tips(a, F, { ids: {}, products: { "نام دیگر": true } }).map((x) => x.id).join() === ids.join() && sk.some((x) => x.id === "highprofit") && AN.tips(a, F).length === full.length && sk.length >= Math.min(5, ids.length - 1));
+    }
     check("(w) analysis: at most 5 tips, each with a number, from rules (star, low margin, idle, pairs…)", t.length > 0 && t.length <= 5 && t.every((x) => /[0-9]/.test(x.text)) && t.some((x) => x.id === "star" && x.text.includes("الف")) && t.some((x) => x.id === "lowmargin" && x.text.includes("ب")), JSON.stringify(t.map((x) => x.id)));
     // previous period + trend: 20 orders before and 20 in the period; «الف» sells half as much now
     const tl = [];
@@ -2277,6 +2284,46 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
   check("(y) analyzeAll with 20,000 lines and 30 products is fast (under 1.5 s) and has 30 rows", bigRows.length === 30 && ms < 1500, ms + " ms");
   check("(y) the page: card «همه محصولات فروخته‌شده» between the products card and «سایت یا حضوری؟», table + cards + phone sort box; sort by header, empty last, row tap opens the product",
     html.indexOf("همه محصولات فروخته‌شده") > html.indexOf("پرفروش‌ترین محصولات") && html.indexOf("همه محصولات فروخته‌شده") < html.lastIndexOf("<h2>سایت یا حضوری؟</h2>") && ["r-all-card", "r-all-table", "r-all-cards", "r-all-sort", "r-all-dir"].every((i) => html.includes('id="' + i + '"')) && /aria-sort/.test(rsrc) && /empty cells always last/.test(rsrc) && /openProduct\(r\.key\)/.test(rsrc) && !/innerHTML/.test(rsrc));
+}
+
+// ---- (z) «نمای کلی»: admin/overview.js + the five sub-tabs (owner approved 2026-11-08, phase 1) ----
+{
+  const rsrc = read("admin/report.js"), html = read("admin/index.html"), osrc = read("admin/overview.js");
+  const win = { barginAdmin: { jalCal_: gs.jalCal_, toJalali_: gs.toJalali_, months: ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"] } };
+  const ctxp = { window: win, document: { getElementById: () => null }, Intl, Date, Math, Object, String };
+  ["admin/analysis.js", "admin/product.js", "admin/overview.js", "admin/report.js"].forEach((f) => vm.runInNewContext(read(f), ctxp));
+  const OV = win.barginOverview, U = win.barginReport.util;
+  const F = { fa: String, money: (n) => String(n), pct: (n) => n + "%", q: (n) => "«" + n + "»", toman: "تومان", day: (i) => ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"][i], names: { site: "سایت", person: "حضوری" } };
+  const S = { from: "1405-07-01", to: "1405-07-30", rows: { used: 63, skipped: { noDate: 1, noTotal: 1 }, buysIgnored: 3 }, totals: { toman: 1200000, orders: 40, customers: 6 },
+    byProduct: [{ id: "*سایر*", name: "گردو", toman: 900000, lines: 30, qty: { pack: 5, kg: 0, g: 0, piece: 0 } }, { id: "a", name: "الف", toman: 300000, lines: 9, qty: { pack: 10, kg: 2, g: 0, piece: 0 } }],
+    byChannel: { site: { toman: 1, orders: 20 }, person: { toman: 1, orders: 15 }, unknown: { toman: 0, orders: 5 } },
+    profit: { ready: true, rows: 10, sales: 800000, cost: 500000, profit: 300000, noCost: { rows: 4, toman: 1 } },
+    byDay: [{ d: "1405-07-02", toman: 100, orders: 1 }, { d: "1405-07-03", toman: 300, orders: 1 }, { d: "1405-07-10", toman: 50, orders: 1 }] };
+  const mk = (day, toman) => [day, "o" + toman + day, 0, "pack", 1, toman, null, "", "s"];
+  const lines = [].concat(Array.from({ length: 6 }, (_, i) => mk("1405-07-0" + (i + 1), 200000)), Array.from({ length: 6 }, (_, i) => mk("1405-06-0" + (i + 1), 100000)));
+  const A = { lines, items: [{ i: "a", n: "الف" }], shop: [{ id: "a", name: "الف" }], prevFrom: "1405-06-01" };
+  const an = { enough: true, weekdays: { ok: true, best: { i: 3, toman: 5, orders: 7 }, bestShare: 28 }, channels: { site: { orders: 6, avg: 100000 }, person: { orders: 7, avg: 80000 } }, customers: { ok: true, repeatPct: 50, repeat: 3, n: 6 } };
+  const ctx = { from: S.from, to: S.to };
+  const ss = OV.sentences(S, A, ctx, an, F), id = (l) => l.map((x) => x.id).join();
+  check("(z) summary: sales, compare (+100% against 600000), profit 300000 with margin 38%, best SHOP product (not «سایر»), weekday, channel, customers, the note about 4 rows without raw price", id(ss) === "sales,compare,profit,product,weekday,channel,customers,note" && /۱۰۰%|100%/.test(ss[1].text) && ss[2].text.includes("300000") && ss[2].text.includes("38%") && ss[3].text.includes("«الف»") && ss[7].text.includes("4"), id(ss));
+  check("(z) summary: under the data limits a sentence is left out (no previous period, 2 costed lines, product under 5 lines, analysis not enough)", id(OV.sentences(S, { lines: lines.slice(0, 3), prevFrom: "" }, ctx, { enough: false }, F)) === "sales,profit,product,note" && id(OV.sentences({ ...S, profit: { ...S.profit, rows: 2 }, byProduct: [{ id: "a", name: "الف", toman: 1, lines: 4, qty: S.byProduct[1].qty }] }, { lines: [], prevFrom: "" }, ctx, null, F)) === "sales,note");
+  check("(z) summary: a loss is said as a loss; no sales = no sentences", OV.sentences({ ...S, profit: { ...S.profit, profit: -50000 } }, A, ctx, null, F).some((x) => x.id === "profit" && /ضرر/.test(x.text) && x.text.includes("50000")) && OV.sentences({ ...S, rows: { ...S.rows, used: 0 } }, A, ctx, an, F).length === 0);
+  const c = OV.counts(S, { lines: [["1405-07-02", "o1", 0, "pack", 1, 5, null, "", "s"], ["1405-07-03", "o2", 1, "pack", 1, 5, null, "1", "s"], ["1405-06-03", "o3", 0, "pack", 1, 5, null, "1", "s"]], items: [{ i: "a", n: "الف" }, { i: "*سایر*", n: "گردو" }], shop: [{ id: "a", name: "الف" }, { id: "b", name: "ب" }], cut: false });
+  check("(z) data card: rows, skipped, orders, customers, units, channels, costed/uncosted, buys; products sold of the shop and the «سایر» names; rows without customer (only lines of the period)", c.rows === 63 && c.skipped === 2 && c.orders === 40 && c.qty.pack === 15 && c.qty.kg === 2 && c.channels.person === 15 && c.costed === 10 && c.uncosted === 4 && c.buys === 3 && c.products.soldShop === 1 && c.products.shop === 2 && c.products.other.join() === "گردو" && c.noCustomer === 1, JSON.stringify(c));
+  const d = OV.dates(S, { dayDiff: U.dayDiff, addDays: U.addDays });
+  check("(z) dates: first/last sale, span 9 days, 3 days with a sale (33%), longest gap 6 days (1405-07-04 to 1405-07-09), best day 1405-07-03", d.first === "1405-07-02" && d.last === "1405-07-10" && d.span === 9 && d.days === 3 && d.share === 33 && d.gap === 6 && d.gapFrom === "1405-07-04" && d.gapTo === "1405-07-09" && d.best.d === "1405-07-03" && OV.dates({ byDay: [] }, {}) === null, JSON.stringify(d));
+  const ser = Array.from({ length: 10 }, (_, i) => ({ key: U.addDays("1405-07-01", i), toman: 100 * (i + 1), profit: 10 }));
+  const cu = OV.cumulative(ser, "toman"), cp = OV.cumulative(ser, "profit");
+  check("(z) running total: ends at the period total (5500), the 7-day moving average starts on day 7 (400) and the last one is 700; the profit metric adds profit", cu.total === 5500 && cu.all[9].run === 5500 && cu.all[5].ma === null && cu.all[6].ma === 400 && cu.last7 === 700 && cu.weekly === false && cp.total === 100);
+  const long = Array.from({ length: 200 }, (_, i) => ({ key: U.addDays("1405-01-01", i), toman: 1, profit: 0 })), cl = OV.cumulative(long, "toman");
+  check("(z) running total over 120 days: one point per week (and the last day); the table keeps every day", cl.weekly && cl.pts.length === 29 && cl.all.length === 200 && cl.pts[cl.pts.length - 1].run === 200);
+  check("(z) overview.js is pure (no DOM, no network, no names)", !/document|fetch\(|XMLHttpRequest|innerHTML/.test(osrc.replace(/\/\/[^\n]*/g, "")) && !/zahra|ahmadi/i.test(osrc));
+  const pane = (n) => { const a = html.indexOf('id="rp-pane-' + n + '"'); const b = html.indexOf('class="rp-pane"', a + 40); return html.slice(a, b > 0 ? b : html.indexOf('id="v-ledger"')); };
+  const has = (n, ids) => ids.every((i) => pane(n).includes('id="' + i + '"'));
+  check("(z) the five sub-tabs and where the blocks live: نمای کلی (خلاصه، پیشنهادها، tiles، داده‌هامون، تاریخ‌ها), روند (time chart, running total, weekdays/months), محصول‌ها (best products, table, ranking, ABC, pairs, idle), مشتری‌ها (top, repeat), سایت یا حضوری (split, table)",
+    ["overview", "trend", "products", "customers", "channel"].every((t) => html.includes('data-rtab="' + t + '"') && html.includes('id="rp-pane-' + t + '"')) && has("overview", ["ov-sum", "an-tips", "an-note", "r-tiles", "r-tiles-profit", "ov-data", "ov-dates", "r-used"]) && has("trend", ["r-time", "cu-total", "cu-ma", "an-week", "an-month"]) && has("products", ["r-prod", "r-all-card", "an-quad", "an-rank", "an-abc", "an-pairs", "an-idle"]) && has("customers", ["r-cust", "an-cust"]) && has("channel", ["r-chan", "an-chan-table"]) && !html.includes('id="an-body"'));
+  check("(z) tabs: default نمای کلی, the last one is kept in sessionStorage (bargin-report-tab) with a memory fallback, reset on logout; only the open tab is drawn; the product view returns to the same tab",
+    /TAB_KEY = 'bargin-report-tab'/.test(rsrc) && /st\.tab = 'overview'; saveTab\('overview'\)/.test(rsrc) && /function renderPane\(name\)/.test(rsrc) && /function renderAll\(\) \{ renderPane\(st\.tab\)/.test(rsrc) && /sessionStorage/.test(rsrc) && !/innerHTML/.test(rsrc));
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : "\nall checks passed");
