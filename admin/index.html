@@ -186,6 +186,12 @@
     .rp-names li span { color: var(--muted); font-size: .85rem; white-space: nowrap; }
     #pb-bands .rp-mini details { margin-top: 6px; }
     #pb-bands .rp-mini summary { cursor: pointer; font-weight: 700; color: var(--green-dark); min-height: 44px; display: flex; align-items: center; }
+    .rp-h3 { font-size: 1rem; color: var(--brown); margin: 14px 0 4px; text-align: center; }
+    .rp-dual { overflow-x: auto; }
+    .rp-dual .rp-table { font-size: .85rem; }
+    @media (max-width: 639px) { .rp-dual .rp-table { display: none; } .rp-dual .rp-cards { display: block; } }
+    #cb-spend .rp-mini details, #ob-bands .rp-mini details { margin-top: 6px; }
+    #cb-spend .rp-mini summary { cursor: pointer; font-weight: 700; color: var(--green-dark); min-height: 44px; display: flex; align-items: center; }
     /* ==== end «گزارش» ==== */
 
     /* ==== «خرید و فروش» list (bargin-designer: polish here) ==== */
@@ -590,6 +596,20 @@
               <div class="rp-tiles rp-tiles2" id="an-cust"></div>
               <p class="rp-hint" id="an-cust-hint"></p>
             </section>
+
+          <section class="adm-card rp-card" id="cb-card" hidden>
+            <h2>گروه‌بندی مشتری‌ها</h2>
+            <p class="rp-hint" id="cb-hint"></p>
+            <div id="cb-body" hidden>
+              <h3 class="rp-h3">بر اساس تعداد خرید</h3>
+              <div class="rp-chart" id="cb-bar"></div>
+              <div class="rp-legend" id="cb-legend"></div>
+              <div class="rp-dual" id="cb-orders"></div>
+              <h3 class="rp-h3">بر اساس خرج مشتری</h3>
+              <div id="cb-spend"></div>
+            </div>
+            <p class="rp-hint" id="cb-note"></p>
+          </section>
           </div>
 
           <!-- 5) سایت یا حضوری -->
@@ -605,6 +625,14 @@
               <h2>سایت یا حضوری: کدوم بهتره؟</h2>
               <div id="an-chan-table"></div>
             </section>
+
+          <section class="adm-card rp-card" id="ob-card" hidden>
+            <h2>اندازه‌ی سفارش‌ها</h2>
+            <p class="rp-hint" id="ob-hint"></p>
+            <div class="rp-chart" id="ob-bar"></div>
+            <div class="rp-legend" id="ob-legend"></div>
+            <div id="ob-bands"></div>
+          </section>
           </div>
         </div>
       </div>

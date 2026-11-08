@@ -9,8 +9,12 @@
     weakLines: 5,      // a product with fewer sale lines gets the «کم‌داده» tag in the weakest list
     bandProducts: 6,   // price bands need at least this many products with a pack price
     bands: 3,          // thirds
-    top: 8             // products drawn (the rest of the best list is summed in «بقیه»)
+    top: 8,            // products drawn (the rest of the best list is summed in «بقیه»)
+    customers: 8,      // customer bands: at least this many customers with a customer id
+    topShare: 0.2,     // «۲۰٪ اول از نظر خرج»
+    orders: 15         // order-size bands: at least this many sale orders (5 per band)
   };
+  var CH = { s: 'site', p: 'person', u: 'unknown' };
   var UNITS = ['pack', 'kg', 'g', 'piece'];
 
   // Sale lines per unit in the period: {pack: {lines, qty}, kg: …}. raw = the analysis part of getReport (may be null:
@@ -85,5 +89,67 @@
     return out;
   }
 
-  window.barginSegments = { LIMIT: LIMIT, UNITS: UNITS, unitStats: unitStats, defaultUnit: defaultUnit, rankProducts: rankProducts, unitShares: unitShares, priceBands: priceBands };
+  // The sale orders of the period from the sale lines (lines with one order key are ONE order): [{key, date, toman, lines, cust, ch}].
+  function ordersOf(raw, from, to) {
+    var map = {}, list = [];
+    ((raw && raw.lines) || []).forEach(function (l) {
+      if ((from && l[0] < from) || (to && l[0] > to)) return;
+      var o = map[l[1]];
+      if (!o) { o = map[l[1]] = { key: l[1], date: l[0], toman: 0, lines: 0, cust: l[7] || '', ch: CH[l[8]] || 'unknown' }; list.push(o); }
+      o.toman += l[5]; o.lines += 1;
+    });
+    return list;
+  }
+
+  // Customers in bands (customer ids only; names are added by report.js). By number of orders: 1 / 2–3 / 4+; by spend: the first 20% of
+  // buyers (by money, at least one) against the rest. Orders without a customer id are left out and counted (noId).
+  function customerBands(raw, from, to) {
+    var orders = ordersOf(raw, from, to), custs = {}, noId = 0;
+    orders.forEach(function (o) {
+      if (!o.cust) { noId += 1; return; }
+      var c = custs[o.cust] || (custs[o.cust] = { id: o.cust, orders: 0, toman: 0 });
+      c.orders += 1; c.toman += o.toman;
+    });
+    var list = Object.keys(custs).map(function (k) { return custs[k]; });
+    var out = { ok: list.length >= LIMIT.customers, n: list.length, noId: noId, orders: 0, toman: 0, byOrders: [], spend: null };
+    if (!out.ok) return out;
+    list.forEach(function (c) { out.orders += c.orders; out.toman += c.toman; });
+    var defs = [[1, 1], [2, 3], [4, 1e9]];
+    out.byOrders = defs.map(function (d, i) { return { i: i, min: d[0], max: d[1], n: 0, orders: 0, toman: 0, shareCust: 0, shareSales: 0, avg: 0 }; });
+    list.forEach(function (c) {
+      var b = out.byOrders[c.orders >= 4 ? 2 : (c.orders >= 2 ? 1 : 0)];
+      b.n += 1; b.orders += c.orders; b.toman += c.toman;
+    });
+    out.byOrders.forEach(function (b) {
+      b.shareCust = b.n * 100 / out.n; b.shareSales = out.toman > 0 ? b.toman * 100 / out.toman : 0; b.avg = b.orders ? Math.round(b.toman / b.orders) : 0;
+    });
+    list.sort(function (a, b) { return b.toman - a.toman || b.orders - a.orders || (+a.id - +b.id); });
+    var k = Math.max(1, Math.ceil(list.length * LIMIT.topShare)), top = list.slice(0, k), rest = list.slice(k);
+    function grp(g) {
+      var t = 0, o = 0;
+      g.forEach(function (c) { t += c.toman; o += c.orders; });
+      return { n: g.length, toman: t, orders: o, share: out.toman > 0 ? t * 100 / out.toman : 0, avgCust: g.length ? Math.round(t / g.length) : 0 };
+    }
+    out.spend = { top: grp(top), rest: grp(rest), names: top.map(function (c) { return { id: c.id, toman: c.toman, orders: c.orders }; }) };
+    return out;
+  }
+
+  // Order size in thirds of THIS period's orders (smallest third, middle, biggest), cut points taken from the data. Needs 15 orders.
+  function orderBands(raw, from, to) {
+    var orders = ordersOf(raw, from, to), out = { ok: orders.length >= LIMIT.orders, n: orders.length, bands: [], total: 0 };
+    if (!out.ok) return out;
+    orders.sort(function (a, b) { return a.toman - b.toman || (a.key < b.key ? -1 : 1); });
+    var k;
+    for (k = 0; k < 3; k++) out.bands.push({ i: k, from: 0, to: 0, n: 0, toman: 0, share: 0, lines: 0, avgLines: 0, ch: { site: 0, person: 0, unknown: 0 } });
+    orders.forEach(function (o, idx) {
+      var b = out.bands[Math.floor(idx * 3 / orders.length)];
+      if (!b.n) b.from = o.toman;
+      b.to = o.toman; b.n += 1; b.toman += o.toman; b.lines += o.lines; b.ch[o.ch] += 1;
+      out.total += o.toman;
+    });
+    out.bands.forEach(function (b) { b.share = out.total > 0 ? b.toman * 100 / out.total : 0; b.avgLines = Math.round(b.lines * 10 / b.n) / 10; });
+    return out;
+  }
+
+  window.barginSegments = { customerBands: customerBands, orderBands: orderBands, ordersOf: ordersOf, LIMIT: LIMIT, UNITS: UNITS, unitStats: unitStats, defaultUnit: defaultUnit, rankProducts: rankProducts, unitShares: unitShares, priceBands: priceBands };
 })();

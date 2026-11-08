@@ -136,6 +136,21 @@
     pbNeed: 'برای این گروه‌بندی دست‌کم {need} محصول لازمه که تو این بازه «بسته/ظرف» فروش رفته باشن؛ الان {n} تا داری.',
     pbNoPrice: '{n} محصول فقط با کیلو، گرم یا عدد فروش رفتن و قیمت هر بسته/ظرف ندارن، برای همین تو این گروه‌بندی نیستن. «سایر»ها هم حساب نمی‌شن.',
     pbPrice: 'قیمت هر بسته/ظرف', pbRange: 'از {a} تا {b} تومان', pbCount: 'تعداد محصول', pbSales: 'فروش', pbShare: 'سهم از فروش', pbMargin: 'حاشیه سود', pbNames: 'محصول‌ها',
+    // گروه‌بندی مشتری‌ها و اندازه‌ی سفارش‌ها (phase 2b)
+    cbNeed: 'برای گروه‌بندی مشتری‌ها دست‌کم {need} مشتری با اسم ثبت‌شده لازمه؛ الان {n} تا داری.',
+    cbHint: 'مشتری‌ها از روی تعداد خرید و مبلغ خرجشون تو همین بازه گروه شدن ({n} مشتری، {m} سفارش).',
+    cbNoId: ' {n} سفارش مشتری ثبت‌شده نداشت و تو این گروه‌بندی نیست.',
+    cbOrdersTitle: 'بر اساس تعداد خرید', cbSpendTitle: 'بر اساس خرج مشتری',
+    cbBands: ['۱ بار خرید', '۲ تا ۳ بار خرید', '۴ بار خرید یا بیشتر'],
+    cbHeads: ['گروه', 'مشتری', 'سهم از مشتری‌ها', 'فروش', 'سهم از فروش', 'میانگین سفارش'],
+    cbTop: '۲۰٪ اول از نظر خرج', cbRest: 'بقیه‌ی مشتری‌ها',
+    cbSpendHeads: ['تعداد مشتری', 'فروش', 'سهم از فروش', 'میانگین خرج هر مشتری'],
+    cbNames: 'اسم مشتری‌های ۲۰٪ اول',
+    obNeed: 'برای اندازه‌ی سفارش‌ها دست‌کم {need} سفارش لازمه؛ تو این بازه {n} تا داری.',
+    obHint: 'سفارش‌های این بازه ({n} تا) از کوچیک به بزرگ مرتب شدن و سه گروه با تعداد برابر ساختن؛ مرز هر گروه از خود سفارش‌ها دراومده. سهم‌ها از مجموع {t} تومان فروش همین سفارش‌هاست.',
+    obBands: ['سفارش‌های کوچیک', 'سفارش‌های متوسط', 'سفارش‌های بزرگ'],
+    obRange: ['تا {b} تومان', 'از {a} تا {b} تومان', 'از {a} تومان به بالا'],
+    obAmount: 'مبلغ سفارش', obOrders: 'تعداد سفارش', obShare: 'سهم از فروش', obLines: 'میانگین تعداد محصول تو هر سفارش', obChan: 'سایت / حضوری',
     // «همه محصولات فروخته‌شده»
     allCols: { name: 'محصول', toman: 'فروش', qty: 'مقدار فروش', orders: 'تعداد سفارش', avg: 'میانگین سفارش', share: 'سهم از فروش', trend: 'روند', profit: 'سود', margin: 'حاشیه سود', price: 'قیمت هر بسته/ظرف', cust: 'بهترین مشتری', withp: 'بیشتر همراه', day: 'بهترین روز هفته' },
     allHint: 'فقط محصول‌هایی که تو این بازه فروش رفتن ({n} تا). برای مرتب کردن، ستونو انتخاب کن (تو گوشی از «مرتب‌سازی»). روی یه محصول بزن تا همه‌ی عددهاش رو ببینی. «—» یعنی داده‌ی کافی نیست یا اون عدد برای این محصول حساب نمی‌شه. قیمت هر بسته/ظرف = آخرین قیمتی که یه بسته/ظرف باهاش فروخته شده (اگه اون روز چند فروش بوده، میانگین همون روزه). مرتب‌سازی «مقدار فروش» فقط بر اساس بسته/ظرفه (کیلو، گرم و عدد توش حساب نمی‌شن).',
@@ -654,8 +669,8 @@
     if (name === 'overview') { renderSummary(); anTips(); renderOverviewTop(); renderDataCard(); renderDates(); }
     else if (name === 'trend') { renderTime(); renderCum(); anWhen(); }
     else if (name === 'products') { renderProducts(); renderAllProducts(); renderPriceBands(); anProducts(); anPairs(); anIdle(); }
-    else if (name === 'customers') { renderCustomers(); anCustomers(); }
-    else { renderChannel(); anChannels(); }
+    else if (name === 'customers') { renderCustomers(); anCustomers(); renderCustBands(); }
+    else { renderChannel(); anChannels(); renderOrderBands(); }
   }
   function renderAll() { renderPane(st.tab); }
   function setTab(name) {
@@ -1380,6 +1395,84 @@
     $('pb-note').textContent = pb.noPrice ? fill(TEXT.pbNoPrice, { n: toFa(pb.noPrice) }) : '';
   }
 
+  // ---- «گروه‌بندی مشتری‌ها» and «اندازه‌ی سفارش‌ها» (numbers: segments.js customerBands / orderBands) ----
+  // One table on wide screens, one small card per row on phones (like the channel table).
+  function drawDual(host, heads, rows) {
+    clear(host);
+    var t = el('div');
+    drawTable(t, heads, rows);
+    host.appendChild(t.firstChild);
+    var cards = el('div', 'rp-cards');
+    rows.forEach(function (r) {
+      var c = el('div', 'rp-mini'), g = el('div', 'rp-mini-grid');
+      c.appendChild(el('b', '', r[0]));
+      r.slice(1).forEach(function (v, k) { var d = el('div'); d.appendChild(el('span', '', heads[k + 1])); d.appendChild(el('b', '', v)); g.appendChild(d); });
+      c.appendChild(g); cards.appendChild(c);
+    });
+    host.appendChild(cards);
+  }
+  function renderCustBands() {
+    var card = $('cb-card');
+    if (!card || !SG) return;
+    if (!st.raw || !st.raw.lines) { card.hidden = true; return; }
+    card.hidden = false;
+    var cb = SG.customerBands(st.raw, st.range.from, st.range.to), body = $('cb-body'), noId = cb.noId ? fill(TEXT.cbNoId, { n: toFa(cb.noId) }) : '';
+    clear($('cb-bar')); clear($('cb-legend')); clear($('cb-orders')); clear($('cb-spend'));
+    body.hidden = !cb.ok;
+    if (!cb.ok) { $('cb-hint').textContent = fill(TEXT.cbNeed, { need: toFa(SG.LIMIT.customers), n: toFa(cb.n) }); $('cb-note').textContent = noId; return; }
+    $('cb-hint').textContent = fill(TEXT.cbHint, { n: toFa(cb.n), m: toFa(cb.orders) });
+    $('cb-note').textContent = noId.trim();
+    drawSegBar($('cb-bar'), cb.byOrders.map(function (b, k) { return { w: b.shareSales, color: BAND_COLORS[k], text: isoNums(toFa(Math.round(b.shareSales)) + '٪') }; }), TEXT.cbOrdersTitle);
+    cb.byOrders.forEach(function (b, k) { legendItem($('cb-legend'), BAND_COLORS[k], TEXT.cbBands[k] + ': ' + isoNums(toFa(Math.round(b.shareSales)) + '٪ ' + TEXT.cbHeads[4])); });
+    drawDual($('cb-orders'), TEXT.cbHeads, cb.byOrders.map(function (b, k) {
+      return [TEXT.cbBands[k], toFa(b.n), isoNums(shareText(b.shareCust)), fmtMoney(b.toman) + ' ' + TEXT.toman, isoNums(shareText(b.shareSales)), fmtMoney(b.avg) + ' ' + TEXT.toman];
+    }));
+    var host = $('cb-spend');
+    [[TEXT.cbTop, cb.spend.top], [TEXT.cbRest, cb.spend.rest]].forEach(function (x, k) {
+      var g = x[1], c = el('div', 'rp-mini'), grid = el('div', 'rp-mini-grid');
+      c.appendChild(el('b', '', x[0]));
+      [[TEXT.cbSpendHeads[0], toFa(g.n)], [TEXT.cbSpendHeads[1], fmtMoney(g.toman) + ' ' + TEXT.toman], [TEXT.cbSpendHeads[2], isoNums(shareText(g.share))], [TEXT.cbSpendHeads[3], fmtMoney(g.avgCust) + ' ' + TEXT.toman]].forEach(function (y) {
+        var d = el('div'); d.appendChild(el('span', '', y[0])); d.appendChild(el('b', '', y[1])); grid.appendChild(d);
+      });
+      c.appendChild(grid);
+      if (k === 0) {
+        var det = el('details'), ul = el('ul', 'rp-names');
+        det.appendChild(el('summary', '', TEXT.cbNames + ' (' + toFa(cb.spend.names.length) + ')'));
+        cb.spend.names.forEach(function (n) {
+          var li = el('li');
+          li.appendChild(el('b', '', custLabel(n.id)));
+          li.appendChild(el('span', '', fmtMoney(n.toman) + ' ' + TEXT.toman + ' · ' + toFa(n.orders) + ' ' + TEXT.thOrders));
+          ul.appendChild(li);
+        });
+        det.appendChild(ul); c.appendChild(det);
+      }
+      host.appendChild(c);
+    });
+  }
+  function renderOrderBands() {
+    var card = $('ob-card');
+    if (!card || !SG) return;
+    if (!st.raw || !st.raw.lines) { card.hidden = true; return; }
+    card.hidden = false;
+    var ob = SG.orderBands(st.raw, st.range.from, st.range.to), host = $('ob-bands');
+    clear($('ob-bar')); clear($('ob-legend')); clear(host);
+    if (!ob.ok) { $('ob-hint').textContent = fill(TEXT.obNeed, { need: toFa(SG.LIMIT.orders), n: toFa(ob.n) }); return; }
+    $('ob-hint').textContent = fill(TEXT.obHint, { n: toFa(ob.n), t: fmtMoney(ob.total) });
+    drawSegBar($('ob-bar'), ob.bands.map(function (b, k) { return { w: b.share, color: BAND_COLORS[k], text: isoNums(toFa(Math.round(b.share)) + '٪') }; }), TEXT.obShare);
+    ob.bands.forEach(function (b, k) { legendItem($('ob-legend'), BAND_COLORS[k], TEXT.obBands[k] + ': ' + isoNums(toFa(Math.round(b.share)) + '٪')); });
+    ob.bands.forEach(function (b, k) {
+      var range = k === 0 ? fill(TEXT.obRange[0], { b: fmtMoney(b.to) }) : (k === 2 ? fill(TEXT.obRange[2], { a: fmtMoney(b.from) }) : fill(TEXT.obRange[1], { a: fmtMoney(b.from), b: fmtMoney(b.to) }));
+      var chan = [];
+      [['site', TEXT.siteName], ['person', TEXT.personName], ['unknown', TEXT.unknownName]].forEach(function (c) { if (b.ch[c[0]] > 0) chan.push(c[1] + ' ' + toFa(b.ch[c[0]])); });
+      var c = el('div', 'rp-mini'), g = el('div', 'rp-mini-grid');
+      c.appendChild(el('b', '', TEXT.obBands[k]));
+      [[TEXT.obAmount, range], [TEXT.obOrders, toFa(b.n)], [TEXT.obShare, isoNums(shareText(b.share))], [TEXT.obLines, fmtNum(b.avgLines)], [TEXT.obChan, chan.join('، ') || '—']].forEach(function (x) {
+        var d = el('div'); d.appendChild(el('span', '', x[0])); d.appendChild(el('b', '', x[1])); g.appendChild(d);
+      });
+      c.appendChild(g); host.appendChild(c);
+    });
+  }
+
   function refreshView() {
     var any = st.data.rows.used > 0, open = !!st.product && !!st.raw && !!PV;
     $('pv-body').hidden = !open;
@@ -1511,6 +1604,9 @@
     reset: function () {
       st.cache = {}; st.data = null; st.token += 1; st.end = 'top'; st.unit = '';
       if ($('pb-card')) $('pb-card').hidden = true;
+      if ($('cb-card')) $('cb-card').hidden = true;
+      if ($('ob-card')) $('ob-card').hidden = true;
+      ['cb-bar', 'cb-legend', 'cb-orders', 'cb-spend', 'ob-bar', 'ob-legend', 'ob-bands'].forEach(function (id) { if ($(id)) clear($(id)); });
       ['pb-bar', 'pb-legend', 'pb-bands', 'r-units'].forEach(function (id) { if ($(id)) clear($(id)); });
       st.tab = 'overview'; saveTab('overview');
       ['ov-sum', 'ov-data', 'ov-dates', 'cu-total', 'cu-ma', 'cu-table'].forEach(function (id) { if ($(id)) clear($(id)); });
