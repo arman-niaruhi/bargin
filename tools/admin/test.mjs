@@ -532,9 +532,8 @@ function login(email) { reset(); const { r, code } = ask(email); const v = post(
     const v = post({ action: "verifyCode", data: { challenge: r.data.challenge, code } });
     out.push(r.ok && mails.length === 1 && mails[0].to === em && v.ok && post({ action: "getProducts", session: v.data.session }).ok);
   }
-  check("(k) both allowed emails get a code mailed to themselves and can log in and read the sheet", out.length === 2 && out.every(Boolean), out.join());
-  check("(k) the allowed list is exactly the two agreed lowercase addresses", ALLOWED.join() === "arman.niaruhi@gmail.com,zeinabkia023@gmail.com");
-  check("(k) the allowed list is exactly ['arman.niaruhi@gmail.com','zeinabkia023@gmail.com']", JSON.stringify(ALLOWED) === JSON.stringify(["arman.niaruhi@gmail.com", "zeinabkia023@gmail.com"]));
+  check("(k) both allowed emails get a code mailed to themselves and can log in and read the sheet", out.length === 3 && out.every(Boolean), out.join());
+  check("(k) the allowed list is exactly the three agreed lowercase addresses", JSON.stringify(ALLOWED) === JSON.stringify(["arman.niaruhi@gmail.com", "zeinabkia023@gmail.com", "fatemehalikia1@gmail.com"]));
   reset();
   const typo = reqCode("zeinamkia023@gmail.com");
   check("(k) the old wrong spelling zeinamkia023@gmail.com is unknown: decoy answer, no mail", typo.ok === true && mails.length === 0 && !ALLOWED.includes("zeinamkia023@gmail.com"), JSON.stringify(typo));
